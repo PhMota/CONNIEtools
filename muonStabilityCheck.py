@@ -62,6 +62,11 @@ SiPeak = 1.7
 """
 
 """
+/share/storage2/connie/data_analysis/processed02_data/runs/
+/share/storage2/connie/data_analysis/processed02_data/runs/*/*/ext/catalog/*.skim1.root
+"""
+
+"""
 5506708 3,1G -rw-r--r--  1 mota mota 3,1G Out 23 18:39 stat_gain_catalog_2037_to_2097.skim1.root
 5506161 3,0G -rw-r--r--  1 mota mota 3,0G Out 23 18:47 stat_gain_catalog_2098_to_2157.skim1.root
 5506190 3,3G -rw-r--r--  1 mota mota 3,3G Out 23 18:52 stat_gain_catalog_2158_to_2217.skim1.root
@@ -133,7 +138,8 @@ selectionJuanAngle = r'E1>0 && flag==0 && sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2)
 
 selectionPhilipeAngle = r'flag==0 && abs(log10( E0/sqrt( (15*(xMax-xMin))**2 + (15*(yMax-yMin))**2 + 675**2  ) )-2.7055039797010396)<2*sqrt(7.326161363760477-2.7055039797010396**2) && atan2( sqrt( (15*(xMax-xMin))**2 + (15*(yMax-yMin))**2), 675 ) > 0.785398'
 
-selectionDC = r'&& dcFlag==1'
+#selectionDC = r'&& dcFlag==1'
+selectionDC = r''
 
 selection45 = r'&& atan2( sqrt( (15*(xMax-xMin))**2 + (15*(yMax-yMin))**2), 675 ) > 0.785398'
 
@@ -161,16 +167,28 @@ def getValuesFromCatalog( catalog, treename = 'hitSumm', branches = [], selectio
 def applySelection( files, selection, branches, output = None, fmt = '%.18e' ):
     variables = {branch: [] for branch in branches}
     for file_ in files:
-        print 'extracting branches', branches, 'from file', file_
+        base = os.path.basename(file_)
+        outfile = 'plots/%s.%s.dat'%(base,output)
+        print 'file', file_
+        print 'extracting branches', branches
+        print "branches available", root_numpy.list_branches(file_, 'hitSumm')
+        print "missing branches", [ branch for branch in branches if not branch in root_numpy.list_branches(file_, 'hitSumm') ]
+        print "branches available", root_numpy.list_branches(file_, 'config')
+        print
         data = getValuesFromCatalog( file_, branches = branches, selection = selection )
         print 'read', len(data[0]), 'entries'
-        for branch, datum in zip(branches, data):
-            variables[branch] = np.append( variables[branch], datum )
-    header = " ".join( branches )
-    data_ = [ variables[branch] for branch in branches ]
-    print 'writing into', 'plots/%s.dat'%output 
-    print 'length', len(branches), len(fmt.split())
-    np.savetxt( 'plots/%s.dat'%output, zip(*data_), header=header, fmt=fmt )
+        header = " ".join( branches )
+        #data_ = [ variables[branch] for branch in branches ]
+        print 'writing into', outfile
+        print 'length', len(branches), len(fmt.split())
+        np.savetxt( outfile, zip(*data), header=header, fmt=fmt )        
+        #for branch, datum in zip(branches, data):
+            #variables[branch] = np.append( variables[branch], datum )
+    #header = " ".join( branches )
+    #data_ = [ variables[branch] for branch in branches ]
+    #print 'writing into', 'plots/%s.dat'%output 
+    #print 'length', len(branches), len(fmt.split())
+    #np.savetxt( 'plots/%s.dat'%output, zip(*data_), header=header, fmt=fmt )
     return
 
 def plotTime( data = None, fnames = None, branch = None, output = None, ohdu = None, labels = None, func = None, ylabel = None, perRunID = True, perCatalog = False ):
@@ -443,36 +461,6 @@ def makePlot( fname ):
         
 
     pp.close()
-
-
-def applyToAllCu( catalogs, selection = '' ):
-    E1,ohdu,runID, expoStart, xVar1,yVar1, gainCu, resCu, n0, n1, n2, n3 = [], [], [], [], [], [], [], [], [], [], [], []
-    
-    Emin = 1e3
-    Emax = 20e3
-    count = 0
-    for catalog in catalogs:
-        print catalog
-        #E1_, ohdu_, runID_, expoStart_, xVar1_, yVar1_, gainCu_, resCu_, n0_, n1_, n2_, n3_ = getValuesFromCatalog( catalog, branches = ['E0','ohdu','runID', 'expoStart','xVar1','yVar1','gainCu','resCu','n0','n1', 'n2','n3'], selection = 'flag == 0 && selFlag<2 && dcFlag==1 && E1> %f && E1 < %f'%(Emin,Emax) )
-        E1_, ohdu_, runID_, selFlag_, expoStart_, xVar1_, yVar1_, gainCu_, resCu_, n0_, n1_, n2_, n3_ = getValuesFromCatalog( catalog, branches = ['E0','ohdu','runID', 'selFlag', 'expoStart','xVar1','yVar1','gainCu','resCu','n0','n1', 'n2','n3'], selection = 'flag == 0 && dcFlag==1 && E1> %f && E1 < %f'%(Emin,Emax) )
-        
-        E1 = np.append( E1, E1_)
-        gainCu = np.append( gainCu, gainCu_)
-        resCu = np.append( resCu, resCu_)
-        ohdu = np.append( ohdu, ohdu_ )
-        runID = np.append( runID, runID_ )
-        expoStart = np.append( expoStart, expoStart_ )
-        xVar1 = np.append( xVar1, xVar1_ )
-        yVar1 = np.append( yVar1, yVar1_ )
-        n0 = np.append( n0, n0_ )
-        n1 = np.append( n1, n1_ )
-        n2 = np.append( n2, n2_ )
-        n3 = np.append( n3, n3_ )
-        print E1.shape
-
-    data = [ohdu, runID, expoStart, E1, xVar1, yVar1, gainCu, resCu, n0, n1, n2, n3 ]
-    header = "ohdu runID expoStart E1 xVar1 yVar1 gainCu resCu n0 n1 n2 n3"
-    np.savetxt( 'plots/peakCount.dat', zip(*data), header = header, fmt='%f' )
 
 
 def poisson(k, lamb):
@@ -1131,6 +1119,7 @@ def makePlotCu( fname ):
     return
 
 if __name__ == "__main__":
+    catalogs = "/share/storage2/connie/nu_processing/scripts/ProcCat/cut_scn_osi_raw_gain_catalog_data_*.skim1.root"
     if len(sys.argv) > 1:
         if sys.argv[1] == '--h':
             print "usage:"
@@ -1152,10 +1141,13 @@ if __name__ == "__main__":
             exit(0)
         if sys.argv[1] == "--muon2":
             print "Processes the muon2 count"
-            catalogs = sys.argv[-1]
+            #catalogs = sys.argv[-1]
+            #catalogs = "/share/storage2/connie/data_analysis/processed02_data/runs/*/*/ext/catalog/*.skim1.root"
             catalogs = glob.glob(catalogs)
             branches = ['runID','ohdu','expoStart','E1','gainCu', 'resCu', 'selFlag']
+            #branches = ['runID','ohdu','expoStart','E1']
             fmt = ' '.join( ['%d','%d','%d','%.4e','%.4e', '%.4e', '%d'] )
+            #fmt = ' '.join( ['%d','%d','%d','%.4e'] )
             if os.path.splitext( catalogs[0] )[1] == ".root":
                 for key in ['Juan45', 'Philipe45']:
                     applySelection( catalogs, selection=selections[key], branches=branches, fmt=fmt, output='muon.%s'%key )
@@ -1185,7 +1177,6 @@ if __name__ == "__main__":
                 print "trees", root_numpy.list_trees(catalogs[0])
                 print "branches", root_numpy.list_branches(catalogs[0], 'hitSumm')
                 print "branches", root_numpy.list_branches(catalogs[0], 'config')
-                #applyToAllCu( catalogs )
                 branches = ['E0', 'E1', 'ohdu','runID', 'selFlag', 'expoStart','xVar1','yVar1', 'gainCu', 'resCu','n0','n1', 'n2','n3']
                 fmt = ['%.8e', '%.8e', '%d', '%d', '%d', '%d', '%.8e', '%.8e', '%.8e', '%.8e', '%d', '%d', '%d', '%d']
                 print len(branches), len(fmt)
