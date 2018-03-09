@@ -1171,7 +1171,7 @@ if __name__ == "__main__":
             exit(0)
         if sys.argv[1] == "--peak":
             print "Processes the peak count"
-            catalogs = sys.argv[-1]
+            #catalogs = sys.argv[-1]
             catalogs = glob.glob(catalogs)
             if os.path.splitext( catalogs[0] )[1] == ".root":
                 print "trees", root_numpy.list_trees(catalogs[0])
@@ -1183,12 +1183,12 @@ if __name__ == "__main__":
                 fmt = ' '.join(fmt)
                 Emin = 1e3#adu
                 Emax = 20e3#adu
-                selection = 'flag==0 && dcFlag==1 && E1> %f && E1 < %f'%(Emin,Emax)
-                #applySelection( catalogs, selection = selection, branches = branches, output='peakCount.selection', fmt = fmt )
+                selection = 'flag==0 && E1> %f && E1 < %f'%(Emin,Emax)
+                applySelection( catalogs, selection = selection, branches = branches, output='peakCount.selection', fmt = fmt )
                 
                 Emin = 200#keV
                 Emax = 400#keV
-                selection = 'flag==0 && dcFlag==1 && E1> gainCu*%f && E1 < gainCu*%f'%(Emin,Emax)
+                selection = 'flag==0 && E1> gainCu*%f && E1 < gainCu*%f'%(Emin,Emax)
                 applySelection( catalogs, selection = selection, branches = branches, output='peakCount.selectionHigh', fmt = fmt )
             exit(0)
         if sys.argv[1] == "--peakPlot":
