@@ -164,32 +164,34 @@ def getValuesFromCatalog( catalog, treename = 'hitSumm', branches = [], selectio
     data = root_numpy.root2array( catalog, treename = treename, branches = branches, selection = selection ).view(np.recarray)
     return np.array([ data[branch] for branch in branches ])
 
-def applySelection( files, selection, branches, output = None, fmt = '%.18e' ):
-    variables = {branch: [] for branch in branches}
+def applySelection( files, selection, branches_fmt, output = None ):
+    #variables = {branch_fmt[0]: [] for branch_fmt in branches_fmt}
+    branches, fmt = zip(*branches_fmt)
+    print branches
+    print fmt
     for file_ in files:
         base = os.path.basename(file_)
         outfile = 'plots/%s.%s.dat'%(base,output)
-        print 'file', file_
+	if os.path.exists( outfile ):
+		print 'file', outfile,'already exists; skipping'
+		continue
+	extractfromfile(file_, list(branches), list(fmt), outfile, selection)
+    return
+
+def extractfromfile(file_, branches, fmt, outfile, selection ):
+        header = " ".join( branches )
+	print 'file', file_
         print 'extracting branches', branches
-        print "branches available", root_numpy.list_branches(file_, 'hitSumm')
-        print "missing branches", [ branch for branch in branches if not branch in root_numpy.list_branches(file_, 'hitSumm') ]
-        print "branches available", root_numpy.list_branches(file_, 'config')
-        print
+        #print "branches available", root_numpy.list_branches(file_, 'hitSumm')
+        #print "missing branches", [ branch for branch in branches if not branch in root_numpy.list_branches(file_, 'hitSumm') ]
+        #print "branches available", root_numpy.list_branches(file_, 'config')
         data = getValuesFromCatalog( file_, branches = branches, selection = selection )
         print 'read', len(data[0]), 'entries'
-        header = " ".join( branches )
         #data_ = [ variables[branch] for branch in branches ]
         print 'writing into', outfile
-        print 'length', len(branches), len(fmt.split())
-        np.savetxt( outfile, zip(*data), header=header, fmt=fmt )        
-        #for branch, datum in zip(branches, data):
-            #variables[branch] = np.append( variables[branch], datum )
-    #header = " ".join( branches )
-    #data_ = [ variables[branch] for branch in branches ]
-    #print 'writing into', 'plots/%s.dat'%output 
-    #print 'length', len(branches), len(fmt.split())
-    #np.savetxt( 'plots/%s.dat'%output, zip(*data_), header=header, fmt=fmt )
-    return
+        #print 'length', len(branches), len(fmt)
+        np.savetxt( outfile, zip(*data), header=header, fmt=' '.join(fmt) )        
+	return
 
 def plotTime( data = None, fnames = None, branch = None, output = None, ohdu = None, labels = None, func = None, ylabel = None, perRunID = True, perCatalog = False ):
     fig = plt.figure()
@@ -1147,10 +1149,19 @@ if __name__ == "__main__":
             branches = ['runID','ohdu','expoStart','E1','gainCu', 'resCu', 'selFlag']
             #branches = ['runID','ohdu','expoStart','E1']
             fmt = ' '.join( ['%d','%d','%d','%.4e','%.4e', '%.4e', '%d'] )
+	    branches_fmt = [
+		('runID','%d'),
+		('ohdu','%d'),
+		('expoStart','%d'),
+		('E1','%.4e'),
+		('gainCu','%.4e'), 
+		('resCu','%.4e'), 
+		('selFlag','%d')
+		]
             #fmt = ' '.join( ['%d','%d','%d','%.4e'] )
             if os.path.splitext( catalogs[0] )[1] == ".root":
                 for key in ['Juan45', 'Philipe45']:
-                    applySelection( catalogs, selection=selections[key], branches=branches, fmt=fmt, output='muon.%s'%key )
+                    applySelection( catalogs, selection=selections[key], branches_fmt=branches_fmt, output='muon.%s'%key )
             exit(0)
         if sys.argv[1] == "--muon2Plot":
             print "plots the muon count"
@@ -1177,19 +1188,35 @@ if __name__ == "__main__":
                 print "trees", root_numpy.list_trees(catalogs[0])
                 print "branches", root_numpy.list_branches(catalogs[0], 'hitSumm')
                 print "branches", root_numpy.list_branches(catalogs[0], 'config')
-                branches = ['E0', 'E1', 'ohdu','runID', 'selFlag', 'expoStart','xVar1','yVar1', 'gainCu', 'resCu','n0','n1', 'n2','n3']
-                fmt = ['%.8e', '%.8e', '%d', '%d', '%d', '%d', '%.8e', '%.8e', '%.8e', '%.8e', '%d', '%d', '%d', '%d']
-                print len(branches), len(fmt)
-                fmt = ' '.join(fmt)
+                #branches = ['E0', 'E1', 'ohdu','runID', 'selFlag', 'expoStart','xVar1','yVar1', 'gainCu', 'resCu','n0','n1', 'n2','n3']
+                #fmt = ['%.8e', '%.8e', '%d', '%d', '%d', '%d', '%.8e', '%.8e', '%.8e', '%.8e', '%d', '%d', '%d', '%d']
+		branches_fmt = [
+			('E0','%.8e'), 
+			('E1','%.8e'), 
+			('ohdu','%d'),
+			('runID','%d'),
+			('selFlag','%d'), 
+			('expoStart','%d'),
+			('xVar1','%.8e'), 
+			('yVar1','%.8e'), 
+			('gainCu','%.8e'),  
+			('resCu','%.8e'), 
+			('n0','%d'),
+			('n1','%d'),
+			('n2','%d'),
+			('n3','%d'),
+			]
+                #print len(branches), len(fmt)
+                #fmt = ' '.join(fmt)
                 Emin = 1e3#adu
                 Emax = 20e3#adu
                 selection = 'flag==0 && E1> %f && E1 < %f'%(Emin,Emax)
-                applySelection( catalogs, selection = selection, branches = branches, output='peakCount.selection', fmt = fmt )
+                applySelection( catalogs, selection = selection, branches_fmt = branches_fmt, output='peakCount.selection')
                 
                 Emin = 200#keV
                 Emax = 400#keV
                 selection = 'flag==0 && E1> gainCu*%f && E1 < gainCu*%f'%(Emin,Emax)
-                applySelection( catalogs, selection = selection, branches = branches, output='peakCount.selectionHigh', fmt = fmt )
+                applySelection( catalogs, selection = selection, branches_fmt = branches_fmt, output='peakCount.selectionHigh')
             exit(0)
         if sys.argv[1] == "--peakPlot":
             if len(sys.argv) < 3: 
