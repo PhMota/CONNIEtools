@@ -9,6 +9,7 @@ from matplotlib.colors import LogNorm
 from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, epoch2num
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import norm, chisquare
+import re
 
 from scipy.optimize import minimize
 from scipy.misc import factorial
@@ -329,6 +330,7 @@ def applyToAll( catalogs, selection = '' ):
             header = " ".join(["runID"] + ["expoStart"]  + sum([ [ "nJ[%s]"%ohdu, "nJa[%s]"%ohdu, "nPh[%s]"%ohdu, "nPha[%s]"%ohdu] for ohdu in ohdus + ['all'] ], []))
             np.savetxt( 'plots/muonCount.dat', zip(*data), header = header, fmt='%d' )
             
+
 
 def makePlot( fname ):
     data = np.genfromtxt( fname, names = True )
@@ -712,6 +714,29 @@ def plotMuon( outfile, labels = [] ):
         for label in labels:
             savetable( table[label][key], output = 'plots/summary.muon.%s.%s.dat'%(label,key), ohdus = ohdus )
     #printTable(  )
+
+
+def makeAzimthalDistribution( fnames ):
+    outfile = 'plots/az.pdf'
+    pp = PdfPages( outfile + '.tmp')
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_xlabel('angle')
+    ax.set_ylabel('count')
+    ax.set_yscale('log')
+    ax.grid(True)
+    for fname in fnames:
+        print fname
+        #print re.search(r'.(\d*)_to_(\d*).', fname).groups()
+        data = np.genfromtxt( fname, names = True )
+        angles = np.angle(15*np.sqrt( (data['xMax']-data['xMin'])**2 + (data['yMax']-data['yMin'])**2) + 675.j, deg=True )
+        print angles
+        ax.hist( angles, bins = 100, histtype = "step", label = ' to '.join(re.search(r'.(\d*)_to_(\d*).', fname).groups()) ) 
+        ax.legend( fancybox=True, framealpha=0.1 )
+    fig.savefig( pp, format='pdf')
+    pp.close()
+    os.rename( outfile + '.tmp', outfile )
+    return 
     
 def makePlotCu( fname ):
     if 0: plotMuon('plots/muonCount.pdf', labels = ['Juan45', 'Philipe45'] )
@@ -1156,7 +1181,38 @@ if __name__ == "__main__":
 		('E1','%.4e'),
 		('gainCu','%.4e'), 
 		('resCu','%.4e'), 
-		('selFlag','%d')
+		('xMin','%d'),
+		('xMax','%d'),
+		('yMin','%d'),
+		('yMax','%d'),
+		('selFlag','%d'),
+		]
+            #fmt = ' '.join( ['%d','%d','%d','%.4e'] )
+            if os.path.splitext( catalogs[0] )[1] == ".root":
+                for key in ['Juan45', 'Philipe45']:
+                    applySelection( catalogs, selection=selections[key], branches_fmt=branches_fmt, output='muon.%s'%key )
+            exit(0)
+        if sys.argv[1] == "--muon3":
+            print "Processes the muon3 count"
+            #catalogs = sys.argv[-1]
+            #catalogs = "/share/storage2/connie/data_analysis/processed02_data/runs/*/*/ext/catalog/*.skim1.root"
+            catalogs = glob.glob(catalogs)
+            catalogs = ["/share/storage2/connie/data_analysis/processed02_data/moni/moni_3165_to_3224/ext/catalog/catalog_moni_3165_to_3224.skim1.root","/share/storage2/connie/data_analysis/processed02_data/moni/moni_3225_to_3284/ext/catalog/catalog_moni_3225_to_3284.skim1.root"]
+            branches = ['runID','ohdu','expoStart','E1','gainCu', 'resCu', 'selFlag']
+            #branches = ['runID','ohdu','expoStart','E1']
+            fmt = ' '.join( ['%d','%d','%d','%.4e','%.4e', '%.4e', '%d'] )
+	    branches_fmt = [
+		('runID','%d'),
+		('ohdu','%d'),
+		('expoStart','%d'),
+		('E1','%.4e'),
+		#('gainCu','%.4e'), 
+		#('resCu','%.4e'), 
+		('xMin','%d'),
+		('xMax','%d'),
+		('yMin','%d'),
+		('yMax','%d'),
+		#('selFlag','%d'),
 		]
             #fmt = ' '.join( ['%d','%d','%d','%.4e'] )
             if os.path.splitext( catalogs[0] )[1] == ".root":
@@ -1244,6 +1300,10 @@ if __name__ == "__main__":
             print 'output:'
             print output
             applySelection( catalogs, selection, branches, output )
+            exit(0)
+        if sys.argv[1] == "--az":
+            catalogs = glob.glob(sys.argv[2])
+            makeAzimthalDistribution( catalogs )
             exit(0)
         print sys.argv[1]," is not a known option"
         exit(0)
