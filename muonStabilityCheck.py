@@ -8,11 +8,13 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.dates import DayLocator, HourLocator, DateFormatter, drange, epoch2num
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.gridspec import GridSpec
 from scipy.stats import norm, chisquare
 import re
 
 from scipy.optimize import minimize
 from scipy.misc import factorial
+import scipy.stats
 
 import root_numpy
 
@@ -125,6 +127,7 @@ cats3 = [
 ['025f', 1,    2338,    2388],
 ['026a', 1,    2389,    2453],
 ['026b', 1,    2454,    2518],
+['028a', 1,    2760,    2819],
 ]
 
 
@@ -145,8 +148,8 @@ selectionDC = r''
 selection45 = r'&& atan2( sqrt( (15*(xMax-xMin))**2 + (15*(yMax-yMin))**2), 675 ) > 0.785398'
 
 selections = {
-    'Juan': selectionJuan + selectionDC,
-    'Philipe': selectionPhilipe + selectionDC,
+    'JuanAll': selectionJuan + selectionDC,
+    'PhilipeAll': selectionPhilipe + selectionDC,
     'Juan45': selectionJuan + selectionDC + selection45,
     'Philipe45': selectionPhilipe + selectionDC + selection45,
     }
@@ -165,7 +168,7 @@ def getValuesFromCatalog( catalog, treename = 'hitSumm', branches = [], selectio
     data = root_numpy.root2array( catalog, treename = treename, branches = branches, selection = selection ).view(np.recarray)
     return np.array([ data[branch] for branch in branches ])
 
-def applySelection( files, selection, branches_fmt, output = None ):
+def applySelection( files, selection, branches_fmt, output = None, countby = False ):
     #variables = {branch_fmt[0]: [] for branch_fmt in branches_fmt}
     branches, fmt = zip(*branches_fmt)
     print branches
@@ -173,26 +176,28 @@ def applySelection( files, selection, branches_fmt, output = None ):
     for file_ in files:
         base = os.path.basename(file_)
         outfile = 'plots/%s.%s.dat'%(base,output)
-	if os.path.exists( outfile ):
-		print 'file', outfile,'already exists; skipping'
-		continue
-	extractfromfile(file_, list(branches), list(fmt), outfile, selection)
+        if os.path.exists( outfile ):
+            print 'file', outfile,'already exists; skipping'
+            continue
+        extractfromfile(file_, list(branches), list(fmt), outfile, selection, countby = countby )
     return
 
-def extractfromfile(file_, branches, fmt, outfile, selection ):
-        header = " ".join( branches )
-	print 'file', file_
-        print 'extracting branches', branches
-        #print "branches available", root_numpy.list_branches(file_, 'hitSumm')
-        #print "missing branches", [ branch for branch in branches if not branch in root_numpy.list_branches(file_, 'hitSumm') ]
-        #print "branches available", root_numpy.list_branches(file_, 'config')
-        data = getValuesFromCatalog( file_, branches = branches, selection = selection )
-        print 'read', len(data[0]), 'entries'
-        #data_ = [ variables[branch] for branch in branches ]
+def extractfromfile(file_, branches, fmt, outfile, selection, countby = False ):
+    header = " ".join( branches )
+    print 'file', file_
+    print 'extracting branches', branches
+    data = getValuesFromCatalog( file_, branches = branches, selection = selection )
+    print 'read', len(data[0]), 'entries'
+    if countby:
+        zipped = zip(*[ data[index] for index, branch in enumerate(branches) ])
+        setbranches = set( zipped )
+        data = [ () + sets + (zipped.count(sets),) for sets in setbranches ]
+        print 'writing count into', outfile
+        np.savetxt( outfile, data, header=header + " count", fmt=' '.join(fmt) + ' %d' )
+    else:
         print 'writing into', outfile
-        #print 'length', len(branches), len(fmt)
-        np.savetxt( outfile, zip(*data), header=header, fmt=' '.join(fmt) )        
-	return
+        np.savetxt( outfile, zip(*data), header=header, fmt=' '.join(fmt) )
+    return
 
 def plotTime( data = None, fnames = None, branch = None, output = None, ohdu = None, labels = None, func = None, ylabel = None, perRunID = True, perCatalog = False ):
     fig = plt.figure()
@@ -221,8 +226,8 @@ def plotTime( data = None, fnames = None, branch = None, output = None, ohdu = N
             
             header = ' '.join(['runID', 'expoStart', ylabel] )
             data_ = [ runIDs, x, y ]
-            print os.splitext(os.basename( fnames[index] ))[0]+'.runID.dat'
-            np.savetxt( runIDnames[index] )
+            print os.path.splitext(os.path.basename( fnames[index] ))[0]+'.runID.dat'
+            np.savetxt( runIDnames[index], data )
             
         else:
             x = epoch2num( datum[ 'expoStart' ][mask] )
@@ -713,7 +718,122 @@ def plotMuon( outfile, labels = [] ):
         print 'saving', key
         for label in labels:
             savetable( table[label][key], output = 'plots/summary.muon.%s.%s.dat'%(label,key), ohdus = ohdus )
-    #printTable(  )
+
+def plotCount( catalogs ):
+    keys = []
+    basenames = [ os.path.basename(catalog) for catalog in catalogs ]
+    for basename in basenames:
+        files = glob.glob( 'plots/' + basename + '*')
+        for f in files:
+            keys += [ f.replace( 'plots/' + basename + '.', '' ) ]
+    keys = set(keys)
+    keys = [ key for key in keys if 'count.' in key ]
+    print keys
+    
+    for key in keys:
+        pp2 = PdfPages( 'plots/' + key + '.pdf')
+        data = {}
+        ohdus = []
+        for basename in basenames:
+            countData = np.genfromtxt( 'plots/' + basename + '.' + key, dtype = None, names = True )
+            ohdus = set( countData['ohdu'] )
+            for ohdu in ohdus:
+                mask = countData['ohdu'] == ohdu
+                if not ohdu in data: data[ohdu] = {}
+                data[ohdu].update( {basename:  ( countData['runID'][mask], countData['count'][mask] ) } )
+        for ohdu in data.keys():
+            #print ohdu
+            fig = plt.figure()
+            gs = GridSpec(2,5)
+            #axup = fig.add_subplot(211)
+            axdown = plt.subplot(gs[1,0:-1] )
+            axup = plt.subplot(gs[0,0:-1], sharex=axdown)
+            axleftdown = plt.subplot(gs[1,-1], sharey=axdown )
+            axleftup = plt.subplot(gs[0,-1], sharey=axup )
+            #axdown = fig.add_subplot(212, sharex=axup )
+            fig.suptitle('%s ohdu=%s'%(key,ohdu))
+            #axup.set_title('ohdu=%s'%ohdu)
+            axup.set_ylabel('count per runID')
+            plt.setp(axup.get_xticklabels(), visible=False)
+            plt.setp(axleftup.get_xticklabels(), visible=False)
+            plt.setp(axleftup.get_yticklabels(), visible=False)
+            plt.setp(axleftdown.get_xticklabels(), visible=False)
+            plt.setp(axleftdown.get_yticklabels(), visible=False)
+            axdown.set_ylabel('count per catalog')
+            axdown.set_xlabel('runID')
+            histData = []
+            histDataCat = []
+            for key_, datum in data[ohdu].iteritems():
+                axup.scatter( datum[0], datum[1], s=.1 )
+                histData += list(datum[1])
+                histDataCat += [np.mean(datum[1])]
+                axdown.errorbar( np.mean(datum[0]), np.mean(datum[1]), xerr=.5*(max(datum[0])-min(datum[0])), yerr=scipy.stats.sem(datum[1]) )
+            axleftdown.hist( histDataCat, histtype='step', orientation="horizontal", normed=True )
+            axleftup.hist( histData, histtype='step', orientation="horizontal", normed=True )
+            axleftup.text(0.95, 0.95, '$\mu=%.1f$\n$\sigma=%.1f$'%(np.mean(histData),np.std(histData)), transform=axleftup.transAxes, verticalalignment='top', horizontalalignment='right')
+            axleftdown.text(0.95, 0.95, '$\mu=%.1f$\n$\sigma=%.1f$'%(np.mean(histDataCat),np.std(histDataCat)), transform=axleftdown.transAxes, verticalalignment='top', horizontalalignment='right')
+            plt.subplots_adjust(hspace=.1, wspace=.1)
+            fig.savefig( pp2, format='pdf' )
+            plt.close(fig)
+        pp2.close()
+        #os.rename( key + '.pdf.tmp', key + '.pdf' )
+
+    exit(0)
+    
+    ohdus = [2,3,4,5,6,7,8,9,10]
+
+    countData = {}
+    table = {}
+    keys = ['all', 'run018', 'run025', 'OFF', 'ON']
+    
+    for label in labels:
+        if not os.path.exists('plots/muonCount.%s.dat'%label ):
+            data = np.genfromtxt( 'plots/muon.%s.dat'%label, names = True )
+            computeCounts( data, output = 'muonCount.%s'%label, ohdus = ohdus, mask = lambda x: np.ones_like(x, dtype = bool) )
+        countData[label] = np.genfromtxt( 'plots/muonCount.%s.dat'%label, dtype=None, names = True )
+        
+        for key in keys:
+            table[label][key] = {}
+    binsize = 5
+    
+    for ohdu_ in ohdus:
+        
+        thisohdu = countData[label]['ohdu'] == ohdu_
+        plotTime2( pp2, ylabel = 'muon selection count', data = [countData[label] for label in labels], ohdu = ohdu_, labels = labels )
+        
+        for label in labels:
+            table[label] = plotDistributionOutliers( pp2, ylabel = 'muon %s selection'%label, data = countData[label], ohdu = ohdu_, masks = [np.ones_like(countData[label], dtype = bool)], labels = ['all'], binsize = binsize, table = table[label] )
+            
+            thisrun = []
+            for run in ['18','25']:
+                catalogs = [ cat[0] for cat in cats3 if run in cat[0] ]
+                thisrun += [ np.any( [ countData[label]['catalog'] == catalog for catalog in catalogs ], axis = 0) ]
+
+            table[label] = plotDistributionOutliers( pp2, ylabel = 'muon %s selection'%label, data = countData[label], ohdu = ohdu_, 
+                                    masks = thisrun, 
+                                    labels = ['run018', 'run025'], 
+                                    binsize = binsize,
+                                    table = table[label]
+                                    )
+
+            thisrun = []
+            for onoff in [0,1]:
+                catalogs = [ cat[0] for cat in cats3 if cat[1] == onoff ]
+                thisrun += [ np.any( [ countData[label]['catalog'] == catalog for catalog in catalogs ], axis = 0) ]
+            table[label] = plotDistributionOutliers( pp2, ylabel = 'muon %s selection'%label, data = countData[label], ohdu = ohdu_, 
+                                    masks = thisrun, 
+                                    labels = ['OFF', 'ON'],
+                                    binsize = binsize,
+                                    table = table[label]
+                                    )
+        
+
+    pp2.close()
+    os.rename( outfile2 + '.tmp', outfile2 )
+    for key in keys:
+        print 'saving', key
+        for label in labels:
+            savetable( table[label][key], output = 'plots/summary.muon.%s.%s.dat'%(label,key), ohdus = ohdus )
 
 
 def makeAzimthalDistribution( fnames ):
@@ -721,7 +841,7 @@ def makeAzimthalDistribution( fnames ):
     pp = PdfPages( outfile + '.tmp')
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    ax.set_xlabel('angle')
+    ax.set_xlabel('zenith angle')
     ax.set_ylabel('count')
     ax.set_yscale('log')
     ax.grid(True)
@@ -729,9 +849,9 @@ def makeAzimthalDistribution( fnames ):
         print fname
         #print re.search(r'.(\d*)_to_(\d*).', fname).groups()
         data = np.genfromtxt( fname, names = True )
-        angles = np.angle(15*np.sqrt( (data['xMax']-data['xMin'])**2 + (data['yMax']-data['yMin'])**2) + 675.j, deg=True )
+        angles = np.angle(675 + 15*np.sqrt( (data['xMax']-data['xMin'])**2 + (data['yMax']-data['yMin'])**2)*1.j, deg=True )
         print angles
-        ax.hist( angles, bins = 100, histtype = "step", label = ' to '.join(re.search(r'.(\d*)_to_(\d*).', fname).groups()) ) 
+        ax.hist( angles, bins = 100, histtype = "step", label = ' to '.join(re.search(r'.(\d*)_to_(\d*).', fname).groups()) + ' N=' + str(len(angles)) ) 
         ax.legend( fancybox=True, framealpha=0.1 )
     fig.savefig( pp, format='pdf')
     pp.close()
@@ -740,7 +860,7 @@ def makeAzimthalDistribution( fnames ):
     
 def makePlotCu( fname ):
     if 0: plotMuon('plots/muonCount.pdf', labels = ['Juan45', 'Philipe45'] )
-    if 0:
+    if 1:
         print 'muon'
 
         outfile2 = 'plots/muonCount.pdf'
@@ -831,7 +951,7 @@ def makePlotCu( fname ):
             savetable( table2[key], output = 'plots/summary.muon.Philipe45.%s.dat'%key, ohdus = ohdus )
         #printTable(  )
         
-    if 0:
+    if 1:
         print 'high'
         data = np.genfromtxt( 'plots/peakCount.selectionHigh.dat', names = True )
 
@@ -1145,6 +1265,8 @@ def makePlotCu( fname ):
                #fmt=' '.join([ '%d' if key == 'ohdu' else ( '%s' if key == 'runID' else '%.4f' ) for key in table.keys() ]) )
     return
 
+
+
 if __name__ == "__main__":
     catalogs = "/share/storage2/connie/nu_processing/scripts/ProcCat/cut_scn_osi_raw_gain_catalog_data_*.skim1.root"
     if len(sys.argv) > 1:
@@ -1156,7 +1278,28 @@ if __name__ == "__main__":
             print "--peak\t\tprocess the peaks info"
             print "--peakPlot\tgenerates the peaks plots"
             exit(0)
-        if sys.argv[1] == "--muon":
+        elif sys.argv[1] == "--count":
+            catalogs = glob.glob(catalogs)
+            #branches = ['runID','ohdu']
+            #fmt = ' '.join( ['%d','%d','%d','%.4e','%.4e', '%.4e', '%d'] )
+            branches_fmt = [
+            ('runID','%d'),
+            ('ohdu','%d'),
+            ('expoStart','%d'),
+            ]
+            sels = { 
+                'Philipe45': selections['Philipe45'],
+                '1_20kadu': 'flag==0 && E1> %f && E1 < %f'%(1e3,20e3),
+                '200e3_400keV': 'flag==0 && E1> gainCu*%f && E1 < gainCu*%f'%(200,400),
+                }
+            for key, sel in sels.iteritems():
+                applySelection( catalogs, selection=sel, branches_fmt=branches_fmt, output='count.%s'%key, countby = True )
+            exit(0)
+        elif sys.argv[1] == "--countPlot":
+            catalogs = glob.glob(catalogs)
+            plotCount( catalogs )
+            exit(0)            
+        elif sys.argv[1] == "--muon":
             print "Processes the muon count"
             catalogs = sys.argv[-1]
             catalogs = glob.glob(catalogs)
@@ -1166,7 +1309,7 @@ if __name__ == "__main__":
                 print "branches", root_numpy.list_branches(catalogs[0], 'config')
                 applyToAll( catalogs )
             exit(0)
-        if sys.argv[1] == "--muon2":
+        elif sys.argv[1] == "--muon2":
             print "Processes the muon2 count"
             #catalogs = sys.argv[-1]
             #catalogs = "/share/storage2/connie/data_analysis/processed02_data/runs/*/*/ext/catalog/*.skim1.root"
@@ -1174,49 +1317,55 @@ if __name__ == "__main__":
             branches = ['runID','ohdu','expoStart','E1','gainCu', 'resCu', 'selFlag']
             #branches = ['runID','ohdu','expoStart','E1']
             fmt = ' '.join( ['%d','%d','%d','%.4e','%.4e', '%.4e', '%d'] )
-	    branches_fmt = [
-		('runID','%d'),
-		('ohdu','%d'),
-		('expoStart','%d'),
-		('E1','%.4e'),
-		('gainCu','%.4e'), 
-		('resCu','%.4e'), 
-		('xMin','%d'),
-		('xMax','%d'),
-		('yMin','%d'),
-		('yMax','%d'),
-		('selFlag','%d'),
-		]
+            branches_fmt = [
+            ('runID','%d'),
+            ('ohdu','%d'),
+            ('expoStart','%d'),
+            ('E1','%.4e'),
+            ('gainCu','%.4e'), 
+            ('resCu','%.4e'), 
+            ('xMin','%d'),
+            ('xMax','%d'),
+            ('yMin','%d'),
+            ('yMax','%d'),
+            ('selFlag','%d'),
+            ]
             #fmt = ' '.join( ['%d','%d','%d','%.4e'] )
             if os.path.splitext( catalogs[0] )[1] == ".root":
                 for key in ['Juan45', 'Philipe45']:
                     applySelection( catalogs, selection=selections[key], branches_fmt=branches_fmt, output='muon.%s'%key )
             exit(0)
-        if sys.argv[1] == "--muon3":
+        elif sys.argv[1] == "--muon3":
             print "Processes the muon3 count"
             #catalogs = sys.argv[-1]
             #catalogs = "/share/storage2/connie/data_analysis/processed02_data/runs/*/*/ext/catalog/*.skim1.root"
             catalogs = glob.glob(catalogs)
-            catalogs = ["/share/storage2/connie/data_analysis/processed02_data/moni/moni_3165_to_3224/ext/catalog/catalog_moni_3165_to_3224.skim1.root","/share/storage2/connie/data_analysis/processed02_data/moni/moni_3225_to_3284/ext/catalog/catalog_moni_3225_to_3284.skim1.root"]
+            #catalogs = [
+                #"/share/storage2/connie/data_analysis/catalogs/catalog_data_3035_to_3094.skim1.root",
+                #"/share/storage2/connie/data_analysis/catalogs/catalog_data_3095_to_3164.skim1.root",
+                #"/share/storage2/connie/data_analysis/processed02_data/moni/moni_3165_to_3224/ext/catalog/catalog_moni_3165_to_3224.skim1.root",
+                #"/share/storage2/connie/data_analysis/processed02_data/moni/moni_3225_to_3284/ext/catalog/catalog_moni_3225_to_3284.skim1.root",
+                #"/share/storage2/connie/data_analysis/processed02_data/runs/009/data_246_to_302/ext/catalog/catalog_data_246_to_302.skim1.root" 
+                #]
             branches = ['runID','ohdu','expoStart','E1','gainCu', 'resCu', 'selFlag']
             #branches = ['runID','ohdu','expoStart','E1']
             fmt = ' '.join( ['%d','%d','%d','%.4e','%.4e', '%.4e', '%d'] )
-	    branches_fmt = [
-		('runID','%d'),
-		('ohdu','%d'),
-		('expoStart','%d'),
-		('E1','%.4e'),
-		#('gainCu','%.4e'), 
-		#('resCu','%.4e'), 
-		('xMin','%d'),
-		('xMax','%d'),
-		('yMin','%d'),
-		('yMax','%d'),
-		#('selFlag','%d'),
-		]
+            branches_fmt = [
+            ('runID','%d'),
+            ('ohdu','%d'),
+            ('expoStart','%d'),
+            ('E1','%.4e'),
+            #('gainCu','%.4e'), 
+            #('resCu','%.4e'), 
+            ('xMin','%d'),
+            ('xMax','%d'),
+            ('yMin','%d'),
+            ('yMax','%d'),
+            #('selFlag','%d'),
+            ]
             #fmt = ' '.join( ['%d','%d','%d','%.4e'] )
             if os.path.splitext( catalogs[0] )[1] == ".root":
-                for key in ['Juan45', 'Philipe45']:
+                for key in ['Juan45', 'Philipe45','JuanAll', 'PhilipeAll']:
                     applySelection( catalogs, selection=selections[key], branches_fmt=branches_fmt, output='muon.%s'%key )
             exit(0)
         if sys.argv[1] == "--muon2Plot":
@@ -1246,22 +1395,22 @@ if __name__ == "__main__":
                 print "branches", root_numpy.list_branches(catalogs[0], 'config')
                 #branches = ['E0', 'E1', 'ohdu','runID', 'selFlag', 'expoStart','xVar1','yVar1', 'gainCu', 'resCu','n0','n1', 'n2','n3']
                 #fmt = ['%.8e', '%.8e', '%d', '%d', '%d', '%d', '%.8e', '%.8e', '%.8e', '%.8e', '%d', '%d', '%d', '%d']
-		branches_fmt = [
-			('E0','%.8e'), 
-			('E1','%.8e'), 
-			('ohdu','%d'),
-			('runID','%d'),
-			('selFlag','%d'), 
-			('expoStart','%d'),
-			('xVar1','%.8e'), 
-			('yVar1','%.8e'), 
-			('gainCu','%.8e'),  
-			('resCu','%.8e'), 
-			('n0','%d'),
-			('n1','%d'),
-			('n2','%d'),
-			('n3','%d'),
-			]
+                branches_fmt = [
+                    ('E0','%.8e'), 
+                    ('E1','%.8e'), 
+                    ('ohdu','%d'),
+                    ('runID','%d'),
+                    ('selFlag','%d'), 
+                    ('expoStart','%d'),
+                    ('xVar1','%.8e'), 
+                    ('yVar1','%.8e'), 
+                    ('gainCu','%.8e'),  
+                    ('resCu','%.8e'), 
+                    ('n0','%d'),
+                    ('n1','%d'),
+                    ('n2','%d'),
+                    ('n3','%d'),
+                    ]
                 #print len(branches), len(fmt)
                 #fmt = ' '.join(fmt)
                 Emin = 1e3#adu
@@ -1302,7 +1451,10 @@ if __name__ == "__main__":
             applySelection( catalogs, selection, branches, output )
             exit(0)
         if sys.argv[1] == "--az":
-            catalogs = glob.glob(sys.argv[2])
+            catalogs = []
+            for arg in sys.argv[2:]:
+                catalogs += glob.glob(arg)
+            print catalogs
             makeAzimthalDistribution( catalogs )
             exit(0)
         print sys.argv[1]," is not a known option"

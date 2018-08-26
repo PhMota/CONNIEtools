@@ -8,14 +8,15 @@ import matplotlib.pyplot as plt
 import matplotlib.colors
 import matplotlib.patches as patches
 import numpy as np
-import scipy.weave
+from numpy.lib.recfunctions import merge_arrays, rec_append_fields
+#import scipy.weave
 #import array
 #import copy
 from scipy import stats
+import scipy.optimize as optimize
 import time, sys, os, re
 import operator
 from timer import timer
-import root2numpy
 import root_numpy
 #import rootpy
 import locker
@@ -25,7 +26,8 @@ import io
 import codecs
 import ast
 
-#plt.rc('text', usetex=True)
+
+plt.rc('text', usetex=True)
 
 #def update_mean_std( mean, sigma, N, entry ):
     #updated_mean = (mean*N + entry)/float(N+1)
@@ -35,6 +37,9 @@ import ast
 iaddattr = lambda object, name, value: setattr( object, name, getattr( object, name ) + value )
 
 def std( x, weights ):
+    """
+    calculate the wieghted standard deviation by using the numpy average function
+    """
     weights[weights!=weights] = 0
     std2 = np.average( x**2, weights = weights ) - np.average( x, weights = weights )**2
     return np.sqrt( np.abs(std2) )
@@ -43,13 +48,22 @@ def cov2(m, a):
     ddof = 0# len(a)-1
     v1 = np.sum(a) # N
     v2 = np.sum(a**2) # N
-    m -= np.sum(m * a, axis=1, keepdims=True) / v1 # m = m - (sum m)/N
-    return np.dot(m * a, m.T) * v1 / (v1**2 - ddof * v2) # m*m.T * N/(N**2 - (N-1)*N)
+    m2 = m - np.sum(m * a, axis=1, keepdims=True) / v1 # m = m - (sum m)/N
+    return np.dot(m2 * a, m2.T) * v1 / (v1**2 - ddof * v2) # m*m.T * N/(N**2 - (N-1)*N)
 
 def cov(m, a):
     v1 = np.sum(a) # N
     m -= np.sum(m * a, axis=1, keepdims=True) / v1 # m = m - (sum m)/N
     return np.dot(m * a, m.T) / v1 # m*m.T * N/(N**2 - (N-1)*N)
+
+
+def pca(M, w):
+    '''
+    compute the principal component analysis of a 2D matrix with w weights
+    '''
+    #C = np.dot(w,M)
+    return
+    
 
 def gaussian( point, center, sigmas, directions = None, integral = None, amplitude = None ):
     if directions != None:
@@ -137,6 +151,9 @@ def string_into_test2( obj, s, list_of_vars ):
 varsCor = ['logEloss', 'logRedRmseT', 'redn0', 'relLen', 'redVarT', 'logRedVarE' ]
 
 def updateTrainFile( username, base_catalog, train_catalog, track_id, category, guess = None ):
+    """
+    updates the json file with the trained information realted to a specific catalog
+    """
     t = timer('updateTrainingFile')
     train_file = base_catalog.split('.root')[0] + '.learn.' + username + '.dict'
     if not os.path.exists( train_file ):
@@ -470,14 +487,6 @@ class Catalog:
         print fname
         if not os.path.exists( fname ):
             print "catalog not found", fname
-        #f = ROOT.TFile( fname )
-        #self.tree = f.Get("hitSumm")
-        #if not complete:
-            #self.parseTree( self.tree )
-        #else:
-            #print self.tree
-            #self.parseTreeComplete( self.tree, outname = outname )
-        #f.Close()
 ####################################################################################################################
     def setROOTFile( self, fname ):
         self.name = None
@@ -511,7 +520,10 @@ class Catalog:
         if not self.fname:
             print "file was not set"
             return None
-        print root_numpy.list_trees( self.fname )
+        trees = root_numpy.list_trees( self.fname )
+        for tree in trees:
+            print tree
+            print root_numpy.list_branches( self.fname, treename = tree)
         return
 ####################################################################################################################
     def print_branches( self, branches = [] ):
@@ -543,24 +555,18 @@ class Catalog:
         if not branch_name in root_numpy.list_branches( self.fname, treename = self.DATATREE ):
             print 'no branch', branch_name, 'in', self.fname
             return
-        #return
-        #if branch_name == 'ID':
         print 'removing branch', branch_name, 'from file', self.fname
-        #f = ROOT.TFile(self.fname, 'update')
-        #tree = f.Get( self.DATATREE )
-        #tree.Print()
         
         infile = ROOT.TFile( self.fname )
-        #config = infile.Get('config')
+        config = infile.Get('config')
         hitSumm = infile.Get('hitSumm')
         
-        hitSumm.SetBranchStatus( '*', 1 )
         hitSumm.SetBranchStatus( branch_name, 0 )
         
         if outname is None: outname = self.fname + '.tmp'
         
         outfile = ROOT.TFile( outname, 'recreate' )
-        #config.CopyTree('')
+        config.CopyTree('')
         hitSumm.CopyTree('')
         outfile.Write( '', hitSumm.kOverwrite )
         outfile.Close()
@@ -571,13 +577,17 @@ class Catalog:
         print root_numpy.list_branches( outname, treename = 'hitSumm' )
         os.remove( self.fname )
         os.rename( outname, self.fname )
+        
+        for tree in root_numpy.list_trees( self.fname ):
+            print 'tree:', tree
+            print root_numpy.list_branches( self.fname, treename = tree )
+            print
+        
         return
-        #else:
-            #print 'only removes ID'
-            #return
 ####################################################################################################################
     def compute_branch( self, branch = '', outname = None ):
         arr = None
+        data = None
         print 'computing branch', branch, 'on file', self.fname
         print root_numpy.list_branches( self.fname, treename = self.DATATREE )
         self.print_tree()
@@ -641,7 +651,8 @@ class Catalog:
         elif branch == 'T':
             print 'computing branch', branch, 'on file', self.fname
             t = timer('compute branch ' + branch )
-            data = root_numpy.root2array(self.fname, treename = self.DATATREE, branches = ['xPix','yPix','ePix','nSavedPix']).view(np.recarray)
+            #data = root_numpy.root2array(self.fname, treename = self.DATATREE, branches = ['xPix','yPix','ePix','nSavedPix']).view(np.recarray)
+            data = root_numpy.root2array(self.fname, treename = self.DATATREE, stop=int(10**5) ).view(np.recarray)
             
             T = np.zeros_like( data['nSavedPix'], dtype = np.float )
             L = np.zeros_like( data['nSavedPix'], dtype = np.float )
@@ -649,19 +660,88 @@ class Catalog:
             stdL = np.zeros_like( data['nSavedPix'], dtype = np.float )
             rmseT = np.zeros_like( data['nSavedPix'], dtype = np.float )
             rmseL = np.zeros_like( data['nSavedPix'], dtype = np.float )
-            xyBar = np.zeros_like( data['nSavedPix'], dtype = np.float )
-            xBar = np.zeros_like( data['nSavedPix'], dtype = np.float )
-            yBar = np.zeros_like( data['nSavedPix'], dtype = np.float )
-            x2Bar = np.zeros_like( data['nSavedPix'], dtype = np.float )
-            y2Bar = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            rmseLT = np.zeros_like( data['nSavedPix'], dtype = np.float )
             
+            nSlices = np.zeros_like( data['nSavedPix'], dtype = np.int )
+            
+            meanTSlices = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            stdTSlices = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            meanESlices = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            stdESlices = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            
+            eSlope = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            eStdErr = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            
+            meanTMeanSlices = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            stdTMeanSlices = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            
+            tStdSlope = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            tStdStdErr = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            
+            rmseTSlope = np.zeros_like( data['nSavedPix'], dtype = np.float )
+            
+            #data['ePix'] -= np.min(data['ePix'], axis=1)
+            #data['xPix'] = data['xPix'].astype(np.float)
+            #data['yPix'] = data['yPix'].astype(np.float)
+            #print data['ePix']
+            #print data['ePix'].ndim
+            #minEPix = np.apply_along_axis( np.min, 0, data['ePix'] )
+            t2 = timer('compute branch2 ' + branch )
+            
+            data['ePix'] -= np.array( map(np.min, data['ePix'] ) )
+            data['xPix'] = np.array( map( lambda x: x.astype(np.float), data['xPix']) )
+            data['yPix'] = np.array( map( lambda x: x.astype(np.float), data['yPix']) )
+            
+            _xyPix = map( lambda x,y: np.stack((x,y)), data['xPix'], data['yPix'])
+            
+            #print data['xPix'][0][0:5]
+            #print data['yPix'][0][0:5]
+            #print 'xy', _xyPix[0][:,:5]
+            
+            eigen = map( lambda xy, e: np.linalg.eigh( cov2( xy, e ) ), _xyPix, data['ePix'] )
+            #print 'xy', _xyPix[0][:,:5]
+            #print len(eigen)
+            #print eigen[0][1][:,1]
+            
+            _tPix = map( lambda v, xy: np.dot(v[1][:,0], xy), eigen, _xyPix )
+            _lPix = map( lambda v, xy: np.dot(v[1][:,1], xy), eigen, _xyPix )
+            _T = map( lambda x: np.max(x)-np.min(x), _tPix )
+            _L = map( lambda x: np.max(x)-np.min(x), _lPix )
+            _stdT = map( lambda x,e: std(x,weights=e), _tPix, data['ePix'] )
+            _meanT = map( lambda x,e: np.average(x,weights=e), _tPix, data['ePix'] )
+            _stdL = map( lambda x,e: std(x,weights=e), _lPix, data['ePix'] )
+            _meanL = map( lambda x,e: np.average(x,weights=e), _lPix, data['ePix'] )
+            
+            _normT = map( lambda x,m,s: np.sum( np.exp( -.5* (x - m)**2/s**2)), _tPix, _meanT, _stdT )
+            _rmseT = map( lambda n,x,m,s,e: np.sqrt( np.mean( (1./n * np.exp( -.5* (x - m)**2/s**2) - e/np.sum(e) )**2 ) ), _normT, _tPix, _meanT, _stdT, data['ePix'] )
+            
+            _normL = map( lambda x,m,s: np.sum( np.exp( -.5* (x - m)**2/s**2)), _lPix, _meanL, _stdL )
+            _rmseL = map( lambda n,x,m,s,e: np.sqrt( np.mean( ( 1./n * np.exp( -.5* (x - m)**2/s**2) - e/np.sum(e) )**2 ) ), _normT, _lPix, _meanL, _stdL, data['ePix'] )
+            
+            _normLT = map( lambda x,y,mx,my,sx,sy: np.sum( np.exp( -.5* (x - mx)**2/sx**2 -.5* (y - my)**2/sy**2) ), _tPix, _meanT, _stdT, _lPix, _meanL, _stdL  )
+            
+            _nSlices = np.array(map(int, _L/np.sqrt(2) )) + 1
+            
+            _effectiveL = np.sqrt(2)*_nSlices
+            _offsetL = .5*( _effectiveL - _L )
+            _ilPix = np.array( map( lambda x,o: np.array(map(int, ( x - np.min(x) + o)/np.sqrt(2) )), _lPix, _offsetL ) )
+
+            _tSlices = map( lambda n,x,y: np.array( map( lambda _i: np.max(x[y==_i]) - np.min(x[y==_i]), range(n) ) ), _nSlices, _tPix, _ilPix )
+            del(t2)
+            
+            tfor = timer('compute branch for ' + branch )
             for i in range(len(data['nSavedPix'])):
-                eePix = data['ePix'][i]
-                mask = eePix > 0
-                
-                ePix = data['ePix'][i][mask]
-                xPix = data['xPix'][i][mask].astype(np.float)
-                yPix = data['yPix'][i][mask].astype(np.float)
+
+                #ePix = data['ePix'][i] - np.min(data['ePix'][i])
+                #xPix = data['xPix'][i].astype(np.float)
+                #yPix = data['yPix'][i].astype(np.float)
+                ePix = data['ePix'][i]
+                xPix = data['xPix'][i]
+                yPix = data['yPix'][i]
+                gainCu = data['gainCu'][i]
+                                
+                xyPix = np.vstack((xPix, yPix))
+                #print 'ave(x,e), xbary0:', np.average( xPix, weights=ePix ), data['xBary0'][i]
                 
                 #print 'xPix', xPix, xPix.shape, np.max(xPix) - np.min(xPix)
                 #print 'yPix', yPix, yPix.shape, np.max(yPix) - np.min(yPix)
@@ -671,49 +751,128 @@ class Catalog:
                 #x2Bar[i] = np.average( xPix**2, weights = ePix )
                 #y2Bar[i] = np.average( yPix**2, weights = ePix )
                 
-                #vPix = np.array( zip(xPix, yPix) )
-                
-                if not len(ePix) > 0: continue
-                C = cov( np.vstack((xPix, yPix)), ePix )
-                w, v = np.linalg.eig( C )
-                if w[0] < 0: 
-                    w[0] *= -1
-                    v[:,0] *= -1
-                if w[1] < 0: 
-                    w[1] *= -1
-                    v[:,1] *= -1
-                if w[0] > w[1]: wLong, wTrans, vLong, vTrans = w[0], w[1], v[:,0], v[:,1]
-                else: wLong, wTrans, vLong, vTrans = w[1], w[0], v[:,1], v[:,0]
+                eigenvalues, eigenvectors = np.linalg.eigh( cov2( xyPix, ePix ) )
+                                
+                if eigenvalues[0] < 0: 
+                    eigenvalues[0] *= -1
+                    eigenvectors[:,0] *= -1
+                if eigenvalues[1] < 0: 
+                    eigenvalues[1] *= -1
+                    eigenvectors[:,1] *= -1
+                if eigenvalues[0] > eigenvalues[1]: 
+                    wLong, wTrans, vLong, vTrans = eigenvalues[0], eigenvalues[1], eigenvectors[:,0], eigenvectors[:,1]
+                else: 
+                    wLong, wTrans, vLong, vTrans = eigenvalues[1], eigenvalues[0], eigenvectors[:,1], eigenvectors[:,0]
 
-                lPix = np.inner( vLong, zip( xPix, yPix ) )
-                #print 'lPix', lPix, lPix.shape, np.max(lPix) - np.min(lPix)
+                xyPix = zip(xPix, yPix)
+                lPix = np.inner( vLong, xyPix )
+                #lPix = np.dot( xyPix, vLong )
+                #print 'l', lPix[:10]
+                #print 'l', _lPix[i][:10]
                 L[i] = np.max(lPix) - np.min(lPix)
-                tPix = np.inner( vTrans, zip( xPix, yPix ) )
-                #print 'tPix', tPix, tPix.shape, np.max(tPix) - np.min(tPix)
+                tPix = np.inner( vTrans, xyPix )
                 T[i] = np.max(tPix) - np.min(tPix)
                 stdL[i] = std( lPix, weights = ePix )
                 stdT[i] = std( tPix, weights = ePix )
                 
-                #print std(xPix, weights = ePix), std(yPix, weights = ePix), stdL[i], stdT[i]
-                #print np.std(xPix), np.std(yPix)
-                
                 tMean = np.average( tPix, weights = ePix )
                 lMean = np.average( lPix, weights = ePix )
-                if np.max(ePix) > 0:
-                    rmseT[i] = np.sqrt( np.mean( ( np.exp( -.5* (tPix - tMean)**2/stdT[i]**2) - ePix/np.max(ePix) )**2 ) ) if stdT[i] > 0 else 0
-                    rmseL[i] = np.sqrt( np.mean( ( np.exp( -.5* (lPix - lMean)**2/stdL[i]**2 ) - ePix/np.max(ePix) )**2 ) ) if stdL[i] > 0 else 0
+                #print stdT[i] - _stdT[i]
+                #print tMean - _meanT[i]
+                #print 
+                if np.sum(ePix) > 0:
+                    normalization = np.sum( np.exp( -.5* (tPix - tMean)**2/stdT[i]**2) ) if np.abs(stdT[i]) > 0 else -1
+                    rmseT[i] = np.sqrt( np.mean( ( 1./normalization* np.exp( -.5* (tPix - tMean)**2/stdT[i]**2) - ePix/np.sum(ePix) )**2 ) ) if np.abs(stdT[i]) > 0 else -1
+                    
+                    normalization = np.sum( np.exp( -.5* (lPix - lMean)**2/stdL[i]**2) ) if np.abs(stdL[i]) > 0 else -1
+                    rmseL[i] = np.sqrt( np.mean( ( 1./normalization * np.exp( -.5* (lPix - lMean)**2/stdL[i]**2 ) - ePix/np.sum(ePix) )**2 ) ) if np.abs(stdL[i]) > 0 else -1
+                    
+                    normalization = np.sum( np.exp( -.5* (lPix - lMean)**2/stdL[i]**2 -.5* (tPix - tMean)**2/stdT[i]**2 ) ) if np.abs(stdT[i]*std[i]) > 0 else -1
+                    rmseLT[i] = np.sqrt( np.mean( ( 1./normalization * np.exp( -.5* (lPix - lMean)**2/stdL[i]**2 -.5* (tPix - tMean)**2/stdT[i]**2 ) - ePix/np.sum(ePix) )**2 ) ) if np.abs(stdL[i]*stdT[i]) > 0 else -1
                 else:
                     rmseT[i] = 0
                     rmseL[i] = 0
+                #print 'rmse', rmseT[i] - _rmseT[i]
+                
+                nSlices[i] = int( L[i]/np.sqrt(2) ) + 1
+                ##print 'nSlices', nSlices[i], L[i], T[i]
+                effectiveL = np.sqrt(2)*nSlices[i]
+                offsetL = .5*( effectiveL - L[i] )
+                ilPix = np.array(map(int, ( lPix - np.min(lPix) + offsetL)/np.sqrt(2) ))
+                
+                tSlices = np.array( [ np.max(tPix[ilPix==j]) - np.min(tPix[ilPix==j]) for j in range(nSlices[i]) ] )
+                tSlices2 = np.array( map( lambda _i: np.max(tPix[ilPix==_i]) - np.min(tPix[ilPix==_i]), range(nSlices[i]) ) )
+                eSlices = np.array( [ np.sum(ePix[ilPix==j])/gainCu for j in range(nSlices[i]) ] )
+                                
+                #print 'tSlices', tSlices
+                meanTSlices[i] = np.mean(tSlices[1:-1])
+                stdTSlices[i] = np.std(tSlices[1:-1])
+                meanESlices[i] = np.mean(eSlices[1:-1])
+                stdESlices[i] = np.std(eSlices[1:-1])
+
+                #print 't: mean', meanTSlices[i], 'std', stdTSlices[i]
+                #print 'eSlices', eSlices
+                #print 'e: mean', meanESlices[i], 'std', stdESlices[i], meanESlices[i]/stdESlices[i]
+                eSlope[i], intercept, r_value, p_value, eStdErr[i] = stats.linregress( range(nSlices[i])[1:-1], eSlices[1:-1] )
+                #print 'e', eSlope[i], eStdErr[i], np.abs(eSlope[i])/eStdErr[i]
+                
+                    
+                tMeanSlices = np.array( [ (np.average(tPix[ilPix==j], weights = ePix[ilPix==j]) - tMean) if np.sum(ePix[ilPix==j]) > 0 else 0 for j in range(nSlices[i]) ] )
+                
+                meanTMeanSlices[i] = np.mean(tMeanSlices)
+                stdTMeanSlices[i] = np.std(tMeanSlices)
+                #print 'm: mean', meanTMeanSlices[i], 'std', stdTMeanSlices[i]
+                
+                TstdSlices = np.array( [ std(tPix[ilPix==j], weights = ePix[ilPix==j]) if np.sum(ePix[ilPix==j]) > 0 else 0 for j in range(nSlices[i]) ] )
+                tStdSlope[i], intercept, r_value, p_value, tStdStdErr[i] = stats.linregress( range(nSlices[i])[1:-1], TstdSlices[1:-1] )
+                lineStd = lambda l: tStdSlope[i]*((l - np.min(lPix) + offsetL)/np.sqrt(2)) + intercept
+                
+                line = lineStd(lPix)
+                if np.all(line>0):
+                    normalization = np.sum( np.exp( -.5* (tPix - tMean)**2/line**2) )
+                    rmseTSlope[i] = np.sqrt( np.mean( (1./normalization * np.exp( -.5* (tPix - tMean)**2/line**2) - ePix/np.sum(ePix) )**2 ) )
+                else:
+                    rmseTSlope[i] = -1
+                #std_err2 = float( '%.1g'%tStdStdErr[i] )
+                #digits = np.floor(np.log10(std_err2))
+                #slope2 = float( '%.0f'%(slope*10.**(-digits)) )*10.**(digits)
+                #print 'linreq', tStdSlope[i], tStdStdErr[i], slope2, '+-', std_err2, np.abs(tStdSlope[i])/tStdStdErr[i]
+                
+                #print 
             
-            arr = np.array( zip( T, L, stdT, stdL, rmseT, rmseL ), dtype = [
+            del(tfor)
+            arr = np.array( zip( T, L, stdT, stdL, rmseT, rmseL, rmseLT, nSlices, meanTSlices, stdTSlices, meanESlices, stdESlices, eSlope, eStdErr, meanTMeanSlices, stdTMeanSlices, tStdSlope, tStdStdErr, rmseTSlope ), dtype = [
                     ('T', np.float32),
                     ('L', np.float32),
                     ('stdT', np.float32),
                     ('stdL', np.float32),
                     ('rmseT', np.float32),
                     ('rmseL', np.float32),
+                    ('rmseLT', np.float32),
+                    ('nSlices', np.int32),
+                    ('meanTSlices', np.float32),
+                    ('stdTSlices', np.float32),
+                    ('meanESlices', np.float32),
+                    ('stdESlices', np.float32),
+                    ('eSlope', np.float32),
+                    ('eStdErr', np.float32),
+                    ('meanTMeanSlices', np.float32),
+                    ('stdTMeanSlices', np.float32),
+                    ('tStdSlope', np.float32),
+                    ('tStdStdErr', np.float32),
+                    ('rmseTSlope', np.float32),
                 ] ).view(np.recarray)
+            
+            print type(data), type(arr)
+            print data.shape
+            print data.dtype.names
+            print arr.shape
+            print arr.dtype.names
+            
+            #arr2 = np.lib.recfunctions.merge_arrays([data, arr], flatten=True, asrecarray=True) 
+            #print type(arr2)
+            #print arr2.dtype.names
+            
         elif branch == 'relLen':
             self.check_branch('aveE')
             t = timer('compute branch ' + branch )
@@ -765,82 +924,31 @@ class Catalog:
         else:
             print 'declaration of', branch, 'not given'
             return False
-        
+        #arr = None
         if arr is None:
             print 'fatal error! arr not set', branch
+            return False
+        
         if outname is None or outname == self.fname:
             print 'updating file', self.fname
             root_numpy.array2root( arr, self.fname, treename = self.DATATREE, mode='update' )
         else:
-            print 'duplicating file', self.fname
-            shutil.copyfile( self.fname, outname )
-            print 'updating file', outname
+            root_numpy.array2root( data, outname, treename = self.DATATREE, mode='update' )
             root_numpy.array2root( arr, outname, treename = self.DATATREE, mode='update' )
+            #print 'duplicating file', self.fname
+            #shutil.copyfile( self.fname, outname )
+            #print 'updating file', outname
+            #root_numpy.array2root( arr, outname, treename = self.DATATREE, mode='update' )
             self.fname = outname
         
         self.print_tree()
+        for tree in root_numpy.list_trees( self.fname ):
+            print 'tree:', tree
+            print root_numpy.list_branches( self.fname, treename = tree )
+            print
+
         return True
 
-####################################################################################################################
-    def parseTree( self, tree ):
-        t1 = timer("parseTree")
-        print "parse tree"
-        ROOT.gROOT.ProcessLine("\
-            struct event_t {\
-            Int_t runID;\
-            Int_t ohdu;\
-            Float_t E0;\
-            Int_t nSat;\
-            Float_t n0;\
-            Float_t xVar0;\
-            Float_t yVar0;\
-            Float_t xBary0;\
-            Float_t yBary0;\
-            Int_t xPix[100000];\
-            Int_t yPix[100000];\
-            Float_t ePix[100000];\
-            Int_t level[100000];\
-            Int_t flag;\
-            Int_t nSavedPix;\
-            }" )
-        event = ROOT.event_t()
-
-        for var in self.vars_all: tree.SetBranchAddress( var, AddressOf( event, var ) )
-
-        self.tracks = []
-        print 'size of catalog', tree.GetEntries()
-        t1.factor(text = 'entries', f = 1./tree.GetEntries() )
-
-        #runID = []
-        #ohdu = []
-        #for i in xrange( tree.GetEntries() ):
-            #tree.GetEntry(i)
-            #runID += [event.runID]
-            #ohdu += [event.ohdu]
-
-        #print "runID", min(runID), max(runID), len(runID)
-
-        for i in xrange( tree.GetEntries() ):
-            trackID = i
-            #if i > 10000: break
-            #t = timer("for")
-            tree.GetEntry(i)
-            if event.flag == 0 and event.nSavedPix > 0:
-                track = Track()
-                track.id = trackID
-                for var in self.vars_scalar:
-                    setattr(track, var, getattr( event, var ))
-                    #self.__dict__[var] += [ track.__dict__[var] ]
-                for var in self.vars_list:
-                    #setattr(track, var, getattr( event, var )[:event.nSavedPix] )
-                    setattr(track, var, [ getattr( event, var )[pix] for pix in xrange( event.nSavedPix ) ] )
-                    #self.__dict__[var] += [ track.__dict__[var] ]
-                track.eigcov()
-                self.tracks += [ track ]
-        print 'number of tracks', len(self.tracks)
-        tree.ResetBranchAddress(0)
-	#tree.Delete()
-        return self
 ####################################################################################################################
     def parseTreeComplete( self, outname = None ):
         t = timer('parseTreeComplete')
@@ -852,15 +960,20 @@ class Catalog:
         self.check_branch('logRedVarE', outname = outname )
         self.check_branch('relLen')
         
-        #t0 = timer('root2array')
-        #a = root_numpy.root2array(self.fname, treename = 'hitSumm', selection = 'nSavedPix>20 && flag==0' ).view(np.recarray)
-        #del t0
-        #t1 = timer('set locals')
-        #localvars = self.__dict__
-        #print 'types', a.dtype.names
-        #for var in a.dtype.names:
-            #localvars[var] = a[var]
-        #del t1
+        return self
+####################################################################################################################
+    def parseTreeMin( self, outname = None ):
+        t = timer('parseTreeComplete')
+        print root_numpy.list_branches( self.fname, treename = self.DATATREE )
+        
+        #self.check_branch('eventID', outname = outname)
+        #self.check_branch('aveE')
+        self.check_branch('T', outname = outname)
+        #self.remove_branch('xPix')
+        #self.remove_branch('yPix')
+        #self.remove_branch('ePix')
+        #self.remove_branch('level')
+        
         return self
 ####################################################################################################################
     def plotCorrelations(self):
@@ -1069,14 +1182,14 @@ class Catalog:
         feff.subplots_adjust(hspace = 0)
         
         
-        data = root_numpy.root2array( self.fname, treename = self.DATATREE, branches = varsCor, selection = 'n0>20&&flag==0' )
+        data = root_numpy.root2array( self.fname, treename = self.DATATREE, branches = varsCor+['L'], selection = 'n0>20&&flag==0' )
         dataCat = {}
         dataAll = {}
         for key, values in categories.iteritems():
             dataCat[key] = {}
             for trackID in values:
-                track = root_numpy.root2array( self.fname, treename = self.DATATREE, branches = varsCor, start = trackID-1, stop = trackID )
-                for var in varsCor:
+                track = root_numpy.root2array( self.fname, treename = self.DATATREE, branches = varsCor+['L'], start = trackID-1, stop = trackID )
+                for var in varsCor+['L']:
                     try: dataCat[key][var] += [track[var][0]]
                     except: dataCat[key][var] = [track[var][0]]
                     try: dataAll[var] += [ track[var][0] ]
@@ -1204,7 +1317,114 @@ class Catalog:
 
         del t_plots
 
-                
+        fangle = plt.figure()
+        ax = fangle.add_subplot(111)
+        x = np.degrees(np.arctan2( 15.*data['L'], 675. ))
+        n, bins, tmp = ax.hist( x[x==x], bins = int(np.sqrt(len(x))*.5), histtype = 'step', color='black', label='all' )
+        ax.cla()
+        ax.set_xlabel(r'$\theta$')
+        ax.set_ylabel('count')
+        #ax.set_yscale('log')
+        
+        #for key, values in categories.iteritems():
+            #if len(values) > 1:
+                #print key, len(dataCat[key]['L'])
+                #xkey_ = np.degrees(np.array(np.arctan2( 15.*np.array(dataCat[key]['L']), 675. )))
+                #n, bins, tmp = ax.hist( xkey_[xkey_==xkey_], bins = bins, histtype = 'step', color = colormapping[key] if key in colormapping else 'red', label = key )
+                ##print n, bins
+        
+        
+        #guess_file = self.fname + '.guess.dict'
+        #lock = locker.Locker( '', guess_file )
+
+        #if not os.path.exists(guess_file):
+            #open( guess_file, 'w' )
+        
+        #with codecs.open(guess_file, 'rU', 'utf-8') as data_file:
+            #try:
+                #data2 = json.load( data_file, encoding = 'utf-8' )
+            #except:
+                #data2 = {'trackID':{}, 'category':{}}
+        #lock.free()
+        
+        #values_all = []
+        #for cat in ['m', 'n', 'p', 't']:
+            #ids = data2['category'][cat]
+            #values = []
+            ##t = timer('selection')
+            ##for n in range( len(ids)/100 ):
+                ##selection = ' && '.join( [ 'trackID==%s'%i for i in ids[n:min(n+100, len(ids))] ] )
+                ##tracks_ = root_numpy.root2array(self.fname, treename = 'hitSumm', branches = ['trackID', 'L'], selection = selection ).view(np.recarray)
+            ##del t
+            #t = timer('each one')
+            ##print ids
+            #for id_ in ids:
+                #tracks = root_numpy.root2array(self.fname, treename = 'hitSumm', branches = ['trackID', 'L'], start = id_-1, stop = id_ ).view(np.recarray)
+                #values += list(tracks['L'])
+                ##print id_, tracks['trackID'], tracks['L']
+            #values_all += values
+            ##print 'values', values
+            #del t
+            #xkey_ = np.degrees(np.array(np.arctan2( 15.*np.array(values), 675. )))
+            ##print 'xkey', xkey_
+            ##print xkey_
+            #key = cat
+            #n, bins, tmp = ax.hist( xkey_[xkey_==xkey_], bins = bins, histtype = 'step', color = colormapping[key] if key in colormapping else 'red', lw = 3, label = key )
+            
+        #xkey_ = np.degrees(np.array(np.arctan2( 15.*np.array(values_all), 675. )))
+        ##print xkey_
+        
+        #n, bins, tmp = ax.hist( xkey_[xkey_==xkey_], bins = bins, histtype = 'step', color = 'k', lw = 2, label = 'm+n+p+t' )
+        #func = lambda x, a, b: a*np.cos(np.radians(x))**b
+        #x = 0.5*(bins[1:]+bins[:-1])
+        #params = optimize.curve_fit( func, x[x>45], n[x>45] )
+        #print params
+        #ax.plot( x, func(x, params[0][0], params[0][1]), 'r--', lw = 3, label = r'$cos^{%.1f}(\theta)$'%( params[0][1]) )
+
+        juan = r'E1>0 && flag==0 && sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2))>20 && abs(n0/sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2))-4.4)<1'
+        
+        jorge = r'sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2))>30 && n0/sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2))<3 && (abs(xBary0*yMax - xBary0*yMin - yBary0*xMax + yBary0*xMin - xMin*yMax + yMin*xMax) / sqrt(pow(yMax-yMin,2) +pow(xMax-xMin,2)))<3 && (((yMax-yBary0)/(xMax-xBary0))/((yBary0-yMin)/(xBary0-xMin)))>0.9 && (((yMax-yBary0)/(xMax-xBary0))/((yBary0-yMin)/(xBary0-xMin)))<1.1 && (((yMax-yBary0)/(xMin-xBary0))/((yBary0-yMin)/(xBary0-xMax)))>0.9 &&  (((yMax-yBary0)/(xMin-xBary0))/((yBary0-yMin)/(xBary0-xMax)))<1.1'
+
+        jorge2 = r'sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2))>30 && n0/sqrt(pow(xMax-xMin,2)+pow(yMax-yMin,2))<3 && (abs(xBary0*yMax - xBary0*yMin - yBary0*xMax + yBary0*xMin - xMin*yMax + yMin*xMax) / sqrt(pow(yMax-yMin,2) +pow(xMax-xMin,2)))<3'
+        
+        philipe = r'(flag==0 && abs(logRedRmseT+2.2935653952468162)<3*0.10873572170298408 && abs(logEloss-2.7076675087266446)<3*0.07432400521478119 && abs(relLen-0.22250561102510136)<3*0.054437356) || (flag==0 && abs(logRedRmseT+2.0554470037961052)<1.5*sqrt(4.231586408168848- 2.0554470037961052**2) && abs(logEloss-2.7055039797010396)<1.5*sqrt(7.326161363760477-2.7055039797010396**2) && abs(relLen- 0.39153199029092356)<1.5*sqrt(0.15878946322356205- 0.39153199029092356**2)) || (flag==0 && abs(logRedRmseT+1.8305816384879028)<1.5*sqrt(3.3572560275800396- 1.8305816384879028**2) && abs(logEloss-2.713225505026904)<1.5*sqrt(7.368244770370746-2.713225505026904**2) && abs(relLen- 0.657185697691007)<1.5*sqrt(0.44258787702201363- 0.657185697691007**2))'
+        
+        philipe2 = r'flag==0 && abs(logEloss-2.7055039797010396)<2*sqrt(7.326161363760477-2.7055039797010396**2)'
+
+        #gustavo = r'flag==0 && E0>500 && L>100 && nSavedPix/L<10'
+        colors = ['r', 'g', 'b', 'm', 'c']
+        #for ic, selection in enumerate([juan, jorge, jorge2, philipe, philipe2]):
+        for ic, selection in enumerate([juan, philipe, philipe2]):
+            t = timer('gustavo')
+            #selection = 'E0>500 && L>100 && nSavedPix/L<5'
+            tracks = root_numpy.root2array(self.fname, treename = 'hitSumm', branches = ['trackID', 'L' ], selection = selection ).view(np.recarray)
+            print 'selected tracks', tracks
+            #n, bins, tmp = ax.hist( np.degrees(np.array(np.arctan2( 15.*tracks['L'], 675. ))), bins = bins, histtype = 'step', color = colors[ic], lw = 1, label = ['Juan', 'Jorge', 'Jorge2', 'Philipe', 'Philipe2'][ic] )
+            n, bins, tmp = ax.hist( np.degrees(np.array(np.arctan2( 15.*tracks['L'], 675. ))), bins = bins, histtype = 'step', color = colors[ic], lw = 1, label = ['Juan', 'Philipe', 'Philipe2'][ic] )
+            del t
+            
+            func = lambda x, a, b, c: a*np.cos(np.radians(x))**b*np.sin(np.radians(x))**c
+            funcAmplitude = lambda x, a: a*np.cos(np.radians(x))**3*np.sin(np.radians(x))
+            
+            x = 0.5*(bins[1:]+bins[:-1])
+            #popt, pcov = optimize.curve_fit( funcAmplitude, x[x>45], n[x>45] )
+            popt, pcov = optimize.curve_fit( func, x[x>45], n[x>45] )
+            print "popt", popt, pcov
+            print "len(bins)", len(bins)
+            perr = np.sqrt( np.diag(pcov) )
+            
+            mask = np.logical_and( x>45, x<80 )
+            #chi2 = np.sum( ( n[x>45] - funcAmplitude(x[x>45], popt[0]) )**2/n[x>45] )/len(n[x>45])
+            print "len(n[mask])", len(n[mask])
+            chi2 = np.sum( ( n[mask] - func(x[mask], *popt) )**2/n[mask] )/len(n[mask])
+            #chi2a = scipy.stats.chisquare( n[x>45], funcAmplitude(x[x>45], popt[0]) )
+            
+            ax.plot( x, func(x, popt[0], popt[1], popt[2]), color = colors[ic], label = r'$cos^{%.1f}(\theta)sin^{%.1f}(\theta),\chi^2_r=%.2f$'%( popt[1],popt[2],chi2) )
+            #ax.plot( x, funcAmplitude(x, popt[0]), color = colors[ic], label = r'$cos^3(\theta)sin(\theta),\chi^2_r=%.2f$'%(chi2) )
+        ax.legend(fancybox=True, framealpha=.1)
+        
+        
+
         #distscatter = {}
         #for scatter_key, current_scatter in cat_keys.items():
             #dist = {}
@@ -1237,11 +1457,14 @@ class Catalog:
         flearned.savefig( figname + '.learned.png', bbox_inches='tight', pad_inches=0 )
         feff.savefig( figname + '.efficiency.png', bbox_inches='tight', pad_inches=0 )
         fcat.savefig( figname + '.pca.png', bbox_inches='tight', pad_inches=0 )
+        fangle.savefig( figname + '.angle.png', bbox_inches='tight', pad_inches=0 )
+        
         del t_save
 
         return { 'train_plot': os.path.basename(filename) + '.train.png',
                 'learn_plot': os.path.basename(filename) + '.learned.png',
                 'eff_plot': os.path.basename(filename) + '.efficiency.png',
+                'angle_plot': os.path.basename(filename) + '.angle.png',
                 'categories': categories,
                 #'todo': todo,
                 #'numberOfTrained': numberOfTrained,
@@ -1281,7 +1504,7 @@ class Catalog:
         return result
 ####################################################################################################################
     def compute_distance( self, track_id, categories, varsCor, properties = None ):
-        t = timer( 'compute_dist' )
+        #t = timer( 'compute_dist' )
 
         dist_ave = dict( (k,0) for k,v in categories.iteritems() )
         dist_min = dict( (k,0) for k,v in categories.iteritems() )
@@ -1408,7 +1631,7 @@ class Catalog:
                 sum_inv += 1./dist_ave[key]
         
         dists_ave = sorted( [ [ category, value, dist_min[category], dist_5[category], inv_dist[category]/sum_inv ] for category, value in dist_ave.iteritems() if value != 0 ], key = operator.itemgetter(1) )
-        del t
+        #del t
 
         return dists_ave
 ####################################################################################################################
@@ -1742,6 +1965,84 @@ class Catalog:
 
         probMatrix, actual_prob, guess = self.compute_falseMatrix( dists_ave, data2 )
         
+        return {
+            'figname': base_name,
+            'data': data,
+            'data2': data2,
+            'dists': dists_ave,
+            #'guess': dists_ave[0] if len(dists_ave) > 1 else None,
+            'guess': guess,
+            'actual_prob': actual_prob,
+            'probMatrix': probMatrix,
+            'categories': categories,
+            'track_id': track.trackID,
+            'track': track,
+            'training_category': None,
+            }
+####################################################################################################################
+    def train_all( self, user ):
+        t = timer('train_all')
+        
+        categories, done, data, data2, properties = read_categories( user, self.fname, None )
+        
+        t0 = timer('train_single:extra')
+        N = len( root_numpy.root2array(self.fname, self.DATATREE, branches = ['trackID'] ) )
+        
+        guess_file = self.fname + '.guess.dict'
+        lock = locker.Locker( '', guess_file )
+
+        if not os.path.exists(guess_file):
+            open( guess_file, 'w' )
+        
+        with codecs.open(guess_file, 'rU', 'utf-8') as data_file:
+            try:
+                data = json.load( data_file, encoding = 'utf-8' )
+                lastmax = max(map(int,data['trackID'].keys()))
+            except:
+                data = {'trackID':{}, 'category':{}}
+                lastmax = 1
+        lock.free()
+        
+        print 'last_max', lastmax
+        block = 1000
+        t = timer('guesses per track')
+        for index in range(lastmax,N):
+            if index in data['trackID'].keys(): continue
+            #print index, index%block
+            track_id = index
+            data_ = root_numpy.root2array(self.fname, self.DATATREE, branches = ['trackID', 'flag', 'n0'], start = track_id-1, stop = track_id )
+            if track_id != data_['trackID'][0]:
+                print track_id, data_['trackID'][0]
+            
+            if data_['flag'][0] != 0:
+                cat = 'flag' + str(data_['flag'][0])
+                
+            elif data_['n0'][0] <= 20:
+                cat = '<=20'
+            
+            else:
+                dists_ave = self.compute_distance( track_id, categories, varsCor, properties )
+                probMatrix, actual_prob, guess = self.compute_falseMatrix( dists_ave, data2 )
+                cat = dists_ave[0][0] if not dists_ave[0][0] == 'p' else dists_ave[1][0]
+
+            data['trackID'][ track_id ] = cat
+            try:
+                data['category'][ cat ] += [ track_id ]
+            except:
+                data['category'][cat] = [ track_id ]
+            
+            if index%block == 0:
+                del t
+                t = timer('per block')
+                #print 'lock'
+                lock = locker.Locker( '', guess_file )
+                shutil.copy( guess_file, guess_file+'~' )
+                sdata = json.dumps( data, indent = 2, sort_keys=True, ensure_ascii=False )
+                with io.open( guess_file, 'w', encoding='utf8') as json_file:
+                    json_file.write(unicode(sdata))
+                lock.free()
+
+        del t
         return {
             'figname': base_name,
             'data': data,
@@ -2703,10 +3004,37 @@ def mainUpdate( fname ):
         print 'catalog seems incorrect'
         return False
 
+
+def mainUpdate2( fname ):
+    print 'update for catalog file', fname
+    if 1: #'runID' in fname:
+        outname = fname.split('.root')[0] + '.Extra2.root'
+        outname = 'catalogs/' + os.path.basename(outname)
+        if os.path.exists( outname ):
+            print 'file', outname, 'already done; not overwriting'
+            exit(0)
+        print 'update for catalog file', fname, 'for', outname
+        catalog = Catalog( fname )
+        catalog.parseTreeMin( outname = outname )
+        return True
+    else:
+        print 'catalog seems incorrect'
+        return False
+
 if __name__ == "__main__":
     if '--update' in sys.argv:
         print "update"
         mainUpdate( sys.argv[-1] )
+        exit(0)
+    elif '--update2' in sys.argv:
+        print "update2"
+        mainUpdate2( sys.argv[-1] )
+        exit(0)
+    elif '--list' in sys.argv:
+        print "list"
+        fname = sys.argv[-1]
+        catalog = Catalog( fname )
+        catalog.print_file()
         exit(0)
     elif '--split' in sys.argv:
         print "split"
@@ -2735,3 +3063,5 @@ if __name__ == "__main__":
         mainHelp()
         exit(0)
     exit(0)
+
+#EOF1

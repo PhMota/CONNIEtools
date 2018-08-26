@@ -15,6 +15,9 @@
 ## It is recommended, but not necessary, that the job name be the same
 ## that the input file name
 #SBATCH --job-name=Test
+#
+## set maximum memory in MB
+#SBATCH --mem 60000
 
 echo -e "\n## Job started in $(date +'%d-%m-%Y as %T') #####################\n"
 ## The input and output file names are based in job name
@@ -36,7 +39,8 @@ cd $SLURM_SUBMIT_DIR
 echo -e "\n## Job submission directory: $SLURM_SUBMIT_DIR \n"
 echo -e "\n## Job scratch directory: $SCRATCH \n"
 echo -e "\n## Input file: $INP \n"
+echo -e "\n## Input file: $CONNIE_INPUT \n"
 ## Program run.
-python muonStabilityCheck.py 
+python ConnieAnalysis.py --update2 $CONNIE_INPUT
 #swarp $SLURM_JOB_NAME.fits -NTHREADS $SLURM_NTASKS
 echo -e "\n## Job finished in $(date +'%d-%m-%Y as %T') ###################"
