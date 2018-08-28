@@ -20,6 +20,26 @@ import re
 import copy
 import root_numpy
 
+class term:
+    #HEADER = '\033[95m'
+    #OKBLUE = '\033[94m'
+    #OKGREEN = '\033[92m'
+    #ARNING = '\033[93m'
+    #FAIL = '\033[91m'
+    cmd = lambda x: '\033[%dm'%x
+    Q = cmd(0)
+    B = cmd(1)
+    I = cmd(3)
+    U = cmd(4)
+    #r = '\e[31m'
+    r = cmd(91)
+    g = cmd(32)
+    b = cmd(34)
+    
+    red = staticmethod( lambda x: term.r + x + term.Q )
+    bold = staticmethod( lambda x: term.B + x + term.Q )
+    italic = staticmethod( lambda x: term.I + x + term.Q )
+    
 #folder = '/share/storage2/connie/data_analysis/processed02_data/runs/029F/data_3321_to_3380/scn/merged/*'
 folder = '/share/storage2/connie/data_analysis/processed02_data/runs/029*/data_*/scn/merged/*'
 folder2 = '/share/storage2/connie/data_analysis/processed02_data/runs/009*/data_*/scn/merged/*'
@@ -72,7 +92,7 @@ def extractFromFITS( path ):
 def getAssociatedCatalog( *paths ):
     return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/ext/catalog/catalog_data_*.root'%getrunFromPath(path)) if not 'skim' in catalog and not '-with-' in catalog ]
 
-def removeHitsFromrunID( runID, outputfolder = None ):
+def removeHitsFromrunID( runID, outputfolder = None, ohdu = None ):
     FITSfile = listFITS_runID( runID )[0]
     outputfilenohits = 'hsub_'+os.path.basename(FITSfile)
     outputfilehits = 'hits_'+os.path.basename(FITSfile)
@@ -85,50 +105,100 @@ def removeHitsFromrunID( runID, outputfolder = None ):
     
     hdulisthits = astropy.io.fits.open(FITSfile)
     hdulistnohits = astropy.io.fits.open(FITSfile)
-    print FITSfile
+    print 'input FITSfile', FITSfile
     ROOTfile = getAssociatedCatalog( FITSfile )[0]
-    print ROOTfile
+    print 'input ROOTfile', ROOTfile
     hitscatalog = root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID )
-    #print hitscatalog.shape
-    for index in range(len(hdulisthits)):
-        ohdu = hdulisthits[index].header['OHDU']
-        #print 'hdulist.data.shape', hdulisthits[index].data.shape
-        hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu ]
-        #print ohdu
-        #print 'hitsohdu.shape', hitsohdu.shape
+    #for index in range(len(hdulisthits)):
+    index = 0
+    while 1:
+        if index == len(hdulisthits): 
+            break
+        ohdu_ = hdulisthits[index].header['OHDU']
+        if not ohdu is None:
+            if ohdu_!=ohdu: 
+                hdulisthits.pop(index)
+                hdulistnohits.pop(index)
+                continue
+        hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
         hdulisthits[index].data[:,:] = -1e9
-        #print 'hits', hdulisthits[index].data[ hdulisthits[index].data != -1e9 ].shape
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
-        #print 'max_xy', np.max( hits_xy[:,0] ), np.max( hits_xy[:,1] )
-        #print 'hits_xy.shape', hits_xy.shape
         hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
-        #print 'hits_e.shape', hits_e.shape
         hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = -1e9
-        #print 'nohits', hdulistnohits[index].data[ hdulistnohits[index].data != -1e9 ].shape
         hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
-        #print 'hits', hdulisthits[index].data[ hdulisthits[index].data != -1e9 ].shape
+        index += 1
     
-    hdulisthits.writeto( outputfolder + '/' + outputfilehits )
-    hdulistnohits.writeto( outputfolder + '/' + outputfilenohits )
+    hdulisthits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits )
+    hdulistnohits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits )
+    print 'created 2 new FITS files'
+    print outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
+    print outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits
+
+def fit( x, data, func, sel = None, log=False ):
+    mask = None
+    if sel is None:
+        mask = data>0
+    else:
+        mask = np.all( sel+[ data>0 ], axis=0 )
+    pp = scipy.optimize.curve_fit( func, x[mask], data[mask] if not log else np.log(data[mask]) )[0]
+    chisq = scipy.stats.chisquare( func( x[mask], *pp ), f_exp = data[mask] if not log else np.log( data[mask] ) )[0]/len(data[mask])
+    return pp, chisq
 
 def plotrunID( ohdu, *FITSfiles ):
     FITSfiles = FITSfiles[0]
     runID = getrunIDFromPath( FITSfiles[0] )
     fig = plt.figure()
-    ax = fig.add_subplot(111)
+    fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
+    gs = GridSpec(4,1)
+    ax = fig.add_subplot(gs[:-1,0])
+    axdiff = fig.add_subplot(gs[-1,0], sharex=ax)
+    plt.setp(ax.get_xticklabels(), visible=False)
+    
+    gaussian = lambda x,b,c: c*scipy.stats.norm.pdf(x,0,b)
+    logGauss = lambda x,b,c: np.log(c/b/np.sqrt(2*np.pi)) - .5*x**2/b**2
+
+    clean = lambda x: x.flatten()[ np.all( [x.flatten()!=-1e9, x.flatten()!=1e10], axis=0) ]
 
     for FITSfile in FITSfiles:
         hdulist = astropy.io.fits.open( FITSfile )
         data = [ hdu.data for hdu in hdulist if hdu.header['OHDU'] == ohdu ][0]
-        data = data[data!=-1e9]
-        data = data[data!=1e10]
         dx = 1
-        bins = np.r_[min(data.flatten()):max(data.flatten()):dx]
+        bins = np.r_[min(clean(data)):max(clean(data)):dx]
         xbins = (bins[1:]+bins[:-1])*.5
         hist, tmp = np.histogram( data.flatten(), bins = bins )
-        ax.step( xbins, hist, where='mid' )
+        ax.step( xbins, hist, where='mid', label = 'all' )
+        
+        histOS, tmp = np.histogram( clean(data[120:4180,4112+10:-10]), bins = bins )
+        histAC, tmp = np.histogram( clean(data[120:4180,20:4100]), bins = bins )
+        ax.step( xbins, histOS, where='mid', label = 'os' )
+        ax.step( xbins, histAC, where='mid', label = 'ac' )
+        
+        eln = fit( xbins, histOS, logGauss, sel=[ xbins<0, histOS>10 ], log=True )[0]
+        elp = fit( xbins, histOS, logGauss, sel=[ xbins>0, histOS>10 ], log=True )[0]
+        el = fit( xbins, histOS, logGauss, sel=[ histOS>10 ], log=True )[0]
+        
+        countCut = 10
+        gOS = gaussian(xbins,*el)
+        axdiff.step( xbins[gOS>countCut], (histOS[gOS>countCut] - gOS[gOS>countCut])/gOS[gOS>countCut], where='mid', label = 'os(%.2f)'%(el[0]), color = 'C1' )
+        
+        el_cr = fit( xbins, histAC, logGauss, sel=[ xbins<0, histAC>10 ], log=True )[0]
+        gAC = gaussian(xbins,*el_cr)
+        axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac<(%.2f)'%(el_cr[0]), color = 'C2' )
+        
+        noise = fit( xbins, histAC, logGauss, sel=[ xbins>0, histAC>10 ], log=True )[0]
+        gAC = gaussian(xbins,*noise)
+        axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac>(%.2f)'%(noise[0]), color = 'C3' )
+        print el[0], eln[0], elp[0], el_cr[0], noise[0], np.sqrt(noise[0]**2 - el_cr[0]**2), np.sqrt(elp[0]**2 - eln[0]**2)
+    
+    axdiff.set_xlabel('pixel energy [adu]')
+    ax.set_ylabel('pixel count')
     ax.set_yscale('log')
     ax.set_xlim([-100,100])
+    ax.grid(True)
+    axdiff.grid(True)
+    ax.legend()
+    axdiff.legend()
+    plt.subplots_adjust(hspace=.1, wspace=.1)
     print 'ccd%s.png'%runID
     fig.savefig('ccd%s.png'%runID)
     
@@ -311,6 +381,13 @@ def darkcurrent( run ):
     fig.savefig('dc%s.png'%run)
     
 if __name__ == "__main__":
+    print term.bold('Dark Current Analysis Tool for the CONNIE colaboration')
+    print term.bold('by Philipe Mota (philipe.mota@gmail.com)')
+    if len(sys.argv) == 1:
+        print 'Usage:'
+        print '\t--runID <runID> --outfolder <path> --removehits \tcreate new FITS files from the corresponding runID FITS file subtracting the event in the associated ROOT catalog'
+        print '\t--ohdu <ohdu> --plot <list of paths> \t\t\tgenerate plot with FITS files from paths for the given ohdu'
+        exit(0)
     runID = None
     outfolder = None
     ohdu = None
@@ -323,9 +400,16 @@ if __name__ == "__main__":
     if '--runID' in sys.argv:
         runID = sys.argv[sys.argv.index('--runID')+1]
         print 'runID', runID
+    
     if '--removehits' in sys.argv:
         if not runID is None and not outfolder is None:
+            if not ohdu is None:
+                removeHitsFromrunID( int(runID), outputfolder=outfolder, ohdu=int(ohdu) )
+                exit(0)
             removeHitsFromrunID( int(runID), outputfolder=outfolder )
+            exit(0)
     if '--plot' in sys.argv:
         if not ohdu is None:
+            #if not runID is None:
+                #plotrunID( int(ohdu), sys.argv[sys.argv.index('--plot')+1:] )
             plotrunID( int(ohdu), sys.argv[sys.argv.index('--plot')+1:] )
