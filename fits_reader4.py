@@ -100,7 +100,7 @@ def runETA( msg, cmd, eta = None, N = None ):
         etastart = time.time()
         eta()
         et = time.time() - etastart
-        print 'estimated time', time.strftime("%H:%M:%S", time.gmtime(int(et*N))), '(finishes at', time.strftime("%H:%M:%S", time.localtime( time.time() + int(et*N))), ')' 
+        print 'estimated time', time.strftime("%H:%M:%S", time.gmtime(int(et*N))), '(finishes at %s)'% time.strftime("%H:%M:%S", time.localtime( time.time() + int(et*N)))
     start = time.time()
     res = cmd()
     #print 'elapsed time', time.strftime("%H:%M:%S", time.gmtime(datetime.datetime.time() - start))
@@ -147,6 +147,7 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         )
 
     for index in range(len(hdulisthits)):
+        ohdu_ = hdulistnohits[index].header['OHDU']
         hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
         hdulisthits[index].data[:,:] = -1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
@@ -170,14 +171,17 @@ def fit( x, data, func, sel = None, log=False ):
     chisq = scipy.stats.chisquare( func( x[mask], *pp ), f_exp = data[mask] if not log else np.log( data[mask] ) )[0]/len(data[mask])
     return pp, chisq
 
-def plotrunID( ohdu, *FITSfiles ):
+def plotrunID( ohdu, *FITSfiles, **kwargs ):
+    fft = False
+    if 'fft' in kwargs:
+        fft = kwargs['fft']
     FITSfiles = FITSfiles[0]
     runID = getrunIDFromPath( FITSfiles[0] )
     fig = plt.figure()
     fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
     gs = GridSpec(4,1)
     ax = fig.add_subplot(gs[:-1,0])
-    axfft = ax.twinx()
+    if fft: axfft = ax.twinx()
     axdiff = fig.add_subplot(gs[-1,0], sharex=ax)
     plt.setp(ax.get_xticklabels(), visible=False)
     
@@ -218,21 +222,21 @@ def plotrunID( ohdu, *FITSfiles ):
         axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac>(%.2f)'%(noise[0]), color = 'C3' )
         print el[0], eln[0], elp[0], el_cr[0], noise[0], np.sqrt(noise[0]**2 - el_cr[0]**2), np.sqrt(elp[0]**2 - eln[0]**2)
 
-        fftAC = np.fft.fftshift( np.abs( np.fft.fft( histAC ) ) )/np.sqrt( len(histAC) )
-        axfft.step( xbins, fftAC, where='mid', label = 'fftac' )
-        fftOS = np.fft.fftshift( np.abs( np.fft.fft( histOS ) ) )/np.sqrt( len(histOS) )
-        axfft.step( xbins, fftOS, where='mid', label = 'fftos' )
-        
+        if fft:
+            fftAC = np.fft.fftshift( np.abs( np.fft.fft( histAC ) ) )/np.sqrt( len(histAC) )
+            axfft.step( xbins, fftAC, where='mid', label = 'fftac' )
+            fftOS = np.fft.fftshift( np.abs( np.fft.fft( histOS ) ) )/np.sqrt( len(histOS) )
+            axfft.step( xbins, fftOS, where='mid', label = 'fftos' )
     
     axdiff.set_xlabel('pixel energy [adu]')
     ax.set_ylabel('pixel count')
     ax.set_yscale('log')
-    axfft.set_yscale('log')
+    if fft: axfft.set_yscale('log')
     ax.set_xlim([-100,100])
     ax.grid(True)
     axdiff.grid(True)
     ax.legend()
-    axfft.legend(loc=2)
+    if fft: axfft.legend(loc=2)
     axdiff.legend()
     plt.subplots_adjust(hspace=.1, wspace=.1)
     print 'ccd%s.png'%runID
@@ -427,7 +431,7 @@ if __name__ == "__main__":
         print '--runID <runID> --outfolder <path> --ROOTfile <path> --removehits'
         print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in given ROOTfile'
         print 
-        print '--ohdu <ohdu> --plot <list of paths>'
+        print '--ohdu <ohdu> --fft --plot <list of paths>'
         print '\tgenerate plot with FITS files from paths for the given ohdu'
         print
         exit(0)
@@ -435,6 +439,7 @@ if __name__ == "__main__":
     outfolder = None
     ohdu = None
     ROOTfile = None
+    fft = False
     if '--outfolder' in sys.argv:
         outfolder = sys.argv[sys.argv.index('--outfolder')+1]
         print 'setting outfolder =', outfolder
@@ -447,19 +452,19 @@ if __name__ == "__main__":
     if '--ROOTfile' in sys.argv:
         ROOTfile = sys.argv[sys.argv.index('--ROOTfile')+1]
         print 'setting ROOTfile =', ROOTfile
+    if '--fft' in sys.argv:
+        fft = True
+        print 'setting fft = True'
         
     if '--removehits' in sys.argv:
         if not runID is None and not outfolder is None:
-            if not ohdu is None:
-                removeHitsFromrunID( runID, outputfolder=outfolder, ohdu=ohdu, ROOTfile=ROOTfile )
-                exit(0)
-            removeHitsFromrunID( runID, outputfolder=outfolder, ROOTfile=ROOTfile )
+            removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile )
             exit(0)
         print term.red('error: runID or outputfolder not set')
     if '--plot' in sys.argv:
         if not ohdu is None:
             #if not runID is None:
                 #plotrunID( int(ohdu), sys.argv[sys.argv.index('--plot')+1:] )
-            plotrunID( ohdu, sys.argv[sys.argv.index('--plot')+1:] )
+            plotrunID( ohdu, sys.argv[sys.argv.index('--plot')+1:], fft=fft )
             exit(0)
         print term.red('error: ohdu not set')
