@@ -19,6 +19,8 @@ import sys
 import re
 import copy
 import root_numpy
+import datetime
+import time
 
 class term:
     #HEADER = '\033[95m'
@@ -92,7 +94,20 @@ def extractFromFITS( path ):
 def getAssociatedCatalog( *paths ):
     return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/ext/catalog/catalog_data_*.root'%getrunFromPath(path)) if not 'skim' in catalog and not '-with-' in catalog ]
 
-def removeHitsFromrunID( runID, outputfolder = None, ohdu = None ):
+def runETA( msg, cmd, eta = None, N = None ):
+    print msg, '...'
+    if not eta is None and not N is None:
+        etastart = time.time()
+        eta()
+        et = time.time() - etastart
+        print 'estimated time', time.strftime("%H:%M:%S", time.gmtime(int(et*N))), '(finishes at', time.strftime("%H:%M:%S", time.localtime( time.time() + int(et*N))), ')' 
+    start = time.time()
+    res = cmd()
+    #print 'elapsed time', time.strftime("%H:%M:%S", time.gmtime(datetime.datetime.time() - start))
+    print 'elapsed time', time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
+    return res
+
+def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = None ):
     FITSfile = listFITS_runID( runID )[0]
     outputfilenohits = 'hsub_'+os.path.basename(FITSfile)
     outputfilehits = 'hits_'+os.path.basename(FITSfile)
@@ -104,29 +119,40 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None ):
         outputfolder = os.path.dirname(FITSfile)
     
     hdulisthits = astropy.io.fits.open(FITSfile)
-    hdulistnohits = astropy.io.fits.open(FITSfile)
-    print 'input FITSfile', FITSfile
-    ROOTfile = getAssociatedCatalog( FITSfile )[0]
-    print 'input ROOTfile', ROOTfile
-    hitscatalog = root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID )
-    #for index in range(len(hdulisthits)):
-    index = 0
-    while 1:
-        if index == len(hdulisthits): 
-            break
-        ohdu_ = hdulisthits[index].header['OHDU']
-        if not ohdu is None:
-            if ohdu_!=ohdu: 
+    if not ohdu is None:
+        for index in range(len(hdulisthits))[::-1]: #this inversion is needed so the removals work
+            ohdu_ = hdulisthits[index].header['OHDU']
+            if ohdu_!=ohdu:
+                #print 'ohdu', ohdu_, 'removed'
                 hdulisthits.pop(index)
+
+    hdulistnohits = astropy.io.fits.open(FITSfile)
+    if not ohdu is None:
+        for index in range(len(hdulistnohits))[::-1]: #this inversion is needed so the removals work
+            ohdu_ = hdulistnohits[index].header['OHDU']
+            if ohdu_!=ohdu:
+                #print 'ohdu', ohdu_, 'removed'
                 hdulistnohits.pop(index)
-                continue
+                    
+    print 'input FITSfile =', FITSfile
+    if ROOTfile is None:
+        ROOTfile = getAssociatedCatalog( FITSfile )[0]
+    print 'input ROOTfile =', ROOTfile
+    readcatalog = lambda stop: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID, start=0, stop=stop )
+    hitscatalog = runETA( 
+        msg = 'reading ROOTfile',
+        cmd = lambda: readcatalog(None), #read all entries and return 
+        eta = lambda: readcatalog(10000),
+        N = len(root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'])/10000
+        )
+
+    for index in range(len(hdulisthits)):
         hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
         hdulisthits[index].data[:,:] = -1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
         hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
         hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = -1e9
         hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
-        index += 1
     
     hdulisthits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits )
     hdulistnohits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits )
@@ -395,31 +421,45 @@ if __name__ == "__main__":
     print term.bold('by Philipe Mota (philipe.mota@gmail.com)')
     if len(sys.argv) == 1:
         print 'Usage:'
-        print '\t--runID <runID> --outfolder <path> --removehits \tcreate new FITS files from the corresponding runID FITS file subtracting the event in the associated ROOT catalog'
-        print '\t--ohdu <ohdu> --plot <list of paths> \t\t\tgenerate plot with FITS files from paths for the given ohdu'
+        print '--runID <runID> --outfolder <path> --removehits'
+        print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in the associated ROOT catalog'
+        print
+        print '--runID <runID> --outfolder <path> --ROOTfile <path> --removehits'
+        print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in given ROOTfile'
+        print 
+        print '--ohdu <ohdu> --plot <list of paths>'
+        print '\tgenerate plot with FITS files from paths for the given ohdu'
+        print
         exit(0)
     runID = None
     outfolder = None
     ohdu = None
+    ROOTfile = None
     if '--outfolder' in sys.argv:
         outfolder = sys.argv[sys.argv.index('--outfolder')+1]
-        print 'outfolder', outfolder
+        print 'setting outfolder =', outfolder
     if '--ohdu' in sys.argv:
-        ohdu = sys.argv[sys.argv.index('--ohdu')+1]
-        print 'ohdu', ohdu
+        ohdu = int(sys.argv[sys.argv.index('--ohdu')+1])
+        print 'setting ohdu =', ohdu
     if '--runID' in sys.argv:
-        runID = sys.argv[sys.argv.index('--runID')+1]
-        print 'runID', runID
-    
+        runID = int(sys.argv[sys.argv.index('--runID')+1])
+        print 'setting runID =', runID
+    if '--ROOTfile' in sys.argv:
+        ROOTfile = sys.argv[sys.argv.index('--ROOTfile')+1]
+        print 'setting ROOTfile =', ROOTfile
+        
     if '--removehits' in sys.argv:
         if not runID is None and not outfolder is None:
             if not ohdu is None:
-                removeHitsFromrunID( int(runID), outputfolder=outfolder, ohdu=int(ohdu) )
+                removeHitsFromrunID( runID, outputfolder=outfolder, ohdu=ohdu, ROOTfile=ROOTfile )
                 exit(0)
-            removeHitsFromrunID( int(runID), outputfolder=outfolder )
+            removeHitsFromrunID( runID, outputfolder=outfolder, ROOTfile=ROOTfile )
             exit(0)
+        print term.red('error: runID or outputfolder not set')
     if '--plot' in sys.argv:
         if not ohdu is None:
             #if not runID is None:
                 #plotrunID( int(ohdu), sys.argv[sys.argv.index('--plot')+1:] )
-            plotrunID( int(ohdu), sys.argv[sys.argv.index('--plot')+1:] )
+            plotrunID( ohdu, sys.argv[sys.argv.index('--plot')+1:] )
+            exit(0)
+        print term.red('error: ohdu not set')
