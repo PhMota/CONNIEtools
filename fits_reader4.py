@@ -22,6 +22,9 @@ import root_numpy
 import datetime
 import time
 
+REMOVE = 0
+REMOVEOLD = -1e9
+
 class term:
     #HEADER = '\033[95m'
     #OKBLUE = '\033[94m'
@@ -149,10 +152,10 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     for index in range(len(hdulisthits)):
         ohdu_ = hdulistnohits[index].header['OHDU']
         hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
-        hdulisthits[index].data[:,:] = -1e9
+        hdulisthits[index].data[:,:] = REMOVE #-1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
         hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
-        hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = -1e9
+        hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE #-1e9
         hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
     
     hdulisthits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits )
@@ -175,73 +178,95 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     fft = False
     if 'fft' in kwargs:
         fft = kwargs['fft']
+    plot = True
+    if 'plot' in kwargs:
+        plot = kwargs['plot']
+        
     FITSfiles = FITSfiles[0]
     runID = getrunIDFromPath( FITSfiles[0] )
-    fig = plt.figure()
-    fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
-    gs = GridSpec(4,1)
-    ax = fig.add_subplot(gs[:-1,0])
-    if fft: axfft = ax.twinx()
-    axdiff = fig.add_subplot(gs[-1,0], sharex=ax)
-    plt.setp(ax.get_xticklabels(), visible=False)
+    if plot:
+        fig = plt.figure()
+        fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
+        gs = GridSpec(4,1)
+        ax = fig.add_subplot(gs[:-1,0])
+        if fft: axfft = ax.twinx()
+        axdiff = fig.add_subplot(gs[-1,0], sharex=ax)
+        plt.setp(ax.get_xticklabels(), visible=False)
     
     gaussian = lambda x,b,c: c*scipy.stats.norm.pdf(x,0,b)
     logGauss = lambda x,b,c: np.log(c/b/np.sqrt(2*np.pi)) - .5*x**2/b**2
     poisson = lambda x,b,c: c*scipy.stats.norm.pdf(x,b**2,b)
 
-    clean = lambda x: x.flatten()[ np.all( [x.flatten()!=-1e9, x.flatten()!=1e10], axis=0) ]
+    result = []
+    header = []
+    first = True
+    clean = lambda x: x.flatten()[ np.all( [x.flatten()!=REMOVEOLD, x.flatten()!=REMOVE, x.flatten()!=1e10], axis=0) ]
 
     for FITSfile in FITSfiles:
+        if first: header += ['runID']
+        line = [ int(getrunIDFromPath( FITSfile )) ]
+        
         hdulist = astropy.io.fits.open( FITSfile )
         data = [ hdu.data for hdu in hdulist if hdu.header['OHDU'] == ohdu ][0]
         dx = 1
         bins = np.r_[min(clean(data)):max(clean(data)):dx]
         xbins = (bins[1:]+bins[:-1])*.5
-        hist, tmp = np.histogram( data.flatten(), bins = bins )
-        ax.step( xbins, hist, where='mid', label = 'all' )
+        hist, tmp = np.histogram( clean(data), bins = bins )
         
         histOS, tmp = np.histogram( clean(data[120:4180,4112+10:-10]), bins = bins )
         histAC, tmp = np.histogram( clean(data[120:4180,20:4100]), bins = bins )
-        ax.step( xbins, histOS, where='mid', label = 'os' )
-        ax.step( xbins, histAC, where='mid', label = 'ac' )
         
-        eln = fit( xbins, histOS, logGauss, sel=[ xbins<0, histOS>10 ], log=True )[0]
-        elp = fit( xbins, histOS, logGauss, sel=[ xbins>0, histOS>10 ], log=True )[0]
-        el = fit( xbins, histOS, logGauss, sel=[ histOS>10 ], log=True )[0]
+        el, elchi2 = fit( xbins, histOS, logGauss, sel=[ histOS>10 ], log=True )
+        if first: header += ['os_std', 'os_chisq']
+        line += [el[0], elchi2]
         
         countCut = 10
-        gOS = gaussian(xbins,*el)
-        axdiff.step( xbins[gOS>countCut], (histOS[gOS>countCut] - gOS[gOS>countCut])/gOS[gOS>countCut], where='mid', label = 'os(%.2f)'%(el[0]), color = 'C1' )
         
-        el_cr = fit( xbins, histAC, logGauss, sel=[ xbins<0, histAC>10 ], log=True )[0]
-        gAC = gaussian(xbins,*el_cr)
-        axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac<(%.2f)'%(el_cr[0]), color = 'C2' )
+        el_cr, el_crchi2 = fit( xbins, histAC, logGauss, sel=[ xbins<0, histAC>10 ], log=True )
+        if first: header += ['acNeg_std', 'acNeg_chisq']
+        line += [el_cr[0], el_crchi2]
         
-        noise = fit( xbins, histAC, logGauss, sel=[ xbins>0, histAC>10 ], log=True )[0]
-        gAC = gaussian(xbins,*noise)
-        axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac>(%.2f)'%(noise[0]), color = 'C3' )
-        print el[0], eln[0], elp[0], el_cr[0], noise[0], np.sqrt(noise[0]**2 - el_cr[0]**2), np.sqrt(elp[0]**2 - eln[0]**2)
+        
+        noise, noisechi2 = fit( xbins, histAC, logGauss, sel=[ xbins>0, histAC>10 ], log=True )
+        if first: header += ['acPos_std', 'acPos_chisq']
+        line += [noise[0], noisechi2]
+        if plot:
+            ax.step( xbins, hist, where='mid', label = 'all' )
+            ax.step( xbins, histOS, where='mid', label = 'os' )
+            ax.step( xbins, histAC, where='mid', label = 'ac' )
+            gOS = gaussian(xbins,*el)
+            axdiff.step( xbins[gOS>countCut], (histOS[gOS>countCut] - gOS[gOS>countCut])/gOS[gOS>countCut], where='mid', label = 'os(%.2f)'%(el[0]), color = 'C1' )
+            gAC = gaussian(xbins,*el_cr)
+            axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac<(%.2f)'%(el_cr[0]), color = 'C2' )
+            gAC = gaussian(xbins,*noise)
+            axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac>(%.2f)'%(noise[0]), color = 'C3' )
+        #print el[0], el_cr[0], noise[0], np.sqrt(noise[0]**2 - el_cr[0]**2)
+
+        result += [ line ]
 
         if fft:
             fftAC = np.fft.fftshift( np.abs( np.fft.fft( histAC ) ) )/np.sqrt( len(histAC) )
             axfft.step( xbins, fftAC, where='mid', label = 'fftac' )
             fftOS = np.fft.fftshift( np.abs( np.fft.fft( histOS ) ) )/np.sqrt( len(histOS) )
             axfft.step( xbins, fftOS, where='mid', label = 'fftos' )
+        first = False
+    if plot:
+        axdiff.set_xlabel('pixel energy [adu]')
+        ax.set_ylabel('pixel count')
+        ax.set_yscale('log')
+        if fft: axfft.set_yscale('log')
+        ax.set_xlim([-100,100])
+        ax.grid(True)
+        axdiff.grid(True)
+        ax.legend()
+        if fft: axfft.legend(loc=2)
+        axdiff.legend()
+        plt.subplots_adjust(hspace=.1, wspace=.1)
+        print 'plot generated in PNG file', 'ccd%s.png'%runID
+        fig.savefig('ccd%s.png'%runID)
     
-    axdiff.set_xlabel('pixel energy [adu]')
-    ax.set_ylabel('pixel count')
-    ax.set_yscale('log')
-    if fft: axfft.set_yscale('log')
-    ax.set_xlim([-100,100])
-    ax.grid(True)
-    axdiff.grid(True)
-    ax.legend()
-    if fft: axfft.legend(loc=2)
-    axdiff.legend()
-    plt.subplots_adjust(hspace=.1, wspace=.1)
-    print 'ccd%s.png'%runID
-    fig.savefig('ccd%s.png'%runID)
-    
+    print 'table generated in CSV file', 'ccd%s.csv'%runID
+    np.savetxt('ccd%s.csv'%runID, result, header=', '.join(header), fmt='%s',delimiter=', ')
 
 def analysis( run, cflag=True ):
     plot=True
@@ -463,8 +488,17 @@ if __name__ == "__main__":
         print term.red('error: runID or outputfolder not set')
     if '--plot' in sys.argv:
         if not ohdu is None:
-            #if not runID is None:
-                #plotrunID( int(ohdu), sys.argv[sys.argv.index('--plot')+1:] )
-            plotrunID( ohdu, sys.argv[sys.argv.index('--plot')+1:], fft=fft )
+            FITSfiles = sys.argv[sys.argv.index('--plot')+1:]
+            print 'input FITSfiles:'
+            print '\n'.join(FITSfiles)
+            plotrunID( ohdu, FITSfiles, fft=fft )
+            exit(0)
+        print term.red('error: ohdu not set')
+    if '--table' in sys.argv:
+        if not ohdu is None:
+            FITSfiles = sys.argv[sys.argv.index('--table')+1:]
+            print 'input FITSfiles:'
+            print '\n'.join(FITSfiles)
+            plotrunID( ohdu, FITSfiles, fft=fft, plot=False )
             exit(0)
         print term.red('error: ohdu not set')
