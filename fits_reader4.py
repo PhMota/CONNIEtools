@@ -141,14 +141,16 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     if ROOTfile is None:
         ROOTfile = getAssociatedCatalog( FITSfile )[0]
     print 'input ROOTfile =', ROOTfile
-    #runIDs = root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID']
+    min_max = lambda x: (np.min(x), np.max(x))
+    start, stop = min_max( np.argwhere( root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'] == runID ) )
+    print 'read from', start, 'to', stop
     
-    readcatalog = lambda stop: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID, start=0, stop=stop )
+    readcatalog = lambda start_, stop_: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID, start=start_, stop=stop_+1 )
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
-        cmd = lambda: readcatalog(None), #read all entries and return 
-        eta = lambda: readcatalog(10000),
-        N = len(root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'])/10000
+        cmd = lambda: readcatalog(start, stop), #read all entries and return 
+        eta = lambda: readcatalog(start, start+1000),
+        N = (stop-start)/1000
         )
 
     for index in range(len(hdulisthits)):
