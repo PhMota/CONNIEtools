@@ -211,12 +211,19 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
 
     result = []
     header = []
+    fmt = []
     first = True
     clean = lambda x: x.flatten()[ np.all( [x.flatten()!=REMOVEOLD, x.flatten()!=REMOVE, x.flatten()!=1e10], axis=0) ]
 
     for FITSfile in FITSfiles:
-        if first: header += ['runID']
+        if first: 
+            header += ['runID']
+            fmt += ['%d']
         line = [ int(getrunIDFromPath( FITSfile )) ]
+        if first: 
+            header += ['ohdu']
+            fmt += ['%d']
+        line += [ ohdu ]
         
         hdulist = astropy.io.fits.open( FITSfile )
         data = [ hdu.data for hdu in hdulist if hdu.header['OHDU'] == ohdu ][0]
@@ -229,18 +236,24 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         histAC, tmp = np.histogram( clean(data[120:4180,20:4100]), bins = bins )
         
         el, elchi2 = fit( xbins, histOS, logGauss, sel=[ histOS>10 ], log=True )
-        if first: header += ['os_std', 'os_chisq']
+        if first: 
+            header += ['os_std', 'os_chisq']
+            fmt += ['%.6g','%.6g']
         line += [el[0], elchi2]
         
         countCut = 10
         
         el_cr, el_crchi2 = fit( xbins, histAC, logGauss, sel=[ xbins<0, histAC>10 ], log=True )
-        if first: header += ['acNeg_std', 'acNeg_chisq']
+        if first: 
+            header += ['acNeg_std', 'acNeg_chisq']
+            fmt += ['%.6g','%.6g']
         line += [el_cr[0], el_crchi2]
         
         
         noise, noisechi2 = fit( xbins, histAC, logGauss, sel=[ xbins>0, histAC>10 ], log=True )
-        if first: header += ['acPos_std', 'acPos_chisq']
+        if first: 
+            header += ['acPos_std', 'acPos_chisq']
+            fmt += ['%.6g','%.6g']
         line += [noise[0], noisechi2]
         if plot:
             ax.step( xbins, hist, where='mid', label = 'all' )
@@ -278,7 +291,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         fig.savefig('ccd%s.png'%runID)
     
     print 'table generated in CSV file', 'ccd%s.csv'%runID
-    np.savetxt('ccd%s.csv'%runID, result, header=', '.join(header), fmt='%s',delimiter=', ')
+    np.savetxt('ccd%s.csv'%runID, result, header=', '.join(header), fmt=' '.join(fmt), delimiter=', ')
 
 def analysis( run, cflag=True ):
     plot=True
