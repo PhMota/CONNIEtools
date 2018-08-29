@@ -226,11 +226,26 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         line += [ ohdu ]
         
         hdulist = astropy.io.fits.open( FITSfile )
+        if first: 
+            header += ['tempmin']
+            fmt += ['%.2f']
+        line += [ hdulist[0].header['TEMPMIN' ] ]
+        if first: 
+            header += ['tempmax']
+            fmt += ['%.2f']
+        line += [ hdulist[0].header['TEMPMAX' ] ]
+        
         data = [ hdu.data for hdu in hdulist if hdu.header['OHDU'] == ohdu ][0]
         dx = 1
         bins = np.r_[min(clean(data)):max(clean(data)):dx]
         xbins = (bins[1:]+bins[:-1])*.5
         hist, tmp = np.histogram( clean(data), bins = bins )
+
+        if first: 
+            header += ['pixelcount']
+            fmt += ['%d']
+        line += [ len(clean(data)) ]
+
         
         histOS, tmp = np.histogram( clean(data[120:4180,4112+10:-10]), bins = bins )
         histAC, tmp = np.histogram( clean(data[120:4180,20:4100]), bins = bins )
@@ -287,11 +302,11 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         if fft: axfft.legend(loc=2)
         axdiff.legend()
         plt.subplots_adjust(hspace=.1, wspace=.1)
-        print 'plot generated in PNG file', 'ccd%s.png'%runID
-        fig.savefig('ccd%s.png'%runID)
+        print 'plot generated in PNG file', 'ccd%s_%s.png'%(runID,ohdu)
+        fig.savefig('ccd%s_%s.png'%(runID,ohdu))
     
-    print 'table generated in CSV file', 'ccd%s.csv'%runID
-    np.savetxt('ccd%s.csv'%runID, result, header=', '.join(header), fmt=' '.join(fmt), delimiter=', ')
+    print 'table generated in CSV file', 'ccd%s_%s.csv'%(runID,ohdu)
+    np.savetxt('ccd%s_%s.csv'%(runID,ohdu), result, header=', '.join(header), fmt=' '.join(fmt), delimiter=', ')
 
 def analysis( run, cflag=True ):
     plot=True
