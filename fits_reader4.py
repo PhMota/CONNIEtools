@@ -151,11 +151,13 @@ def plotrunID( ohdu, *FITSfiles ):
     fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
     gs = GridSpec(4,1)
     ax = fig.add_subplot(gs[:-1,0])
+    axfft = ax.twinx()
     axdiff = fig.add_subplot(gs[-1,0], sharex=ax)
     plt.setp(ax.get_xticklabels(), visible=False)
     
     gaussian = lambda x,b,c: c*scipy.stats.norm.pdf(x,0,b)
     logGauss = lambda x,b,c: np.log(c/b/np.sqrt(2*np.pi)) - .5*x**2/b**2
+    poisson = lambda x,b,c: c*scipy.stats.norm.pdf(x,b**2,b)
 
     clean = lambda x: x.flatten()[ np.all( [x.flatten()!=-1e9, x.flatten()!=1e10], axis=0) ]
 
@@ -189,14 +191,22 @@ def plotrunID( ohdu, *FITSfiles ):
         gAC = gaussian(xbins,*noise)
         axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac>(%.2f)'%(noise[0]), color = 'C3' )
         print el[0], eln[0], elp[0], el_cr[0], noise[0], np.sqrt(noise[0]**2 - el_cr[0]**2), np.sqrt(elp[0]**2 - eln[0]**2)
+
+        fftAC = np.fft.fftshift( np.abs( np.fft.fft( histAC ) ) )/np.sqrt( len(histAC) )
+        axfft.step( xbins, fftAC, where='mid', label = 'fftac' )
+        fftOS = np.fft.fftshift( np.abs( np.fft.fft( histOS ) ) )/np.sqrt( len(histOS) )
+        axfft.step( xbins, fftOS, where='mid', label = 'fftos' )
+        
     
     axdiff.set_xlabel('pixel energy [adu]')
     ax.set_ylabel('pixel count')
     ax.set_yscale('log')
+    axfft.set_yscale('log')
     ax.set_xlim([-100,100])
     ax.grid(True)
     axdiff.grid(True)
     ax.legend()
+    axfft.legend(loc=2)
     axdiff.legend()
     plt.subplots_adjust(hspace=.1, wspace=.1)
     print 'ccd%s.png'%runID
