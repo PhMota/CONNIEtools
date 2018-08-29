@@ -141,6 +141,8 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     if ROOTfile is None:
         ROOTfile = getAssociatedCatalog( FITSfile )[0]
     print 'input ROOTfile =', ROOTfile
+    #runIDs = root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID']
+    
     readcatalog = lambda stop: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID, start=0, stop=stop )
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
@@ -158,8 +160,16 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE #-1e9
         hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
     
-    hdulisthits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits )
-    hdulistnohits.writeto( outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits )
+    hdulisthitsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
+    if os.path.exists(hdulisthitsfile):
+        os.remove(hdulisthitsfile)
+    hdulisthits.writeto( hdulisthitsfile )
+    
+    hdulistnohitsfile =  outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits 
+    if os.path.exists(hdulistnohitsfile):
+        os.remove(hdulistnohitsfile)
+    
+    hdulistnohits.writeto( hdulistnohitsfile )
     print 'created 2 new FITS files'
     print outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
     print outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits
