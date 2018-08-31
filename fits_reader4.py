@@ -159,8 +159,9 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         hdulisthits[index].data[:,:] = REMOVE #-1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
         hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
-        hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE #-1e9
-        hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
+        if len(hits_e) > 0:
+            hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE #-1e9
+            hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
     
     hdulisthitsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
     if os.path.exists(hdulisthitsfile):
