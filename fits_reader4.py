@@ -97,6 +97,9 @@ def extractFromFITS( path ):
 def getAssociatedCatalog( *paths ):
     return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/ext/catalog/catalog_data_*.root'%getrunFromPath(path)) if not 'skim' in catalog and not '-with-' in catalog ]
 
+def getAssociatedOSI( *paths ):
+    return [ osi for path in paths for osi in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/osi/images/osi_runID_*_%s_*.fits'%(getrunFromPath(path), getrunIDFromPath(path)) ) if not '-with-' in osi ]
+
 def runETA( msg, cmd, eta = None, N = None ):
     print msg, '...'
     if not eta is None and not N is None:
@@ -120,24 +123,36 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
             os.makedirs( outputfolder )
     else:
         outputfolder = os.path.dirname(FITSfile)
+    OSIfiles = getAssociatedOSI( FITSfile )
+
+    parts = [ astropy.io.fits.open( OSIfile ) for OSIfile in OSIfiles ]
+    
+    print parts[-1][-1].data.shape
+    for ohduindex in range(len(parts[-1])):
+        if not parts[-1][ohduindex].data is None:
+            parts[-1][ohduindex].data = np.concatenate( [ part[ohduindex].data for part in parts[::-1] ], axis = 0 )
+    print parts[-1][-1].data.shape
     
     hdulisthits = astropy.io.fits.open(FITSfile)
     if not ohdu is None:
         for index in range(len(hdulisthits))[::-1]: #this inversion is needed so the removals work
             ohdu_ = hdulisthits[index].header['OHDU']
             if ohdu_!=ohdu:
-                #print 'ohdu', ohdu_, 'removed'
                 hdulisthits.pop(index)
 
+    hdulistnohits_osi = [ astropy.io.fits.open( OSIfile ) for OSIfile in OSIfiles ]
     hdulistnohits = astropy.io.fits.open(FITSfile)
     if not ohdu is None:
         for index in range(len(hdulistnohits))[::-1]: #this inversion is needed so the removals work
             ohdu_ = hdulistnohits[index].header['OHDU']
             if ohdu_!=ohdu:
-                #print 'ohdu', ohdu_, 'removed'
                 hdulistnohits.pop(index)
+                parts[-1].pop(index+1)
                     
     print 'input FITSfile =', FITSfile
+    print 'OSI file ='
+    print '\n'.join( OSIfiles )
+
     if ROOTfile is None:
         ROOTfile = getAssociatedCatalog( FITSfile )[0]
     print 'input ROOTfile =', ROOTfile
@@ -149,19 +164,23 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
         cmd = lambda: readcatalog(start, stop), #read all entries and return 
-        eta = lambda: readcatalog(start, start+1000),
-        N = (stop-start)/1000
+        #eta = lambda: readcatalog(start, start+1000),
+        #N = (stop-start)/1000
         )
 
     for index in range(len(hdulisthits)):
         ohdu_ = hdulistnohits[index].header['OHDU']
+        partohdu_ = parts[-1][index+1].header['OHDU']
         hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
         hdulisthits[index].data[:,:] = REMOVE #-1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
         hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
         if len(hits_e) > 0:
             hdulistnohits[index].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE #-1e9
+            parts[-1][index+1].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE
             hdulisthits[index].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
+        else:
+            print term.red('Warning:'), 'empty hits_e on', ohdu_
     
     hdulisthitsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
     if os.path.exists(hdulisthitsfile):
@@ -173,9 +192,15 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         os.remove(hdulistnohitsfile)
     
     hdulistnohits.writeto( hdulistnohitsfile )
-    print 'created 2 new FITS files'
-    print outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
-    print outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits
+    partsfile = outputfolder + '/merged_' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits 
+    if os.path.exists(partsfile):
+        os.remove(partsfile)
+    
+    parts[-1].writeto( partsfile )
+    print 'created 3 new FITS files'
+    print hdulisthitsfile
+    print hdulistnohitsfile
+    print partsfile
 
 def fit( x, data, func, sel = None, log=False ):
     mask = None
@@ -200,10 +225,11 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     if plot:
         fig = plt.figure()
         fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
-        gs = GridSpec(4,1)
-        ax = fig.add_subplot(gs[:-1,0])
-        if fft: axfft = ax.twinx()
-        axdiff = fig.add_subplot(gs[-1,0], sharex=ax)
+        if fft:
+            gs = GridSpec(5,1)
+            ax = fig.add_subplot(gs[:-2,0])
+            axdiff = fig.add_subplot(gs[-2,0], sharex=ax)
+            axfft = fig.add_subplot(gs[-1,0])
         plt.setp(ax.get_xticklabels(), visible=False)
     
     gaussian = lambda x,b,c: c*scipy.stats.norm.pdf(x,0,b)
@@ -236,11 +262,12 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
             fmt += ['%.2f']
         line += [ hdulist[0].header['TEMPMAX' ] ]
         
+        print [ hdu.header['OHDU'] for hdu in hdulist ]
         data = [ hdu.data for hdu in hdulist if hdu.header['OHDU'] == ohdu ][0]
         dx = 1
         bins = np.r_[min(clean(data)):max(clean(data)):dx]
         xbins = (bins[1:]+bins[:-1])*.5
-        hist, tmp = np.histogram( clean(data), bins = bins )
+        hist, tmp = np.histogram( clean(data[0:4220,0:4272]), bins = bins )
 
         if first: 
             header += ['pixelcount']
@@ -248,8 +275,10 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         line += [ len(clean(data)) ]
 
         
-        histOS, tmp = np.histogram( clean(data[120:4180,4112+10:-10]), bins = bins )
+        histOS, tmp = np.histogram( clean(data[120:4180,4112+10:4272-10]), bins = bins )
         histAC, tmp = np.histogram( clean(data[120:4180,20:4100]), bins = bins )
+        
+        print 'medians', np.median(histOS), np.median(histAC)
         
         el, elchi2 = fit( xbins, histOS, logGauss, sel=[ histOS>10 ], log=True )
         if first: 
@@ -286,17 +315,21 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         result += [ line ]
 
         if fft:
-            fftAC = np.fft.fftshift( np.abs( np.fft.fft( histAC ) ) )/np.sqrt( len(histAC) )
-            axfft.step( xbins, fftAC, where='mid', label = 'fftac' )
-            fftOS = np.fft.fftshift( np.abs( np.fft.fft( histOS ) ) )/np.sqrt( len(histOS) )
-            axfft.step( xbins, fftOS, where='mid', label = 'fftos' )
+            fftAC = np.fft.fft( histAC )
+            axfft.step( xbins, np.fft.fftshift( np.abs( fftAC ) )/np.sqrt( len(histAC) ), where='mid', label = 'fftac' )
+            fftOS = np.fft.fft( histOS ) 
+            axfft.step( xbins, np.fft.fftshift( np.abs( fftOS ) )/np.sqrt( len(histOS) ), where='mid', label = 'fftos' )
+            #fftdiff = fftAC - fftOS*np.sum(fftAC)/np.sum(fftOS)
+            #histdiff = np.abs( np.fft.ifft( fftdiff ) )
+            #histdiff[histdiff<1] = 0
+            #ax.step( xbins, histdiff, where='mid', label = 'histdiff' )
         first = False
     if plot:
         axdiff.set_xlabel('pixel energy [adu]')
         ax.set_ylabel('pixel count')
         ax.set_yscale('log')
         if fft: axfft.set_yscale('log')
-        ax.set_xlim([-100,100])
+        ax.set_xlim([-120,120])
         ax.grid(True)
         axdiff.grid(True)
         ax.legend()
