@@ -120,47 +120,58 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     
     if not outputfolder is None:
         if not os.path.exists(outputfolder):
+            print 'creating directory', outputfolder
             os.makedirs( outputfolder )
     else:
         outputfolder = os.path.dirname(FITSfile)
+        print 'outputfolder =', outputfolder
+    
     OSIfiles = getAssociatedOSI( FITSfile )
-
+    print 'input FITSfile =', FITSfile
+    print 'OSI file ='
+    print '\n'.join( OSIfiles )
+    
+    print 'reading OSI parts files'
     parts = [ astropy.io.fits.open( OSIfile ) for OSIfile in OSIfiles ]
     
-    print parts[-1][-1].data.shape
+    print 'merging parts'
+    print 'shape of each part', parts[-1][-1].data.shape
     for ohduindex in range(len(parts[-1])):
         if not parts[-1][ohduindex].data is None:
             parts[-1][ohduindex].data = np.concatenate( [ part[ohduindex].data for part in parts[::-1] ], axis = 0 )
-    print parts[-1][-1].data.shape
+    print 'shape of merged', parts[-1][-1].data.shape
     
+    print 'reading SCN file for hits'
     hdulisthits = astropy.io.fits.open(FITSfile)
     if not ohdu is None:
+        print 'removing ohdus'
         for index in range(len(hdulisthits))[::-1]: #this inversion is needed so the removals work
             ohdu_ = hdulisthits[index].header['OHDU']
             if ohdu_!=ohdu:
                 hdulisthits.pop(index)
 
-    hdulistnohits_osi = [ astropy.io.fits.open( OSIfile ) for OSIfile in OSIfiles ]
+    
+    print 'reading SCN file for no hits'
     hdulistnohits = astropy.io.fits.open(FITSfile)
     if not ohdu is None:
+        print 'removing ohdus'
         for index in range(len(hdulistnohits))[::-1]: #this inversion is needed so the removals work
             ohdu_ = hdulistnohits[index].header['OHDU']
             if ohdu_!=ohdu:
                 hdulistnohits.pop(index)
                 parts[-1].pop(index+1)
                     
-    print 'input FITSfile =', FITSfile
-    print 'OSI file ='
-    print '\n'.join( OSIfiles )
 
     if ROOTfile is None:
         ROOTfile = getAssociatedCatalog( FITSfile )[0]
     print 'input ROOTfile =', ROOTfile
     min_max = lambda x: (np.min(x), np.max(x))
+    print 'reading start and stop indexes for runID', runID, 'in ROOT file'
     start, stop = min_max( np.argwhere( root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'] == runID ) )
     print 'read from', start, 'to', stop
     
     readcatalog = lambda start_, stop_: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID, start=start_, stop=stop_+1 )
+    print 'reading ROOT file'
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
         cmd = lambda: readcatalog(start, stop), #read all entries and return 
@@ -168,6 +179,7 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         #N = (stop-start)/1000
         )
 
+    print 'removing hits'
     for index in range(len(hdulisthits)):
         ohdu_ = hdulistnohits[index].header['OHDU']
         partohdu_ = parts[-1][index+1].header['OHDU']
@@ -185,18 +197,21 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     hdulisthitsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
     if os.path.exists(hdulisthitsfile):
         os.remove(hdulisthitsfile)
+    print 'writing SCN hits'
     hdulisthits.writeto( hdulisthitsfile )
     
     hdulistnohitsfile =  outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits 
     if os.path.exists(hdulistnohitsfile):
         os.remove(hdulistnohitsfile)
-    
+    print 'writing SCN no hits'    
     hdulistnohits.writeto( hdulistnohitsfile )
+    
     partsfile = outputfolder + '/merged_' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits 
     if os.path.exists(partsfile):
         os.remove(partsfile)
-    
+    print 'writing merged OSI no hits'    
     parts[-1].writeto( partsfile )
+    
     print 'created 3 new FITS files'
     print hdulisthitsfile
     print hdulistnohitsfile
@@ -221,8 +236,12 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         plot = kwargs['plot']
         
     FITSfiles = FITSfiles[0]
+    print 'FITSfile =', FITSfiles
     runID = getrunIDFromPath( FITSfiles[0] )
+    print 'runID =', runID
+    
     if plot:
+        print 'initiate figure'
         fig = plt.figure()
         fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
         if fft:
@@ -233,8 +252,11 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         plt.setp(ax.get_xticklabels(), visible=False)
     
     gaussian = lambda x,b,c: c*scipy.stats.norm.pdf(x,0,b)
+    gaussianx = lambda x,a,b,c: c*scipy.stats.norm.pdf(x,a,b)
     logGauss = lambda x,b,c: np.log(c/b/np.sqrt(2*np.pi)) - .5*x**2/b**2
+    logGaussx = lambda x,a,b,c: np.log(c/b/np.sqrt(2*np.pi)) - .5*(x-a)**2/b**2
     poisson = lambda x,b,c: c*scipy.stats.norm.pdf(x,b**2,b)
+    exponential = lambda x,b,c,d,e: c*np.exp(b*(x-d))-e
 
     result = []
     header = []
@@ -242,6 +264,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     first = True
     clean = lambda x: x.flatten()[ np.all( [x.flatten()!=REMOVEOLD, x.flatten()!=REMOVE, x.flatten()!=1e10], axis=0) ]
 
+    print 'plotting'
     for FITSfile in FITSfiles:
         if first: 
             header += ['runID']
@@ -252,6 +275,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
             fmt += ['%d']
         line += [ ohdu ]
         
+        print 'reading FITS file', FITSfile
         hdulist = astropy.io.fits.open( FITSfile )
         if first: 
             header += ['tempmin']
@@ -263,24 +287,40 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         line += [ hdulist[0].header['TEMPMAX' ] ]
         
         print [ hdu.header['OHDU'] for hdu in hdulist ]
+        
         data = [ hdu.data for hdu in hdulist if hdu.header['OHDU'] == ohdu ][0]
+        print 'data shape', data.shape
+        yccd = 4262
+        xccd = 4220
+        if data.shape[1] == 2*yccd:
+            print 'subtracting idle amplifier'
+            data = data[0:xccd,0:yccd] - np.flip(data[0:xccd,yccd:2*yccd], 1)
+        
         dx = 1
         bins = np.r_[min(clean(data)):max(clean(data)):dx]
         xbins = (bins[1:]+bins[:-1])*.5
-        hist, tmp = np.histogram( clean(data[0:4220,0:4272]), bins = bins )
+        print 'computing histogram of full ccd'
+        hist, tmp = np.histogram( clean(data[0:4220,0:4262]), bins = bins )
+        #hist2, tmp = np.histogram( clean(data2[0:4220,0:4262]), bins = bins )
+        #histR, tmp = np.histogram( clean(data3), bins = bins )
 
         if first: 
             header += ['pixelcount']
             fmt += ['%d']
         line += [ len(clean(data)) ]
 
-        
-        histOS, tmp = np.histogram( clean(data[120:4180,4112+10:4272-10]), bins = bins )
+        print 'computing histogram of AC and OS'
+        histOS, tmp = np.histogram( clean(data[120:4180,4112+10:4262-10]), bins = bins )
         histAC, tmp = np.histogram( clean(data[120:4180,20:4100]), bins = bins )
         
         print 'medians', np.median(histOS), np.median(histAC)
         
-        el, elchi2 = fit( xbins, histOS, logGauss, sel=[ histOS>10 ], log=True )
+        print 'fitting log(histOS>10) with quadratic function'
+        elx, elxchi2 = fit( xbins, histOS, logGaussx, sel=[ histOS>10 ], log=True )
+        print 'computing histogram of OSx (corrected by the mean)'
+        histOSx, tmp = np.histogram( clean(data[120:4180,4112+10:4262-10])-elx[0], bins = bins )
+        print 'fitting log(histOSx>10) with quadratic function'
+        el, elchi2 = fit( xbins, histOSx, logGauss, sel=[ histOSx>10 ], log=True )
         if first: 
             header += ['os_std', 'os_chisq']
             fmt += ['%.6g','%.6g']
@@ -288,49 +328,71 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         
         countCut = 10
         
-        el_cr, el_crchi2 = fit( xbins, histAC, logGauss, sel=[ xbins<0, histAC>10 ], log=True )
+        print 'computing histogram of ACx (corrected by the mean of OS)'
+        histACx, tmp = np.histogram( clean(data[120:4180,20:4100])-elx[0], bins = bins )
+        print 'fitting log(histAC>10,xbins<0) with quadratic function'
+        elneg, elnegchi2 = fit( xbins, histAC, logGauss, sel=[ xbins<0, histAC>10 ], log=True )
         if first: 
             header += ['acNeg_std', 'acNeg_chisq']
             fmt += ['%.6g','%.6g']
-        line += [el_cr[0], el_crchi2]
+        line += [elneg[0], elnegchi2]
         
-        
-        noise, noisechi2 = fit( xbins, histAC, logGauss, sel=[ xbins>0, histAC>10 ], log=True )
+        print 'fitting log(histAC>10,xbins>0) with quadratic function'
+        elpos, elposchi2 = fit( xbins, histAC, logGauss, sel=[ xbins>0, histAC>10 ], log=True )
         if first: 
             header += ['acPos_std', 'acPos_chisq']
             fmt += ['%.6g','%.6g']
-        line += [noise[0], noisechi2]
+        line += [elpos[0], elposchi2]
         if plot:
+            print 'generating curves'
             ax.step( xbins, hist, where='mid', label = 'all' )
+            #ax.step( xbins, hist2, where='mid', label = 'all2' )
+            #ax.step( xbins, histR, where='mid', label = 'allR' )
             ax.step( xbins, histOS, where='mid', label = 'os' )
             ax.step( xbins, histAC, where='mid', label = 'ac' )
             gOS = gaussian(xbins,*el)
-            axdiff.step( xbins[gOS>countCut], (histOS[gOS>countCut] - gOS[gOS>countCut])/gOS[gOS>countCut], where='mid', label = 'os(%.2f)'%(el[0]), color = 'C1' )
-            gAC = gaussian(xbins,*el_cr)
-            axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac<(%.2f)'%(el_cr[0]), color = 'C2' )
-            gAC = gaussian(xbins,*noise)
-            axdiff.step( xbins[gAC>countCut], (histAC[gAC>countCut] - gAC[gAC>countCut])/gAC[gAC>countCut], where='mid', label = 'ac>(%.2f)'%(noise[0]), color = 'C3' )
+            axdiff.step( xbins[gOS>countCut], np.abs(histOS[gOS>countCut] - gOS[gOS>countCut])/gOS[gOS>countCut], where='mid', label = 'os(%.2f)'%(el[0]), color = 'C1' )
+            gACneg = gaussian(xbins,*elneg)
+            axdiff.step( xbins[gACneg>countCut], np.abs(histAC[gACneg>countCut] - gACneg[gACneg>countCut])/gACneg[gACneg>countCut], where='mid', label = 'ac<(%.2f)'%(elneg[0]), color = 'C2' )
+            gACpos = gaussian(xbins,*elpos)
+            axdiff.step( xbins[gACpos>countCut], np.abs(histAC[gACpos>countCut] - gACpos[gACpos>countCut])/gACpos[gACpos>countCut], where='mid', label = 'ac>(%.2f)'%(elpos[0]), color = 'C3' )
+            #exp_pp, exp_chi2 = fit( xbins, (histAC - gACneg), exponential, sel=[xbins>0, gACneg>countCut] )
+            #print 'fit', exp_pp, exp_chi2
+            #axdiff.plot( xbins[ np.all([xbins>0, gACneg>countCut], axis=0) ], exponential(xbins[ np.all([xbins>0, gACneg>countCut], axis=0) ], *exp_pp), label = 'fit', color = 'C4' )
+            
         #print el[0], el_cr[0], noise[0], np.sqrt(noise[0]**2 - el_cr[0]**2)
 
         result += [ line ]
 
         if fft:
-            fftAC = np.fft.fft( histAC )
-            axfft.step( xbins, np.fft.fftshift( np.abs( fftAC ) )/np.sqrt( len(histAC) ), where='mid', label = 'fftac' )
-            fftOS = np.fft.fft( histOS ) 
-            axfft.step( xbins, np.fft.fftshift( np.abs( fftOS ) )/np.sqrt( len(histOS) ), where='mid', label = 'fftos' )
+            print 'computing Fourier transform'
+            maskAC = histAC>100
+            fftAC = np.fft.fft( histAC[maskAC] )
+            axfft.step( xbins[maskAC], np.fft.fftshift( np.abs(np.real( fftAC )) ), where='mid', label = 'fftac' )
+            axfft.step( xbins[maskAC], np.fft.fftshift( np.abs(np.imag( fftAC )) ), where='mid', label = 'fftac' )
+            maskOS = histOS>100
+            fftOS = np.fft.fft( histOS[maskOS] ) 
+            axfft.step( xbins[maskOS], np.fft.fftshift( np.abs(np.real(fftOS)) ), where='mid', label = 'fftos' )
+            axfft.step( xbins[maskOS], np.fft.fftshift( np.abs(np.imag(fftOS)) ), where='mid', label = 'fftos' )
+            maxfreq = xbins[maskAC][ np.fft.fftshift(np.abs(fftAC)) == np.max(np.abs(fftAC)) ]
+            #print 'max freq AC:', np.max(fftAC), xbins[ np.fft.fftshift(fftAC) == np.max(fftAC) ]
+            #print 'max freq OS:', np.max(fftOS), xbins[ np.fft.fftshift(fftOS) == np.max(fftOS) ]
             #fftdiff = fftAC - fftOS*np.sum(fftAC)/np.sum(fftOS)
             #histdiff = np.abs( np.fft.ifft( fftdiff ) )
             #histdiff[histdiff<1] = 0
             #ax.step( xbins, histdiff, where='mid', label = 'histdiff' )
         first = False
     if plot:
+        print 'setting labels and lims'
         axdiff.set_xlabel('pixel energy [adu]')
         ax.set_ylabel('pixel count')
         ax.set_yscale('log')
-        if fft: axfft.set_yscale('log')
+        if fft: 
+            #axfft.set_yscale('log')
+            axfft.set_xlim([maxfreq-100,maxfreq+100])
         ax.set_xlim([-120,120])
         ax.grid(True)
+        axdiff.set_yscale('log')
         axdiff.grid(True)
         ax.legend()
         if fft: axfft.legend(loc=2)
