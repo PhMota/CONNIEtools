@@ -67,12 +67,15 @@ def listrunID_run( *runs ):
 def listFITS_runID( *runIDs ):
     return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/scn_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
 
-def listremovedFITS_runID( *runIDs ):
+def listremovedFITS_runID( *runIDs, **kwargs ):
     #if os.access( '/share/storage2/connie/data_analysis/processed02_data/runs/', os.W_OK):
         #print 'input path', '/share/storage2/connie/data_analysis/processed02_data/runs'
         #return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
-    print 'input path', '.'
-    return listFITS( *[ 'run*/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
+    inputpath = '.'
+    if 'inputpath' in kwargs:
+        inputpath = kwargs['inputpath']
+    print 'input path', inputpath
+    return listFITS( *[ inputpath + '/*/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     #return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/*runID_*_%05d_*'%runID for runID in runIDs ] )
 
 def getrunIDFromPath( path ):
@@ -345,11 +348,14 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     if 'runID' in kwargs:
         runID = kwargs['runID']
         runIDflag = True
+    inputpath = '.'
+    if 'inputpath' in kwargs:
+        inputpath = kwargs['inputpath']
         
     if runID is None:
         FITSfiles = FITSfiles[0]
     else:
-        FITSfiles = listremovedFITS_runID(int(runID))
+        FITSfiles = listremovedFITS_runID(int(runID),inputpath=inputpath)
     
     verbose = False
     
@@ -527,6 +533,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                 datum['fits'][r'G($\mu$,$\sigma$\')*P($\lambda$)']['params']['sigma'] = sigma
                 
                 sigmaOS = data['os']['fits'][r'G($\mu$,$\sigma$)']['params']['sigma']
+                muOS = data['os']['fits'][r'G($\mu$,$\sigma$)']['params']['mu']
                 datum['fits'][r'G(0,$\sigma$os)*P($\lambda$)'] = fit( x, y,
                                                                     lambda x_,A,lamb: fitfunc['G(0,sigma)*P(lambda)'](x_,sigmaOS,A,lamb), 
                                                                     labels = ['A','lambda'], 
@@ -541,11 +548,18 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                                                                     )
                 datum['fits'][r'G($\mu$,$\sigma$os)*P($\lambda$)']['params']['sigma'] = sigmaOS
                 
+                datum['fits'][r'G($\mu$os,$\sigma$)*P($\lambda$)'] = fit( x, y,
+                                                                    lambda x_,s,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,muOS,s,A,lamb), 
+                                                                    labels = ['sigma', 'A','lambda'], 
+                                                                    p0 = [ sigma, AC,.1] 
+                                                                    )
+                datum['fits'][r'G($\mu$os,$\sigma$)*P($\lambda$)']['params']['mu'] = muOS
+                
                 for fitkey in [r'G(0,$\sigma$)',
                                r'G(0,$\sigma$)*P($\lambda$)',
                                r'G($\mu$,$\sigma$)',
                                r'G($\mu$,$\sigma$)*P($\lambda$)',
-                               #r'G($\mu$os,$\sigma$)*P($\lambda$)',
+                               r'G($\mu$os,$\sigma$)*P($\lambda$)',
                                r'G($\mu$\',$\sigma$)*P($\lambda$)',
                                r'G($\mu$,$\sigma$os)*P($\lambda$)',
                                r'G($\mu$,$\sigma$\')*P($\lambda$)',
@@ -720,6 +734,10 @@ if __name__ == "__main__":
     getOption( vars_, 'ohdu', sys.argv, int )
     getOption( vars_, 'runID', sys.argv, int )
     getOption( vars_, 'run', sys.argv )
+    getOption( vars_, 'inputpath', sys.argv )
+    if vars_['inputpath'] is None:
+        vars_['inputpath'] = '.'
+        
     if '--ROOTfile' in sys.argv:
         ROOTfile = sys.argv[sys.argv.index('--ROOTfile')+1]
         print 'setting ROOTfile =', ROOTfile
@@ -737,7 +755,7 @@ if __name__ == "__main__":
     if '--plot' in sys.argv:
         if not vars_['ohdu'] is None:
             if not vars_['runID'] is None:
-                runETA( 'analyse and plot', lambda: plotrunID( vars_['ohdu'], fft=fft, runID=vars_['runID']) )
+                runETA( 'analyse and plot', lambda: plotrunID( vars_['ohdu'], fft=fft, runID=vars_['runID'], inputpath=vars_['inputpath']) )
                 exit(0)
             FITSfiles = sys.argv[sys.argv.index('--plot')+1:]
             print 'input FITSfiles:'
@@ -748,7 +766,7 @@ if __name__ == "__main__":
     if '--table' in sys.argv:
         if not vars_['ohdu'] is None:
             if not vars_['runID'] is None:
-                runETA( 'analyse', lambda: plotrunID( vars_['ohdu'], fft=fft, runID=vars_['runID'], plot=False) )
+                runETA( 'analyse', lambda: plotrunID( vars_['ohdu'], fft=fft, runID=vars_['runID'], plot=False, inputpath=vars_['inputpath']) )
                 exit(0)
             FITSfiles = sys.argv[sys.argv.index('--table')+1:]
             print 'input FITSfiles:'
