@@ -61,13 +61,16 @@ def listFITS( *patterns ):
 def listFITS_run( *runs ):
     return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
 
+def listrunID_run( *runs ):
+    return map( getrunIDFromPath, listFITS_run( runs ) )
+
 def listFITS_runID( *runIDs ):
     return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/scn_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
 
 def listremovedFITS_runID( *runIDs ):
-    if os.access( '/share/storage2/connie/data_analysis/processed02_data/runs/', os.W_OK):
-        print 'input path', '/share/storage2/connie/data_analysis/processed02_data/runs'
-        return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
+    #if os.access( '/share/storage2/connie/data_analysis/processed02_data/runs/', os.W_OK):
+        #print 'input path', '/share/storage2/connie/data_analysis/processed02_data/runs'
+        #return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     print 'input path', '.'
     return listFITS( *[ 'run*/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     #return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/*runID_*_%05d_*'%runID for runID in runIDs ] )
@@ -112,8 +115,9 @@ def getAssociatedOSI( *paths ):
     return [ osi for path in paths for osi in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/osi/images/osi_runID_*_%s_*.fits'%(getrunFromPath(path), getrunIDFromPath(path)) ) if not '-with-' in osi ]
 
 def runETA( msg, cmd, eta = None, N = None ):
-    sys.stdout.write( msg + '...' )
-    sys.stdout.flush()
+    #sys.stdout.write( msg + '...' )
+    #sys.stdout.flush()
+    print 'begin:', msg
     if not eta is None and not N is None:
         etastart = time.time()
         eta()
@@ -122,7 +126,7 @@ def runETA( msg, cmd, eta = None, N = None ):
     start = time.time()
     res = cmd()
     #print 'elapsed time', time.strftime("%H:%M:%S", time.gmtime(datetime.datetime.time() - start))
-    print 'elapsed time', time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
+    print 'end:', msg, '[t='+time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - start))+']'
     return res
 
 def readCatalog( ROOTfile, runID = None, verbose = False ):
@@ -133,7 +137,7 @@ def readCatalog( ROOTfile, runID = None, verbose = False ):
     if verbose: print 'reading', len(indexlist), 'entries from', start, 'to', stop
     
     readcatalog_once = lambda start_, stop_: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'], selection='runID==%s'%runID, start=start_, stop=stop_+1 )
-    if verbose: print 'reading ROOT file'
+    #if verbose: print 'reading ROOT file'
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
         cmd = lambda: readcatalog_once(start, stop), #read all entries and return 
@@ -151,26 +155,28 @@ def mergeParts( parts ):
     #print [ (i,ohdu.header['OHDU']) for i, ohdu in enumerate(merged) ]
     return merged
 
-def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = None, osi = None, verbose = False, image = True ):
+def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = None, osi = None, verbose = False, image = True, output = True, dohits = True ):
     FITSfile = listFITS_runID( runID )[0]
     print 'input FITSfile =', FITSfile
-    outputfilenohits = 'hsub_'+os.path.basename(FITSfile)
-    outputfilehits = 'hits_'+os.path.basename(FITSfile)
+    print 'output flag =', output
+    if output:
+        outputfilenohits = 'hsub_'+os.path.basename(FITSfile)
+        if dohits: outputfilehits = 'hits_'+os.path.basename(FITSfile)
     
-    if not outputfolder is None:
-        if not os.path.exists(outputfolder):
-            print 'creating directory', outputfolder
-            os.makedirs( outputfolder )
-    else:
-        outputfolder = os.path.dirname(FITSfile)
-        if os.access( outputfolder, os.W_OK):
-            print 'outputfolder =', outputfolder
-        else:
-            outputfolder = 'run'+getrunFromPath( FITSfile ) + '/'
-            print 'outputfolder =', outputfolder
+        if not outputfolder is None:
             if not os.path.exists(outputfolder):
                 print 'creating directory', outputfolder
                 os.makedirs( outputfolder )
+        else:
+            outputfolder = os.path.dirname(FITSfile)
+            if os.access( outputfolder, os.W_OK):
+                print 'outputfolder =', outputfolder
+            else:
+                outputfolder = 'run'+getrunFromPath( FITSfile ) + '/'
+                print 'outputfolder =', outputfolder
+                if not os.path.exists(outputfolder):
+                    print 'creating directory', outputfolder
+                    os.makedirs( outputfolder )
     
     removeOHDU = lambda x, ohdu_: map( lambda i: x.pop(i), [ j for j, hdu in enumerate(x) if not int(hdu.header['OHDU']) == int(ohdu) ][::-1] )
     if osi:
@@ -186,26 +192,15 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     
     if verbose: print 'reading SCN file'
     hdulist = {}
-
-    hdulist['hits'] = astropy.io.fits.open(FITSfile)
-    if not ohdu is None:
-        removeOHDU( hdulist['hits'], ohdu )
-        #print 'remaining ohdus', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulist['hits'] ] ) )
+    
+    if dohits:
+        hdulist['hits'] = astropy.io.fits.open(FITSfile)
+        if not ohdu is None:
+            removeOHDU( hdulist['hits'], ohdu )
 
     hdulist['nohits'] = astropy.io.fits.open(FITSfile)
     if not ohdu is None:
         removeOHDU( hdulist['nohits'], ohdu )
-        #print 'remaining ohdus', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulist['nohits'] ] ) )
-    
-    #if not ohdu is None:
-        #removeindex = [ i for i, hdu in enumerate(hdulist['hits']) if not int(hdu.header['OHDU']) == int(ohdu) ]
-        #print 'selected ohdu', ohdu, 'removing ohdus', ', '.join(map( str, [ hdulist['nohits'][i].header['OHDU'] for i in removeindex ]))
-        #for iohdu in removeindex[::-1]: #this inversion is needed so the removals work
-            #hdulist['nohits'].pop(iohdu)
-            #hdulist['hits'].pop(iohdu)
-            #if osi: merged.pop(iohdu)
-    #print 'remaining ohdus', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulist['nohits'] ] ) )
-    #print 'remaining ohdus', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulist['hits'] ] ) )
     
     if ROOTfile is None:
         ROOTfile = getAssociatedCatalog( FITSfile )[0]
@@ -213,17 +208,18 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     hitscatalog = readCatalog( ROOTfile, runID=runID)
 
     if verbose: print 'removing hits'
-    for iohdu in range(len(hdulist['hits'])):
+    
+    for iohdu in range(len(hdulist['nohits'])):
         ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
         print 'removing hits from', ohdu_
         hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
-        hdulist['hits'][iohdu].data[:,:] = REMOVE #-1e9
+        if dohits: hdulist['hits'][iohdu].data[:,:] = REMOVE #-1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
         hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
         if len(hits_e) > 0:
-            hdulist['nohits'][iohdu].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE #-1e9
+            hdulist['nohits'][iohdu].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE
             if osi: merged[iohdu].data[hits_xy[:,0],hits_xy[:,1]] = REMOVE
-            hdulist['hits'][iohdu].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
+            if dohits: hdulist['hits'][iohdu].data[hits_xy[:,0],hits_xy[:,1]] = hits_e
         else:
             print term.red('Warning:'), 'empty hits_e on', ohdu_
 
@@ -259,37 +255,41 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         print 'ccd image', path
         figs[0].savefig( path, bbox_inches='tight' )
         figs[1].savefig( path2, bbox_inches='tight' )
+
+    if output:
+        if dohits:
+            hdulisthitsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
+            if os.path.exists(hdulisthitsfile):
+                os.remove(hdulisthitsfile)
+            if verbose: print 'writing SCN hits'
+            hdulist['hits'].writeto( hdulisthitsfile )
+        
+        hdulistnohitsfile =  outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits 
+        if os.path.exists(hdulistnohitsfile):
+            os.remove(hdulistnohitsfile)
+        if verbose: print 'writing SCN no hits'    
+        hdulist['nohits'].writeto( hdulistnohitsfile )
+        
+        if osi:
+            partsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits.replace('scn_mbs_', '')
+            if os.path.exists(partsfile):
+                os.remove(partsfile)
+            if verbose: print 'writing merged OSI no hits'    
+            merged.writeto( partsfile )
+        
+        print 'created new FITS files'
+        print hdulisthitsfile
+        print hdulistnohitsfile
+        if osi: print partsfile
     
-    hdulisthitsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilehits
-    if os.path.exists(hdulisthitsfile):
-        os.remove(hdulisthitsfile)
-    if verbose: print 'writing SCN hits'
-    hdulist['hits'].writeto( hdulisthitsfile )
-    
-    hdulistnohitsfile =  outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits 
-    if os.path.exists(hdulistnohitsfile):
-        os.remove(hdulistnohitsfile)
-    if verbose: print 'writing SCN no hits'    
-    hdulist['nohits'].writeto( hdulistnohitsfile )
-    
-    if osi:
-        partsfile = outputfolder + '/' + ( '' if ohdu is None else 'ohdu%d_'%ohdu ) + outputfilenohits.replace('scn_mbs_', '')
-        if os.path.exists(partsfile):
-            os.remove(partsfile)
-        if verbose: print 'writing merged OSI no hits'    
-        merged.writeto( partsfile )
-    
-    print 'created new FITS files'
-    print hdulisthitsfile
-    print hdulistnohitsfile
-    if osi: print partsfile
+    return hdulist
 
 def fit( x, data, func, sel = None, log=False, p0 = None, labels = None ):
     mask = data > 0
     if sel: mask = np.all( sel+[ data>0 ], axis=0 )
     pp = scipy.optimize.curve_fit( func, x[mask], data[mask] if not log else np.log(data[mask]), p0 )[0]
     hist = func( x, *pp ) if not log else np.exp(func( x, *pp ))
-    chisq = scipy.stats.chisquare( hist, f_exp = data )[0]/len(data)
+    chisq = scipy.stats.chisquare( hist, f_exp = data )[0]/(len(data) - len(pp))
     if labels:
         return {'chisqr': chisq, 'params': OrderedDict([ [label, pp_] for label, pp_ in zip(labels, pp) ] ), 'hist': hist }
     else:
@@ -351,9 +351,11 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     else:
         FITSfiles = listremovedFITS_runID(int(runID))
     
+    verbose = False
+    
     print 'FITSfiles:\n', '\n'.join(FITSfiles)
     runID = getrunIDFromPath( FITSfiles[0] )
-    print 'runID =', runID
+    #print 'runID =', runID
 
     fitfunc = {
         'Gaussian(mu,sigma)*A': lambda x,mu,sigma,A: scipy.stats.norm.pdf(x,mu,sigma)*A,
@@ -373,6 +375,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     def convolution_GP( x, mu, sigma, A, lamb ):
         Nmax = 200
         lamb = abs(lamb)
+        mu += lamb
         sp = scipy.stats.norm.pdf(x,mu,sigma)
         sp0 = np.sum( sp )
         for i in range(1,Nmax):
@@ -385,12 +388,6 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     fitfunc['G(mu,sigma)*P(lambda)'] = convolution_GP
     fitfunc['G(0,sigma)*P(lambda)'] = lambda x, sigma, A, lamb: convolution_GP(x,0,sigma,A,lamb)
 
-    #def convolution_GP2( x, mu, sigma, A, lamb ):
-        #conv = lambda y: scipy.integrate.quad( lambda x_: scipy.stats.norm.pdf(x_,mu,sigma)*poisson(y-x_, mu, lamb), -np.inf, np.inf )[0]
-        #return A*np.array( map( conv, x ) )
-
-    #fitfunc['cG(mu,sigma)*P(lambda)'] = convolution_GP2
-
     result = []
     header = []
     fmt = []
@@ -400,21 +397,26 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     osi = False
     meanplot = False
     scnsub = False
-    print 'plotting'
+    #print 'plotting'
     if 1:
         
         hdulists = [ astropy.io.fits.open( FITSfile ) for FITSfile in FITSfiles ]
         
-        if len(hdulists) > 1:
-            hdulists = OrderedDict([('scn', hdulists[0]), ('osi', hdulists[1]) ])
-            osi = True
-        else:
-            hdulists = OrderedDict([('scn', hdulists[0])])
-        print 'len hdulists', len(hdulists) 
+        #if len(hdulists) > 1:
+            #hdulists = OrderedDict([('scn', hdulists[0]), ('osi', hdulists[1]) ])
+            #osi = True
+        #else:
+            #hdulists = OrderedDict([('scn', hdulists[0])])
+        hdulists = OrderedDict([('scn', hdulists[0])])
+        #print 'len hdulists', len(hdulists) 
         
-        print 'ohdus in file', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulists['scn'] ] ))
+        if verbose: print 'ohdus in file', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulists['scn'] ] ))
         
         data = OrderedDict([ (key, hdu.data) for key, hdulist in hdulists.items() for hdu in hdulist if hdu.header['OHDU'] == ohdu ])
+        if verbose: 
+            print 'keys', data.keys()
+            print 'shapes', data['scn'].shape
+            print 'data extremes', data['scn'].min(), data['scn'].max()
         if meanplot:
             print 'generating mean plot'
             fig2 = plt.figure()
@@ -438,15 +440,19 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         #print 'data len', data.keys()
         dx = 1
         shift = lambda bins: (bins[1:]+bins[:-1])*.5
-        print 'bins', min(clean(data['scn'])), max(clean(data['scn']))
-        bins = np.r_[min(clean(data['scn'])):max(clean(data['scn'])):dx]
+        #bins = np.r_[min(clean(data['scn'])):max(clean(data['scn'])):dx]
+        bins = np.r_[-2*max(clean(data['scn'])):max(clean(data['scn'])):dx]
+        if verbose: print 'bins', min(bins), max(bins)
 
-        print 'computing histogram of full ccd'
+        if verbose: print 'computing histogram of full ccd'
         vslice = slice(120,4180)
-        #print 'vslice', vslice
-        hslices = OrderedDict( [('os', slice(4112+10, 4262-10)), ('ac', slice(20,4100)), ('ac_os', slice(3112+10,3262-10))] )
+        hslices = OrderedDict( [
+            ('os', slice(4112+10, 4262-10)), 
+            ('ac', slice(20,4100)), 
+            #('ac_os', slice(3112+10,3262-10))
+            ] )
         countCut = 1e1
-        parseHist = lambda h,x: { 'y': h[h>countCut], 'x': (.5*(x[1:]+x[:-1]))[h>countCut] }
+        parseHist = lambda h,x: { 'y': h[h/dx>countCut]/dx, 'x': (.5*(x[1:]+x[:-1]))[h/dx>countCut] }
         #parseHist = lambda h,x: { 'y': h, 'x': (.5*(x[1:]+x[:-1])) }
         
         hist = OrderedDict( [ (datakey, { 
@@ -458,7 +464,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
             })
             for datakey, datum in data.items() 
         ])
-        print 'keys', [ (datakey, hist[datakey].keys()) for datakey in data.keys() ]
+        if verbose: print 'keys', [ (datakey, hist[datakey].keys()) for datakey in data.keys() ]
 
         for datakey, data in hist.items():
             for slicekey in hslices.keys():
@@ -468,10 +474,13 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                 
                 datum['fits'] = {}
                 datum['fits']['log(Gaussian(mu,sigma)*A)'] = fit( x, y, fitfunc['log(Gaussian(mu,sigma)*A)'], log=True, labels = ['mu','sigma','A'] )
-                #print datum['fits']['log(Gaussian(mu,sigma)*A)']['params']
-                datum['fits']['log(Gaussian(0,sigma)*A)'] = fit( x, y, fitfunc['log(Gaussian(0,sigma)*A)'], sel=[x<0], log=True, labels = ['sigma','A'], p0 = datum['fits']['log(Gaussian(mu,sigma)*A)']['params'].values()[1:] )
-                datum['fits'][r'G($\mu$,$\sigma$)'] = fit( x, y, fitfunc['Gaussian(mu,sigma)*A'], labels = ['mu', 'sigma','A'], p0 = datum['fits']['log(Gaussian(mu,sigma)*A)']['params'].values() ) 
+                mulog, sigmalog, Alog = datum['fits']['log(Gaussian(mu,sigma)*A)']['params'].values()
 
+                datum['fits']['log(Gaussian(0,sigma)*A)'] = fit( x, y, fitfunc['log(Gaussian(0,sigma)*A)'], sel=[x<0], log=True, labels = ['sigma','A'], p0 = [sigmalog, Alog] )
+                sigmalog0, Alog0 = datum['fits']['log(Gaussian(0,sigma)*A)']['params'].values()
+
+                datum['fits'][r'G($\mu$,$\sigma$)'] = fit( x, y, fitfunc['Gaussian(mu,sigma)*A'], labels = ['mu', 'sigma','A'], p0 = [mulog,sigmalog,Alog] ) 
+                mu, sigma, A = datum['fits'][r'G($\mu$,$\sigma$)']['params'].values()
                 
                 datum['fits'][r'G(0,$\sigma$)'] = fit( x, y,
                                                       fitfunc['Gaussian(0,sigma)*A'], 
@@ -479,46 +488,68 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                                                       labels = ['sigma','A'], 
                                                       p0 = datum['fits']['log(Gaussian(0,sigma)*A)']['params'].values() 
                                                       ) 
+                sigma0, A0 = datum['fits'][r'G(0,$\sigma$)']['params'].values()
+                
+                datum['fits'][r'G(0,$\sigma$)*P($\lambda$)'] = fit( x, y,
+                                                                   fitfunc['G(0,sigma)*P(lambda)'],  
+                                                                   labels = ['sigma','A','lambda'], 
+                                                                   p0 = [sigma0, A0, .1]
+                                                                   ) 
+                sigmaC0,AC0,lambC0 = datum['fits'][r'G(0,$\sigma$)*P($\lambda$)']['params'].values()
                 
                 datum['fits'][r'G($\mu$,$\sigma$)*P($\lambda$)'] = fit( x, y,
                                                                        fitfunc['G(mu,sigma)*P(lambda)'],
                                                                        labels = ['mu','sigma','A','lambda'],
-                                                                       p0 = datum['fits'][r'G($\mu$,$\sigma$)']['params'].values()+[0.] 
+                                                                       p0 = [mu, sigmaC0, AC0, lambC0]
                                                                        ) 
-                #print datum['fits'][r'G($\mu$,$\sigma$)*P($\lambda$)']['params']
+                muC,sigmaC,AC,lambC = datum['fits'][r'G($\mu$,$\sigma$)*P($\lambda$)']['params'].values()
 
-                datum['fits'][r'G(0,$\sigma$)*P($\lambda$)'] = fit( x, y,
-                                                                   fitfunc['G(0,sigma)*P(lambda)'],  
+                datum['fits'][r'G($\mu$\',$\sigma$)*P($\lambda$)'] = fit( x, y,
+                                                                   lambda x_,sigma,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigma,A,lamb),
                                                                    labels = ['sigma','A','lambda'], 
-                                                                   p0 = datum['fits'][r'G(0,$\sigma$)']['params'].values()+[0.] 
+                                                                   p0 = [sigmaC,AC,.1] 
                                                                    ) 
-                #print datum['fits'][r'G(0,$\sigma$)*P($\lambda$)']['params']
+                datum['fits'][r'G($\mu$\',$\sigma$)*P($\lambda$)']['params']['mu'] = mu
+                sigmaCmu = datum['fits'][r'G($\mu$\',$\sigma$)*P($\lambda$)']['params']['sigma']
 
-                datum['fits'][r'G(0,$\sigma$\')*P($\lambda$)'] = fit( x, y,
-                                                                    lambda x_,A,lamb: fitfunc['G(0,sigma)*P(lambda)'](x_,datum['fits'][r'G(0,$\sigma$)']['params']['sigma'],A,lamb), 
-                                                                    labels = ['A','lambda'], 
-                                                                    p0 = [ datum['fits'][r'G(0,$\sigma$)']['params']['A'], np.abs(datum['fits'][r'G(0,$\sigma$)*P($\lambda$)']['params']['lambda']) ] 
-                                                                    )
-                datum['fits'][r'G(0,$\sigma$\')*P($\lambda$)']['params']['sigma'] = datum['fits'][r'G(0,$\sigma$)']['params']['sigma']
-                #print datum['fits'][r'G(0,$\sigma$\')*P($\lambda$)']['params']
+                datum['fits'][r'G($\mu$,$\sigma$\'\')*P($\lambda$)'] = fit( x, y,
+                                                                   lambda x_,mu,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigma0,A,lamb),
+                                                                   labels = ['mu','A','lambda'], 
+                                                                   p0 = [mu,AC,.1] 
+                                                                   ) 
+                datum['fits'][r'G($\mu$,$\sigma$\'\')*P($\lambda$)']['params']['sigma'] = sigma0
 
+                datum['fits'][r'G($\mu$,$\sigma$\')*P($\lambda$)'] = fit( x, y,
+                                                                   lambda x_,mu,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigma,A,lamb),
+                                                                   labels = ['mu','A','lambda'], 
+                                                                   p0 = [mu,AC,.1] 
+                                                                   ) 
+                datum['fits'][r'G($\mu$,$\sigma$\')*P($\lambda$)']['params']['sigma'] = sigma
+                
+                sigmaOS = data['os']['fits'][r'G($\mu$,$\sigma$)']['params']['sigma']
                 datum['fits'][r'G(0,$\sigma$os)*P($\lambda$)'] = fit( x, y,
-                                                                    lambda x_,A,lamb: fitfunc['G(0,sigma)*P(lambda)'](x_,data['os']['fits'][r'G(0,$\sigma$)']['params']['sigma'],A,lamb), 
+                                                                    lambda x_,A,lamb: fitfunc['G(0,sigma)*P(lambda)'](x_,sigmaOS,A,lamb), 
                                                                     labels = ['A','lambda'], 
-                                                                    p0 = [ 
-                                                                        datum['fits'][r'G(0,$\sigma$)']['params']['A'], 
-                                                                        #np.abs(datum['fits'][r'G(0,$\sigma$)*P($\lambda$)']['params']['lambda']) 
-                                                                        2.
-                                                                        ] 
+                                                                    p0 = [ AC, .1] 
                                                                     )
-                datum['fits'][r'G(0,$\sigma$os)*P($\lambda$)']['params']['sigma'] = data['os']['fits'][r'G(0,$\sigma$)']['params']['sigma']
-                #print datum['fits'][r'G(0,$\sigma$\')*P($\lambda$)']['params']
+                datum['fits'][r'G(0,$\sigma$os)*P($\lambda$)']['params']['sigma'] = sigmaOS
+
+                datum['fits'][r'G($\mu$,$\sigma$os)*P($\lambda$)'] = fit( x, y,
+                                                                    lambda x_,mu,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigmaOS,A,lamb), 
+                                                                    labels = ['mu', 'A','lambda'], 
+                                                                    p0 = [ 0, AC,.1] 
+                                                                    )
+                datum['fits'][r'G($\mu$,$\sigma$os)*P($\lambda$)']['params']['sigma'] = sigmaOS
                 
                 for fitkey in [r'G(0,$\sigma$)',
-                               r'G($\mu$,$\sigma$)',
                                r'G(0,$\sigma$)*P($\lambda$)',
-                               r'G(0,$\sigma$\')*P($\lambda$)',
-                               r'G(0,$\sigma$os)*P($\lambda$)',
+                               r'G($\mu$,$\sigma$)',
+                               r'G($\mu$,$\sigma$)*P($\lambda$)',
+                               #r'G($\mu$os,$\sigma$)*P($\lambda$)',
+                               r'G($\mu$\',$\sigma$)*P($\lambda$)',
+                               r'G($\mu$,$\sigma$os)*P($\lambda$)',
+                               r'G($\mu$,$\sigma$\')*P($\lambda$)',
+                               r'G($\mu$,$\sigma$\'\')*P($\lambda$)',
                                ]:
                     if first: 
                         header += ['runID']
@@ -563,6 +594,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                     line += [ datum['fits'][fitkey]['chisqr'] ]
                     result += [ line ]
                     first = False
+                #np.savetxt('%s.csv'%(FITSfiles[0]), result, header=', '.join(header), fmt='%s', delimiter=', ')
         
         if plot:
             if osi: del hist['osi']
@@ -573,14 +605,17 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
             first = True
             if 1:
                 span = 5 if fft else 4
+                
                 gs = GridSpec( span*len(hist.keys()), len(hslices.keys()) )
-                ax = { key: { hkey: fig.add_subplot(gs[span*(i-1):span*i-1,j]) for j, hkey in enumerate(hslices.keys()) } for i, key in enumerate(hist.keys()) }
-                axdiff = { key: { hkey: fig.add_subplot(gs[span*i-1,j], sharex=ax[key][hkey] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
+                ax = { key: { hkey: fig.add_subplot(gs[span*(i-1):span*(i-1)+3,j]) for j, hkey in enumerate(hslices.keys()) } for i, key in enumerate(hist.keys()) }
+                axdiff = { key: { hkey: fig.add_subplot(gs[span*(i-1)+3,j], sharex=ax[key][hkey] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
+                if fft:
+                    axfft = { key: { hkey: fig.add_subplot(gs[span*(i-1)+4,j] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
             for ax_ in ax.values():
                 for ax__ in ax_.values():
                     plt.setp(ax__.get_xticklabels(), visible=False)
         	
-            print 'generating plots'
+            if verbose: print 'generating plots'
             for key, data in hist.items():
                 for slicekey, datum in data.items():
                     #if slicekey is 'ac_os' or slicekey is 'os': continue
@@ -591,7 +626,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                         r'G(0,$\sigma$)', 
                         #r'G($\mu$,$\sigma$)', 
                         r'G(0,$\sigma$)*P($\lambda$)',
-                        r'G(0,$\sigma$\')*P($\lambda$)',
+                        #r'G(0,$\sigma$\')*P($\lambda$)',
                         r'G(0,$\sigma$os)*P($\lambda$)', 
                         #r'G($\mu$,$\sigma$)*P($\lambda$)',
                         #r'sG($\mu$,$\sigma$)*P($\lambda$)',
@@ -606,38 +641,20 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                                      ls = '--', color='C%d'%(i+1) )
                         axdiff[key][slicekey].step( datum['hist']['x'], datum['hist']['y']/datum['fits'][fitfunc_]['hist'], where='mid', label = label, color='C%d'%(i+1) )
                         #ax[key].step( datum['hist']['x'], np.abs(datum['fits'][fitfunc]['deconvolve']), where='mid', label = 'dec '+fitfunc )
+                    
+                    if fft:
+                        fourier = lambda x: np.fft.fftshift( np.fft.fft( x ))
+                        y = fourier( datum['hist']['y'] )
+                        ly = np.log( y )
+                        #axfft[key][slicekey].step( datum['hist']['x'], np.imag(ly), where='mid', label='i' )
+                        lamb = np.mean( np.real(ly) )
+                        print slicekey, lamb
+                        axfft[key][slicekey].step( datum['hist']['x'], np.real(y), where='mid', label='r' )
+                        #axfft[key][slicekey].step( datum['hist']['x'], np.abs(ly), where='mid', label='a' )
+                        #axfft[key][slicekey].step( datum['hist']['x'], fourier(iy), where='mid', label='fiy' )
 
-                    #lamb = 5.
-                    #filter_ = cPoisson(datum['hist']['x'], -lamb, lamb)
-                    #ax[key].plot( datum['hist']['x'], filter_*np.max(datum['hist']['y']), label = 'poisson', ls = '--' )
-
-        if fft:
-            print 'computing Fourier transform'
-            for i in irange:
-                maskAC = histAClist[i]>countCut
-                fftAC = np.fft.fftshift( np.fft.fft( histAClist[i][maskAC] ) )
-                fftgAC2neg = np.fft.fftshift( np.fft.fft( gAC2neg[i][maskAC] ) )
-                
-                axfft[i].step( xbins[maskAC], np.abs(( fftAC/fftgAC2neg )), where='mid', label = 'fftac' )
-                #axfft[i].step( xbins[maskAC], np.angle(( fftAC/fftgACneg )), where='mid', label = 'fftac' )
-                
-                fftpoisson = lambda x,mu,c: np.abs( np.fft.fftshift( np.fft.fft( poisson(x,mu,c))) )
-                fftACpp, fftACchi2 = fit( xbins[maskAC], np.abs( fftAC/fftgAC2neg), fftpoisson )
-                #print 'fftfit', fftACpp, fftACchi2
-                
-                #axfft[i].step( xbins[maskAC], np.abs( fftpoisson(xbins[maskAC], 10, 10) ), where='mid', label = 'fftgEx' )
-                #axfft[i].step( xbins[maskAC], np.abs( fftpoisson(xbins[maskAC], *fftACpp) ), where='mid', label = 'fftgac' )
-                
-                maskOS = histOSlist[i]>countCut
-                fftOS = np.fft.fftshift( np.fft.fft( histOSlist[i][maskOS] ) )
-                fftgOS = np.fft.fftshift( np.fft.fft( gOS[i][maskOS] ) )
-                axfft[i].step( xbins[maskOS], np.abs((fftOS/fftgOS)), where='mid', label = 'fftos' )
-                #axfft[i].step( xbins[maskOS], np.angle((fftOS/fftgOS)), where='mid', label = 'fftos' )
-                maxfreq = xbins[maskAC][ np.abs(fftAC) == np.max(np.abs(fftAC)) ]
-                #print maxfreq
-        first = False
     if plot:
-        print 'setting labels and lims'
+        if verbose: print 'setting labels and lims'
         for key in hist.keys():
             for hkey in hslices.keys():
                 axdiff[key][hkey].set_xlabel('pixel energy [adu]')
@@ -645,8 +662,10 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                 ax[key][hkey].set_yscale('log')
                 ax[key][hkey].set_title( key )
                 if fft: 
-                    axfft[key][hkey].set_yscale('log')
-                    axfft[key][hkey].set_xlim([maxfreq-100,maxfreq+100])
+                    #axfft[key][hkey].set_yscale('log')
+                    #axfft[key][hkey].set_xlim([maxfreq-100,maxfreq+100])
+                    #axfft[key][hkey].set_xlim([-5,5])
+                    axfft[key][hkey].legend(loc=2)
                 #ax[key].set_xlim([-120,120])
                 ax[key][hkey].set_ylim(bottom=countCut)
                 ax[key][hkey].grid(True)
@@ -654,50 +673,53 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
                 axdiff[key][hkey].grid(True)
                 axdiff[key][hkey].set_ylim([5e-1,2e0])
                 ax[key][hkey].legend()
-                #if fft: axfft[key][hkey].legend(loc=2)
+                #if fft: 
                 #axdiff[key][hkey].legend()
         plt.subplots_adjust(hspace=.1, wspace=.25)
         print 'plot generated in PNG file', '%s.png'%(FITSfiles[0])
         fig.savefig('%s.png'%(FITSfiles[0]), bbox_inches='tight')
     
-    #print 'result'
-    #print ', '.join(header)
-    #print '\n'.join( map( lambda line:', '.join(map(str,line)), result ))
-    #print '\n'.join( map( lambda line:', '.join(map(lambda x: str(type(x)),line)), result ))
     print 'table generated in CSV file', '%s.csv'%(FITSfiles[0])
-    #np.savetxt('%s.csv'%(FITSfiles[0]), result, header=', '.join(header), fmt=' '.join(fmt), delimiter=', ')
     np.savetxt('%s.csv'%(FITSfiles[0]), result, header=', '.join(header), fmt='%s', delimiter=', ')
  
+ 
+def help_():
+    print 'Usage:'
+    print '--runID <runID> --outfolder <path> --removehits'
+    print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in the associated ROOT catalog'
+    print
+    print '--runID <runID> --outfolder <path> --ROOTfile <path> --removehits'
+    print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in given ROOTfile'
+    print 
+    print '--ohdu <ohdu> --fft --plot <list of paths>'
+    print '\tgenerate plot with FITS files from paths for the given ohdu'
+    print
+
+def getOption( vars_, option, args, f = lambda x:x ):
+    if '--%s'%option in args:
+        vars_[option] = f(args[args.index('--%s'%option)+1])
+        print 'setting %s ='%option, vars_[option]
+        return
+    vars_[option] = None
+    return
+    
 if __name__ == "__main__":
     print term.bold('Dark Current Analysis Tool for the CONNIE colaboration')
     print term.bold('by Philipe Mota (philipe.mota@gmail.com)')
     print term.bold('repository https://github.com/PhMota/CONNIEtools/blob/master/fits_reader4.py')
     if len(sys.argv) == 1:
-        print 'Usage:'
-        print '--runID <runID> --outfolder <path> --removehits'
-        print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in the associated ROOT catalog'
-        print
-        print '--runID <runID> --outfolder <path> --ROOTfile <path> --removehits'
-        print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in given ROOTfile'
-        print 
-        print '--ohdu <ohdu> --fft --plot <list of paths>'
-        print '\tgenerate plot with FITS files from paths for the given ohdu'
-        print
+        help_()
         exit(0)
-    runID = None
+    vars_ = {}
     outfolder = None
-    ohdu = None
     ROOTfile = None
     fft = False
     if '--outfolder' in sys.argv:
         outfolder = sys.argv[sys.argv.index('--outfolder')+1]
         print 'setting outfolder =', outfolder
-    if '--ohdu' in sys.argv:
-        ohdu = int(sys.argv[sys.argv.index('--ohdu')+1])
-        print 'setting ohdu =', ohdu
-    if '--runID' in sys.argv:
-        runID = int(sys.argv[sys.argv.index('--runID')+1])
-        print 'setting runID =', runID
+    getOption( vars_, 'ohdu', sys.argv, int )
+    getOption( vars_, 'runID', sys.argv, int )
+    getOption( vars_, 'run', sys.argv )
     if '--ROOTfile' in sys.argv:
         ROOTfile = sys.argv[sys.argv.index('--ROOTfile')+1]
         print 'setting ROOTfile =', ROOTfile
@@ -706,29 +728,38 @@ if __name__ == "__main__":
         print 'setting fft = True'
         
     if '--removehits' in sys.argv:
-        if not runID is None:
-            removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile )
+        if not vars_['runID'] is None:
+            runETA( 'remove hits',
+                lambda: removeHitsFromrunID( vars_['runID'], outputfolder=outfolder, ohdu = vars_['ohdu'], ROOTfile=ROOTfile )
+                )
             exit(0)
         print term.red('error: runID not set')
     if '--plot' in sys.argv:
-        if not ohdu is None:
-            if not runID is None:
-               plotrunID( ohdu, fft=fft, runID=runID)
-               exit(0)
+        if not vars_['ohdu'] is None:
+            if not vars_['runID'] is None:
+                runETA( 'analyse and plot', lambda: plotrunID( vars_['ohdu'], fft=fft, runID=vars_['runID']) )
+                exit(0)
             FITSfiles = sys.argv[sys.argv.index('--plot')+1:]
             print 'input FITSfiles:'
             print '\n'.join(FITSfiles)
-            plotrunID( ohdu, FITSfiles, fft=fft )
+            plotrunID( vars_['ohdu'], FITSfiles, fft=fft )
             exit(0)
         print term.red('error: ohdu not set')
     if '--table' in sys.argv:
-        if not ohdu is None:
-            if not runID is None:
-               plotrunID( ohdu, fft=fft, runID=runID, plot=False)
-               exit(0)
+        if not vars_['ohdu'] is None:
+            if not vars_['runID'] is None:
+                runETA( 'analyse', lambda: plotrunID( vars_['ohdu'], fft=fft, runID=vars_['runID'], plot=False) )
+                exit(0)
             FITSfiles = sys.argv[sys.argv.index('--table')+1:]
             print 'input FITSfiles:'
             print '\n'.join(FITSfiles)
-            plotrunID( ohdu, FITSfiles, fft=fft, plot=False )
+            plotrunID( vars_['ohdu'], FITSfiles, fft=fft, plot=False )
             exit(0)
         print term.red('error: ohdu not set')
+    if '--listrunID' in sys.argv:
+        print 'list of runID'
+        print ', '.join( listrunID_run(vars_['run']) )
+        exit(0)
+    print 'options not recognized', sys.argv
+    help_()
+    exit(0)
