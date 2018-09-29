@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import astropy
 import astropy.io
 import astropy.io.fits
@@ -15,6 +17,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+
+from functools import partial
 
 import glob
 import os
@@ -52,11 +56,15 @@ class term:
 folder = '/share/storage2/connie/data_analysis/processed02_data/runs/029*/data_*/scn/merged/*'
 folder2 = '/share/storage2/connie/data_analysis/processed02_data/runs/009*/data_*/scn/merged/*'
 
+def rglob( pattern ):
+    print 'trying pattern', pattern
+    return rglob( pattern.replace('//','//*/') ) if len(glob.glob( pattern )) == 0 else glob.glob( pattern )
+
 def listFITS( *patterns ):
     '''
     list all files that match the list of patterns given
     '''
-    return sortByrunID([ match for pattern in patterns for match in glob.glob(pattern) if not '-with-' in match ])
+    return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
 
 def listFITS_run( *runs ):
     return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
@@ -75,7 +83,7 @@ def listremovedFITS_runID( *runIDs, **kwargs ):
     if 'inputpath' in kwargs:
         inputpath = kwargs['inputpath']
     print 'input path', inputpath
-    return listFITS( *[ inputpath + '/*/*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
+    return listFITS( *[ inputpath.rstrip('/') + '//*hsub_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     #return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/*runID_*_%05d_*'%runID for runID in runIDs ] )
 
 def getrunIDFromPath( path ):
@@ -134,6 +142,8 @@ def runETA( msg, cmd, eta = None, N = None ):
 
 def readCatalog( ROOTfile, runID = None, verbose = False ):
     min_max = lambda x: (np.min(x), np.max(x))
+    print root_numpy.list_branches( ROOTfile, treename = 'config' )
+    #print [ (branch, root_numpy.root2array( ROOTfile, treename = 'config' )[branch]) for branch in root_numpy.list_branches( ROOTfile, treename = 'config' ) ]
     if verbose: print 'reading start and stop indexes for runID', runID, 'in ROOT file'
     indexlist = np.argwhere( root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'] == runID ).flatten()
     start, stop = min_max( indexlist )
@@ -290,9 +300,9 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
 def fit( x, data, func, sel = None, log=False, p0 = None, labels = None ):
     mask = data > 0
     if sel: mask = np.all( sel+[ data>0 ], axis=0 )
-    pp = scipy.optimize.curve_fit( func, x[mask], data[mask] if not log else np.log(data[mask]), p0 )[0]
+    pp = scipy.optimize.curve_fit( func, x[mask], data[mask] if not log else np.log(data[mask]), p0, bounds=(0,np.inf) )[0]
     hist = func( x, *pp ) if not log else np.exp(func( x, *pp ))
-    chisq = scipy.stats.chisquare( hist, f_exp = data )[0]/(len(data) - len(pp))
+    chisq = scipy.stats.chisquare( hist, f_exp = data, ddof = len(labels) )[0] #/(len(data) - len(pp))
     if labels:
         return {'chisqr': chisq, 'params': OrderedDict([ [label, pp_] for label, pp_ in zip(labels, pp) ] ), 'hist': hist }
     else:
@@ -336,6 +346,265 @@ def poisson( x, mu, lamb ):
     x -= mu
     return np.exp(x*np.log(lamb) -lamb -scipy.special.loggamma(x+1))
     
+def convolution_GP( x, mu = 0, sigma = 1, A = 1, lamb = 0, Nmax = 500 ):
+    lamb = abs(lamb)
+    mu = abs(mu)
+    #mu += lamb
+    #sigma -= lamb
+    sp = scipy.stats.norm.pdf(x,mu,sigma)
+    if lamb == 0: return A*sp
+    sp0 = np.sum( sp )
+    for i in range(1,Nmax+1):
+        spi = lamb**i*scipy.stats.norm.pdf(x-i,mu,sigma)/factorial(i)
+        sp += spi
+        if np.sum(spi)/sp0 < 1e-4: break
+    if i == Nmax-1: print 'Warning: Nmax reached in convolution'
+    return A*np.exp(-lamb)*sp
+
+def convolution_GP2( x, Nmax = 500, **kwargs ):#mu_os, sigma_os, mu_ac, sigma_ac, A, lamb, Nmax = 500 ):
+#def convolution_GP2( x, mu_os, sigma_os, mu_ac, sigma_ac, A, lamb, Nmax = 500 ):
+    mu_os = kwargs['mu_os']
+    mu_ac = kwargs['mu_ac']
+    sigma_os = kwargs['sigma_os']
+    sigma_ac = kwargs['sigma_ac']
+    A = kwargs['A']
+    lamb = kwargs['lambda']
+    
+    gain = kwargs['lambda']
+    
+    mu = mu_os+mu_ac-lamb
+    sigma = np.sqrt( sigma_os**2 + sigma_ac**2 )
+    sp = scipy.stats.norm.pdf(x,mu,sigma)
+    if lamb == 0.0: return A*sp
+    sp0 = np.sum( sp )
+    for i in range(1,Nmax+1):
+        spi = lamb**i*scipy.stats.norm.pdf(x-float(i)/gain,mu,sigma)/factorial(i)
+        sp += spi
+        if np.sum(spi)/sp0 < 1e-4: break
+    if i == Nmax-1: print 'Warning: Nmax reached in convolution'
+    return A*np.exp(-lamb)*sp
+    
+def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds = (0.,np.inf) ):
+    fix = filter( lambda k: not k[0] in adjust, p0.items() )
+    p_ = [ v for k,v in p0.items() if k in adjust ]
+    mask = data > 0
+    if sel: mask = np.all( sel+[ data>0 ], axis=0 )
+    
+    x_ = x[mask]
+    if log:
+        f = lambda x_, *p: np.log( convolution_GP2(x_, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0.items() } ) )
+        y_ = np.log( data[mask] )
+    else:
+        f = lambda x_, *p: convolution_GP2(x_, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0.items() } )
+        y_ = data[mask]
+    pp = scipy.optimize.curve_fit( f, x_, y_, p_, bounds=bounds )[0]
+    hist = f( x, *pp ) if not log else np.exp(f( x, *pp ))
+    chisq = scipy.stats.chisquare( hist, f_exp = data )[0]/(len(data) - len(pp))
+    pp = OrderedDict([ (label, pp[adjust.index(label)] if label in adjust else val) for label, val in p0.items() ] )
+    return {'chisqr': chisq, 'params': pp, 'hist': hist }
+
+def computeFits( ohdu, runID, hdulists, verbose=False ):
+    result = []
+    header = []
+    fmt = []
+    first = True
+
+    clean = lambda x: x.flatten()[ np.all( [x.flatten()!=REMOVEOLD, x.flatten()!=REMOVE, x.flatten()!=1e10], axis=0) ]
+
+    hdulists = OrderedDict([('scn', hdulists)])
+    if verbose: print 'ohdus in file', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulists['scn'] ] ))
+    
+    data = OrderedDict([ (key, hdu.data) for key, hdulist in hdulists.items() for hdu in hdulist if hdu.header['OHDU'] == ohdu ])
+    if verbose: 
+        print 'keys', data.keys()
+        print 'shapes', data['scn'].shape
+        print 'data extremes', data['scn'].min(), data['scn'].max()
+    yccd = 4262
+    xccd = 4220
+    yos = 4112
+    #if osi:
+        #if data['osi'].shape[1] == 2*yccd:
+            #print 'subtracting idle amplifier'
+            #data['osisub'] = data['osi'][0:xccd,0:yccd] - np.flip(data['osi'][0:xccd,yccd:2*yccd], 1)
+    #if scnsub:
+        #print 'subtracting idle overscan'
+        #print 'bias correction shape', np.median(data['scn'][0:xccd,yos:], axis=1).shape
+        #data['scnsub'] = data['scn'][0:xccd,:] - np.median(data['scn'][0:xccd,yos+10:-10], axis=1)[:,np.newaxis]
+    #print 'data len', data.keys()
+    dx = 1
+    shift = lambda bins: (bins[1:]+bins[:-1])*.5
+    #bins = np.r_[min(clean(data['scn'])):max(clean(data['scn'])):dx]
+    bins = np.r_[-2*max(clean(data['scn'])):max(clean(data['scn'])):dx]
+    if verbose: print 'bins', min(bins), max(bins)
+
+    if verbose: print 'computing histogram of full ccd'
+    vslice = slice(120,4180)
+    hslices = OrderedDict( [
+        ('os', slice(4112+10, 4262-10)), 
+        ('ac', slice(20,4100)), 
+        #('ac_os', slice(3112+10,3262-10))
+        ] )
+    countCut = 1e1
+    parseHist = lambda h,x: { 'y': h[h/dx>countCut]/dx, 'x': (.5*(x[1:]+x[:-1]))[h/dx>countCut] }
+    #parseHist = lambda h,x: { 'y': h, 'x': (.5*(x[1:]+x[:-1])) }
+    
+    hist = OrderedDict( [ (datakey, { 
+        #'all': {'hist': np.histogram( clean(datum[0:xccd,0:yccd]), bins = bins )[0] }, 'slice': '0:%s|0:%s'%(xccd,yccd),
+        slicekey: {
+            'hist': parseHist( *np.histogram( clean(datum[vslice,hslice]), bins = bins ) ),
+            'pixelcount': len(clean(datum[vslice,hslice]))
+            } for slicekey, hslice in hslices.items()
+        })
+        for datakey, datum in data.items() 
+    ])
+    if verbose: print 'keys', [ (datakey, hist[datakey].keys()) for datakey in data.keys() ]
+
+    def change( d, k, v ):
+        d0 = dict(d)
+        d0[k] = v
+        return d0
+    
+    first=True
+    fitindex = 0
+    for datakey, data in hist.items():
+        for slicekey in hslices.keys():
+            datum = data[slicekey]
+            x = datum['hist']['x']
+            y = datum['hist']['y']
+            N = y.sum()/dx
+            #N_ = 2*y[x<0].sum()/dx
+            N_ = N
+            print 'µ', 'σ', 'λ'
+            print datum['pixelcount']
+            print y.sum()/dx
+            print 2*y[x<0].sum()/dx
+            
+            datum['fits'] = OrderedDict({})
+
+            p0 = OrderedDict( [ 
+                ('mu_os', 0.), 
+                ('sigma_os', 1. if slicekey=='os' else 0), 
+                ('mu_ac', 0.), 
+                ('sigma_ac', 1. if slicekey=='ac' else 0), 
+                ('A', N), 
+                ('lambda',0.), 
+                #('gain', 1.),
+                ] )
+            print slicekey
+            datum['fits'][r'G(µ,σ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_%s'%slicekey, 'sigma_%s'%slicekey] )
+            datum['fits'][r'G(µ,σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(µ,σ)']['params'], adjust = ['mu_%s'%slicekey, 'sigma_%s'%slicekey, 'lambda'] )
+
+            datum['fits'][r'G(0,σ)'] = fitpartial( x, y, p0=p0, adjust = ['sigma_%s'%slicekey] )
+            datum['fits'][r'G(0,σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)']['params'], adjust = ['sigma_%s'%slicekey, 'lambda'] )
+            datum['fits'][r'G(0,σ=σ0)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)']['params'], adjust = ['lambda'] )
+            datum['fits'][r'G(0,σ0-)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)']['params'], sel=[x<0], adjust = ['sigma_%s'%slicekey] )
+            datum['fits'][r'G(0,σ=σ0-)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ0-)']['params'], adjust = ['lambda'] )
+            
+            datum['fits'][r'log(G(µ,σ))'] = fitpartial( x, y, p0=datum['fits'][r'G(µ,σ)']['params'], adjust = ['mu_%s'%slicekey, 'sigma_%s'%slicekey], log = True )
+            datum['fits'][r'log(G(µ,σ)*P(λ))'] = fitpartial( x, y, p0=datum['fits'][r'G(µ,σ)*P(λ)']['params'], adjust = ['mu_%s'%slicekey, 'sigma_%s'%slicekey, 'lambda'], log = True )
+            
+            datum['fits'][r'log(G(0,σ))'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)']['params'], adjust = ['sigma_%s'%slicekey], log = True )
+            datum['fits'][r'log(G(0,σ)*P(λ))'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)*P(λ)']['params'], adjust = ['sigma_%s'%slicekey, 'lambda'], log = True )
+            #datum['fits'][r'logA*G(0,σ)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)']['params'], adjust = ['sigma_%s'%slicekey, 'A'], log = True )
+            #datum['fits'][r'logG(0,σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)']['params'], adjust = ['sigma_%s'%slicekey, 'lambda'], log = True )
+            #datum['fits'][r'logA*G(0,σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(0,σ)*P(λ)']['params'], adjust = ['sigma_%s'%slicekey, 'A', 'lambda'], log = True )
+
+            #if slicekey == 'ac':
+                #p0 = change( data['os']['fits'][r'G(µ,σ)']['params'], 'A', N )
+                #p2 = change( p0, 'sigma_ac', 1. )
+                #p2a = change(change( p2, 'sigma_os', 0. ), 'mu_os', 0)
+                
+                #datum['fits'][r'G(µos+µ,σos+σ)'] = fitpartial( x, y, p0=p2, adjust = ['mu_ac', 'sigma_ac' ] )
+                #datum['fits'][r'G(µos+µ,σos+σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(µos+µ,σos+σ)']['params'], adjust = ['mu_ac', 'sigma_ac','lambda'] )
+                #datum['fits'][r'G(µ=µos+µ,σ=σos+σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(µos+µ,σos+σ)']['params'], adjust = ['lambda'] )
+                
+                #datum['fits'][r'G(µos+0,σos+σ)'] = fitpartial( x, y, p0=p0, adjust = ['sigma_ac'] )
+                #datum['fits'][r'G(µos+0,σos+σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(µos+0,σos+σ)']['params'], adjust = ['sigma_ac', 'lambda'] )
+                #datum['fits'][r'G(µ=µos+0,σ=σos+σ)*P(λ)'] = fitpartial( x, y, p0=datum['fits'][r'G(µos+0,σos+σ)']['params'], adjust = ['lambda'] )
+
+            #for sigmakey in ['σ0-','σ0','σ0+']:
+                #sel = [x<0] if '-' in sigmakey else ( [x>0] if '+' in sigmakey else [] )
+                #fkey_s = r'G(µ=0,%s)'%(sigmakey)
+                #if slicekey == 'os':
+                    #datum['fits'][r'G(µ=0,%s)'%(sigmakey)] = fitpartial( x, y, sel=sel, p0=p0, adjust = ['sigma_os'] )
+                    #datum['fits'][r'G(µ=0,σ=%s)*P(λ)'%(sigmakey)] = fitpartial( x, y, p0=datum['fits'][r'G(µ=0,%s)'%(sigmakey)]['params'], adjust = ['lambda'] )
+                #if slicekey == 'ac':
+                    #p1 = change(change(data['os']['fits'][r'G(µ=0,%s)'%(sigmakey)]['params'], 'sigma_ac', 1.), 'A', N)
+
+                    #datum['fits'][r'G(0+µ,%s+σ)'%(sigmakey)] = fitpartial( x, y, p0=p1, adjust = ['sigma_ac'] )
+                    #datum['fits'][r'G(0+µ,%s+σ)*P(λ)'%(sigmakey)] = fitpartial( x, y, p0=datum['fits'][r'G(0+µ,%s+σ)'%(sigmakey)]['params'], adjust = ['mu_ac', 'sigma_ac', 'lambda'] )
+                    #datum['fits'][r'G(0+µ,%s+σ)*P(λ)'%(sigmakey)] = fitpartial( x, y, p0=datum['fits'][r'G(0+µ,%s+σ)'%(sigmakey)]['params'], adjust = ['lambda'] )
+
+                    #datum['fits'][r'G(µ=µos,σos+%s)'%(sigmakey)] = fitpartial( x, y, sel=sel, p0=p2, adjust = ['sigma_ac'] )
+                    #datum['fits'][r'G(µ=µos,σos+%s)*P(λ)'%(sigmakey)] = fitpartial( x, y, sel=sel, p0=datum['fits'][r'G(µ=µos,σos+%s)'%(sigmakey)]['params'], adjust = ['lambda'] )
+                    
+                    #for sigma2key in ['σ0-','σ0','σ0+','σ']:
+                        #sel2 = [x<0] if '-' in sigma2key else ( [x>0] if '+' in sigma2key else [] )
+                        #datum['fits'][r'G(µ=0,%s+%s)'%(sigmakey, sigma2key)] = fitpartial( x, y, sel=sel2, p0=p1, adjust = ['sigma_ac'] )
+                        #datum['fits'][r'G(µ=0,%s+%s)*P(λ)'%(sigmakey, sigma2key)] = fitpartial( x, y, p0=datum['fits'][r'G(µ=0,%s+%s)'%(sigmakey, sigma2key)]['params'], adjust = ['lambda'] )
+                        
+            tablekeys = datum['fits'].keys()
+            fitkeylen = max(map(len,tablekeys))
+            print fitkeylen
+            for fitkey in tablekeys:
+                if not fitkey in datum['fits']: continue
+                line = []
+                if first: 
+                    header += ['fitID']
+                    fmt += ['%d']
+                line += [ fitindex ]
+                if first: 
+                    header += ['runID']
+                    fmt += ['%d']
+                line += [ int(runID) ]
+                if first: 
+                    header += ['ohdu']
+                    fmt += ['%d']
+                line += [ int(ohdu) ]
+                if first: 
+                    header += ['tempmin']
+                    fmt += ['%.2f']
+                line += [ float(hdulists['scn'][0].header['TEMPMIN' ]) ]
+                if first: 
+                    header += ['tempmax']
+                    fmt += ['%.2f']
+                line += [ float(hdulists['scn'][0].header['TEMPMAX' ]) ]
+                if first: 
+                    header += ['file']
+                    fmt += ['%.32s']
+                line += [ datakey ]
+                if first: 
+                    header += ['section']
+                    fmt += ['%.32s']
+                line += [ slicekey ]
+                if first: 
+                    header += ['pixelcount']
+                    fmt += ['%.2e']
+                line += [ datum['pixelcount'] ]
+                if first:
+                    header += ['fitfunc']
+                    fmt += ['%%%ds'%fitkeylen]
+                line += [ fitkey ]
+                params = ['mu_os', 'sigma_os', 'mu_ac', 'sigma_ac', 'A', 'lambda' ]
+                if first:
+                    header += params
+                    fmt += ['% .4e']*7
+                line += [ (datum['fits'][fitkey]['params'][k] if k in datum['fits'][fitkey]['params'] else 0) for k in params ]
+                if first: 
+                    header += ['chisqr']
+                    fmt += ['%.3e']
+                line += [ datum['fits'][fitkey]['chisqr'] ]
+                result += [ line ]
+                first = False
+                fitindex += 1
+    #sep = ', '
+    sep = ' '
+    print sep.join( [ str((i,h)) for i, h in enumerate(header)] )
+    print sep.join(header)
+    print '\n'.join( [ sep.join( [ f%entry for f,entry in zip(fmt,line) ] ) for line in result ] )
+    printcsv = lambda outfile: np.savetxt('%s.csv'%(outfile), result, header=sep.join(header), fmt='%s', delimiter=sep)
+    return hist, printcsv
+
 def plotrunID( ohdu, *FITSfiles, **kwargs ):
     fft = False
     if 'fft' in kwargs:
@@ -361,311 +630,65 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     
     print 'FITSfiles:\n', '\n'.join(FITSfiles)
     runID = getrunIDFromPath( FITSfiles[0] )
-    #print 'runID =', runID
-
-    fitfunc = {
-        'Gaussian(mu,sigma)*A': lambda x,mu,sigma,A: scipy.stats.norm.pdf(x,mu,sigma)*A,
-        'log(Gaussian(mu,sigma)*A)': lambda x,mu,sigma,A: np.log(A/sigma/np.sqrt(2*np.pi)) - .5*(x-mu)**2/sigma**2,
-        'Poisson(mu,lambda)*A': lambda x,mu,lamb,A: A*cPoisson(x, mu, lamb),
-        }
+        
+    hist, printcsv = computeFits( ohdu, runID, astropy.io.fits.open( FITSfiles[0] ), verbose )
     
-    fitfunc['Gaussian(0,sigma)*A'] = lambda x,b,c: fitfunc['Gaussian(mu,sigma)*A'](x,0,b,c)
-    fitfunc['log(Gaussian(0,sigma)*A)'] = lambda x,b,c: fitfunc['log(Gaussian(mu,sigma)*A)'](x,0,b,c)
-    fitfunc['Poisson(0,lambda)*A'] = lambda x,lamb,A: fitfunc['Poisson(mu,lambda)*A'](x,0,lamb,A)
-    fitfunc['Poisson(-lambda,lambda)*A'] = lambda x,lamb,A: fitfunc['Poisson(mu,lambda)*A'](x,-lamb,lamb,A)
-
-    fitfunc['convolution(Gaussian(0,sigma),Poisson(-lamb,lamb))*A'] = lambda x, sigma, A, lamb: A*np.convolve( fitfunc['Gaussian(0,sigma)*A'](x,sigma,1), fitfunc['Poisson(-lambda,lambda)*A'](x,lamb,1)[::-1], 'same' )
-    fitfunc['convolution(Gaussian(mu,sigma),Poisson(-lamb,lamb))*A'] = lambda x, mu, sigma, A, lamb: A*np.convolve( fitfunc['Gaussian(mu,sigma)*A'](x,mu,sigma,1), fitfunc['Poisson(-lambda,lambda)*A'](x,lamb,1)[::-1], 'same' )
-    fitfunc['conv(G(0,sigma),P(-lamb,lamb))*A'] = fitfunc['convolution(Gaussian(0,sigma),Poisson(-lamb,lamb))*A']
-    
-    def convolution_GP( x, mu, sigma, A, lamb ):
-        Nmax = 200
-        lamb = abs(lamb)
-        mu += lamb
-        sp = scipy.stats.norm.pdf(x,mu,sigma)
-        sp0 = np.sum( sp )
-        for i in range(1,Nmax):
-            spi = lamb**i*scipy.stats.norm.pdf(x-i,mu,sigma)/factorial(i)
-            sp += spi
-            if np.sum(spi)/sp0 < 1e-4: break
-        if i == Nmax-1: print 'Warning: Nmax reached in convolution'
-        return A*np.exp(-lamb)*sp
-        
-    fitfunc['G(mu,sigma)*P(lambda)'] = convolution_GP
-    fitfunc['G(0,sigma)*P(lambda)'] = lambda x, sigma, A, lamb: convolution_GP(x,0,sigma,A,lamb)
-
-    result = []
-    header = []
-    fmt = []
-    first = True
-    clean = lambda x: x.flatten()[ np.all( [x.flatten()!=REMOVEOLD, x.flatten()!=REMOVE, x.flatten()!=1e10], axis=0) ]
-
-    osi = False
-    meanplot = False
-    scnsub = False
-    #print 'plotting'
-    if 1:
-        
-        hdulists = [ astropy.io.fits.open( FITSfile ) for FITSfile in FITSfiles ]
-        
-        #if len(hdulists) > 1:
-            #hdulists = OrderedDict([('scn', hdulists[0]), ('osi', hdulists[1]) ])
-            #osi = True
-        #else:
-            #hdulists = OrderedDict([('scn', hdulists[0])])
-        hdulists = OrderedDict([('scn', hdulists[0])])
-        #print 'len hdulists', len(hdulists) 
-        
-        if verbose: print 'ohdus in file', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulists['scn'] ] ))
-        
-        data = OrderedDict([ (key, hdu.data) for key, hdulist in hdulists.items() for hdu in hdulist if hdu.header['OHDU'] == ohdu ])
-        if verbose: 
-            print 'keys', data.keys()
-            print 'shapes', data['scn'].shape
-            print 'data extremes', data['scn'].min(), data['scn'].max()
-        if meanplot:
-            print 'generating mean plot'
-            fig2 = plt.figure()
-            ax2 = fig2.add_subplot(111)
-            ax2.plot( np.min(data['scn'], axis=0) )
+    if plot:
+        if osi: del hist['osi']
+        print 'initiate figure'
+        fig = plt.figure()
+        fig.set_size_inches( np.array(fig.get_size_inches())*[len(hslices.keys()) ,len(hist.keys())] )
+        fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
+        first = True
+        if 1:
+            span = 5 if fft else 4
             
-            if osi: ax2.plot( data['osi'][100,:] ) 
-            ax2.set_xlim([1000,5500])
-            fig2.savefig('mean.png')
-        yccd = 4262
-        xccd = 4220
-        yos = 4112
-        if osi:
-            if data['osi'].shape[1] == 2*yccd:
-                print 'subtracting idle amplifier'
-                data['osisub'] = data['osi'][0:xccd,0:yccd] - np.flip(data['osi'][0:xccd,yccd:2*yccd], 1)
-        if scnsub:
-            print 'subtracting idle overscan'
-            print 'bias correction shape', np.median(data['scn'][0:xccd,yos:], axis=1).shape
-            data['scnsub'] = data['scn'][0:xccd,:] - np.median(data['scn'][0:xccd,yos+10:-10], axis=1)[:,np.newaxis]
-        #print 'data len', data.keys()
-        dx = 1
-        shift = lambda bins: (bins[1:]+bins[:-1])*.5
-        #bins = np.r_[min(clean(data['scn'])):max(clean(data['scn'])):dx]
-        bins = np.r_[-2*max(clean(data['scn'])):max(clean(data['scn'])):dx]
-        if verbose: print 'bins', min(bins), max(bins)
-
-        if verbose: print 'computing histogram of full ccd'
-        vslice = slice(120,4180)
-        hslices = OrderedDict( [
-            ('os', slice(4112+10, 4262-10)), 
-            ('ac', slice(20,4100)), 
-            #('ac_os', slice(3112+10,3262-10))
-            ] )
-        countCut = 1e1
-        parseHist = lambda h,x: { 'y': h[h/dx>countCut]/dx, 'x': (.5*(x[1:]+x[:-1]))[h/dx>countCut] }
-        #parseHist = lambda h,x: { 'y': h, 'x': (.5*(x[1:]+x[:-1])) }
+            gs = GridSpec( span*len(hist.keys()), len(hslices.keys()) )
+            ax = { key: { hkey: fig.add_subplot(gs[span*(i-1):span*(i-1)+3,j]) for j, hkey in enumerate(hslices.keys()) } for i, key in enumerate(hist.keys()) }
+            axdiff = { key: { hkey: fig.add_subplot(gs[span*(i-1)+3,j], sharex=ax[key][hkey] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
+            if fft:
+                axfft = { key: { hkey: fig.add_subplot(gs[span*(i-1)+4,j] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
+        for ax_ in ax.values():
+            for ax__ in ax_.values():
+                plt.setp(ax__.get_xticklabels(), visible=False)
         
-        hist = OrderedDict( [ (datakey, { 
-            #'all': {'hist': np.histogram( clean(datum[0:xccd,0:yccd]), bins = bins )[0] }, 'slice': '0:%s|0:%s'%(xccd,yccd),
-            slicekey: {
-                'hist': parseHist( *np.histogram( clean(datum[vslice,hslice]), bins = bins ) ),
-                'pixelcount': len(clean(datum[vslice,hslice]))
-                } for slicekey, hslice in hslices.items()
-            })
-            for datakey, datum in data.items() 
-        ])
-        if verbose: print 'keys', [ (datakey, hist[datakey].keys()) for datakey in data.keys() ]
-
-        for datakey, data in hist.items():
-            for slicekey in hslices.keys():
-                datum = data[slicekey]
-                x = datum['hist']['x']
-                y = datum['hist']['y']
+        if verbose: print 'generating plots'
+        for key, data in hist.items():
+            for slicekey, datum in data.items():
+                #if slicekey is 'ac_os' or slicekey is 'os': continue
                 
-                datum['fits'] = {}
-                datum['fits']['log(Gaussian(mu,sigma)*A)'] = fit( x, y, fitfunc['log(Gaussian(mu,sigma)*A)'], log=True, labels = ['mu','sigma','A'] )
-                mulog, sigmalog, Alog = datum['fits']['log(Gaussian(mu,sigma)*A)']['params'].values()
-
-                datum['fits']['log(Gaussian(0,sigma)*A)'] = fit( x, y, fitfunc['log(Gaussian(0,sigma)*A)'], sel=[x<0], log=True, labels = ['sigma','A'], p0 = [sigmalog, Alog] )
-                sigmalog0, Alog0 = datum['fits']['log(Gaussian(0,sigma)*A)']['params'].values()
-
-                datum['fits'][r'G($\mu$,$\sigma$)'] = fit( x, y, fitfunc['Gaussian(mu,sigma)*A'], labels = ['mu', 'sigma','A'], p0 = [mulog,sigmalog,Alog] ) 
-                mu, sigma, A = datum['fits'][r'G($\mu$,$\sigma$)']['params'].values()
+                ax[key][slicekey].step( datum['hist']['x'], datum['hist']['y'], where='mid', label = slicekey, lw = 2 )
                 
-                datum['fits'][r'G(0,$\sigma$)'] = fit( x, y,
-                                                      fitfunc['Gaussian(0,sigma)*A'], 
-                                                      sel=[x<0], 
-                                                      labels = ['sigma','A'], 
-                                                      p0 = datum['fits']['log(Gaussian(0,sigma)*A)']['params'].values() 
-                                                      ) 
-                sigma0, A0 = datum['fits'][r'G(0,$\sigma$)']['params'].values()
+                for i, fitfunc_ in enumerate([
+                    r'G(0,$\sigma$)', 
+                    #r'G($\mu$,$\sigma$)', 
+                    r'G(0,$\sigma$)*P($\lambda$)',
+                    #r'G(0,$\sigma$\')*P($\lambda$)',
+                    r'G(0,$\sigma$os)*P($\lambda$)', 
+                    #r'G($\mu$,$\sigma$)*P($\lambda$)',
+                    #r'sG($\mu$,$\sigma$)*P($\lambda$)',
+                    #r'cG($\mu$,$\sigma$)*P($\lambda$)',
+                    ]):
+                    label = fitfunc_
+                    label = label.replace(r'$\sigma$', '%.2f'%datum['fits'][fitfunc_]['params']['sigma'] )
+                    label = label.replace(r'$\lambda$', '' if not 'lambda' in datum['fits'][fitfunc_]['params'] else '%.2g'%abs(datum['fits'][fitfunc_]['params']['lambda']) ) 
+                    label += ' $\chi^2$=%.3g'%datum['fits'][fitfunc_]['chisqr']
+                    ax[key][slicekey].plot( datum['hist']['x'], datum['fits'][fitfunc_]['hist'], 
+                                    label = label, 
+                                    ls = '--', color='C%d'%(i+1) )
+                    axdiff[key][slicekey].step( datum['hist']['x'], datum['hist']['y']/datum['fits'][fitfunc_]['hist'], where='mid', label = label, color='C%d'%(i+1) )
+                    #ax[key].step( datum['hist']['x'], np.abs(datum['fits'][fitfunc]['deconvolve']), where='mid', label = 'dec '+fitfunc )
                 
-                datum['fits'][r'G(0,$\sigma$)*P($\lambda$)'] = fit( x, y,
-                                                                   fitfunc['G(0,sigma)*P(lambda)'],  
-                                                                   labels = ['sigma','A','lambda'], 
-                                                                   p0 = [sigma0, A0, .1]
-                                                                   ) 
-                sigmaC0,AC0,lambC0 = datum['fits'][r'G(0,$\sigma$)*P($\lambda$)']['params'].values()
-                
-                datum['fits'][r'G($\mu$,$\sigma$)*P($\lambda$)'] = fit( x, y,
-                                                                       fitfunc['G(mu,sigma)*P(lambda)'],
-                                                                       labels = ['mu','sigma','A','lambda'],
-                                                                       p0 = [mu, sigmaC0, AC0, lambC0]
-                                                                       ) 
-                muC,sigmaC,AC,lambC = datum['fits'][r'G($\mu$,$\sigma$)*P($\lambda$)']['params'].values()
-
-                datum['fits'][r'G($\mu$\',$\sigma$)*P($\lambda$)'] = fit( x, y,
-                                                                   lambda x_,sigma,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigma,A,lamb),
-                                                                   labels = ['sigma','A','lambda'], 
-                                                                   p0 = [sigmaC,AC,.1] 
-                                                                   ) 
-                datum['fits'][r'G($\mu$\',$\sigma$)*P($\lambda$)']['params']['mu'] = mu
-                sigmaCmu = datum['fits'][r'G($\mu$\',$\sigma$)*P($\lambda$)']['params']['sigma']
-
-                datum['fits'][r'G($\mu$,$\sigma$\'\')*P($\lambda$)'] = fit( x, y,
-                                                                   lambda x_,mu,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigma0,A,lamb),
-                                                                   labels = ['mu','A','lambda'], 
-                                                                   p0 = [mu,AC,.1] 
-                                                                   ) 
-                datum['fits'][r'G($\mu$,$\sigma$\'\')*P($\lambda$)']['params']['sigma'] = sigma0
-
-                datum['fits'][r'G($\mu$,$\sigma$\')*P($\lambda$)'] = fit( x, y,
-                                                                   lambda x_,mu,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigma,A,lamb),
-                                                                   labels = ['mu','A','lambda'], 
-                                                                   p0 = [mu,AC,.1] 
-                                                                   ) 
-                datum['fits'][r'G($\mu$,$\sigma$\')*P($\lambda$)']['params']['sigma'] = sigma
-                
-                sigmaOS = data['os']['fits'][r'G($\mu$,$\sigma$)']['params']['sigma']
-                muOS = data['os']['fits'][r'G($\mu$,$\sigma$)']['params']['mu']
-                datum['fits'][r'G(0,$\sigma$os)*P($\lambda$)'] = fit( x, y,
-                                                                    lambda x_,A,lamb: fitfunc['G(0,sigma)*P(lambda)'](x_,sigmaOS,A,lamb), 
-                                                                    labels = ['A','lambda'], 
-                                                                    p0 = [ AC, .1] 
-                                                                    )
-                datum['fits'][r'G(0,$\sigma$os)*P($\lambda$)']['params']['sigma'] = sigmaOS
-
-                datum['fits'][r'G($\mu$,$\sigma$os)*P($\lambda$)'] = fit( x, y,
-                                                                    lambda x_,mu,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,mu,sigmaOS,A,lamb), 
-                                                                    labels = ['mu', 'A','lambda'], 
-                                                                    p0 = [ 0, AC,.1] 
-                                                                    )
-                datum['fits'][r'G($\mu$,$\sigma$os)*P($\lambda$)']['params']['sigma'] = sigmaOS
-                
-                datum['fits'][r'G($\mu$os,$\sigma$)*P($\lambda$)'] = fit( x, y,
-                                                                    lambda x_,s,A,lamb: fitfunc['G(mu,sigma)*P(lambda)'](x_,muOS,s,A,lamb), 
-                                                                    labels = ['sigma', 'A','lambda'], 
-                                                                    p0 = [ sigma, AC,.1] 
-                                                                    )
-                datum['fits'][r'G($\mu$os,$\sigma$)*P($\lambda$)']['params']['mu'] = muOS
-                
-                for fitkey in [r'G(0,$\sigma$)',
-                               r'G(0,$\sigma$)*P($\lambda$)',
-                               r'G($\mu$,$\sigma$)',
-                               r'G($\mu$,$\sigma$)*P($\lambda$)',
-                               r'G($\mu$os,$\sigma$)*P($\lambda$)',
-                               r'G($\mu$\',$\sigma$)*P($\lambda$)',
-                               r'G($\mu$,$\sigma$os)*P($\lambda$)',
-                               r'G($\mu$,$\sigma$\')*P($\lambda$)',
-                               r'G($\mu$,$\sigma$\'\')*P($\lambda$)',
-                               ]:
-                    if first: 
-                        header += ['runID']
-                        fmt += ['%d']
-                    line = [ int(runID) ]
-                    if first: 
-                        header += ['ohdu']
-                        fmt += ['%d']
-                    line += [ int(ohdu) ]
-                    if first: 
-                        header += ['tempmin']
-                        fmt += ['%.2f']
-                    line += [ float(hdulists['scn'][0].header['TEMPMIN' ]) ]
-                    if first: 
-                        header += ['tempmax']
-                        fmt += ['%.2f']
-                    line += [ float(hdulists['scn'][0].header['TEMPMAX' ]) ]
-                    if first: 
-                        header += ['file']
-                        fmt += ['%.32s']
-                    line += [ datakey ]
-                    if first: 
-                        header += ['section']
-                        fmt += ['%.32s']
-                    line += [ slicekey ]
-                    if first: 
-                        header += ['pixelcount']
-                        fmt += ['%d']
-                    line += [ datum['pixelcount'] ]
-                    if first:
-                        header += ['fitfunc']
-                        fmt += ['%.32s']
-                    line += [ fitkey ]
-                    if first:
-                        header += ['mu', 'sigma', 'A', 'lambda']
-                        fmt += ['%.2e', '%.2e', '%.2e', '%.2e']
-                    if 'lambda' in  datum['fits'][fitkey]['params']: datum['fits'][fitkey]['params']['lambda'] = abs(datum['fits'][fitkey]['params']['lambda'])
-                    line += [ datum['fits'][fitkey]['params'][k] if k in datum['fits'][fitkey]['params'] else 0 for k in ['mu', 'sigma', 'A', 'lambda'] ]
-                    if first: 
-                        header += ['chisqr']
-                        fmt += ['%.2e']
-                    line += [ datum['fits'][fitkey]['chisqr'] ]
-                    result += [ line ]
-                    first = False
-                #np.savetxt('%s.csv'%(FITSfiles[0]), result, header=', '.join(header), fmt='%s', delimiter=', ')
-        
-        if plot:
-            if osi: del hist['osi']
-            print 'initiate figure'
-            fig = plt.figure()
-            fig.set_size_inches( np.array(fig.get_size_inches())*[len(hslices.keys()) ,len(hist.keys())] )
-            fig.suptitle('runID%s'%runID+' ohdu%s'%ohdu)
-            first = True
-            if 1:
-                span = 5 if fft else 4
-                
-                gs = GridSpec( span*len(hist.keys()), len(hslices.keys()) )
-                ax = { key: { hkey: fig.add_subplot(gs[span*(i-1):span*(i-1)+3,j]) for j, hkey in enumerate(hslices.keys()) } for i, key in enumerate(hist.keys()) }
-                axdiff = { key: { hkey: fig.add_subplot(gs[span*(i-1)+3,j], sharex=ax[key][hkey] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
                 if fft:
-                    axfft = { key: { hkey: fig.add_subplot(gs[span*(i-1)+4,j] ) for j, hkey in enumerate(hslices.keys())} for i, key in enumerate(hist.keys()) }
-            for ax_ in ax.values():
-                for ax__ in ax_.values():
-                    plt.setp(ax__.get_xticklabels(), visible=False)
-        	
-            if verbose: print 'generating plots'
-            for key, data in hist.items():
-                for slicekey, datum in data.items():
-                    #if slicekey is 'ac_os' or slicekey is 'os': continue
-                    
-                    ax[key][slicekey].step( datum['hist']['x'], datum['hist']['y'], where='mid', label = slicekey, lw = 2 )
-                    
-                    for i, fitfunc_ in enumerate([
-                        r'G(0,$\sigma$)', 
-                        #r'G($\mu$,$\sigma$)', 
-                        r'G(0,$\sigma$)*P($\lambda$)',
-                        #r'G(0,$\sigma$\')*P($\lambda$)',
-                        r'G(0,$\sigma$os)*P($\lambda$)', 
-                        #r'G($\mu$,$\sigma$)*P($\lambda$)',
-                        #r'sG($\mu$,$\sigma$)*P($\lambda$)',
-                        #r'cG($\mu$,$\sigma$)*P($\lambda$)',
-                        ]):
-                        label = fitfunc_
-                        label = label.replace(r'$\sigma$', '%.2f'%datum['fits'][fitfunc_]['params']['sigma'] )
-                        label = label.replace(r'$\lambda$', '' if not 'lambda' in datum['fits'][fitfunc_]['params'] else '%.2g'%abs(datum['fits'][fitfunc_]['params']['lambda']) ) 
-                        label += ' $\chi^2$=%.3g'%datum['fits'][fitfunc_]['chisqr']
-                        ax[key][slicekey].plot( datum['hist']['x'], datum['fits'][fitfunc_]['hist'], 
-                                     label = label, 
-                                     ls = '--', color='C%d'%(i+1) )
-                        axdiff[key][slicekey].step( datum['hist']['x'], datum['hist']['y']/datum['fits'][fitfunc_]['hist'], where='mid', label = label, color='C%d'%(i+1) )
-                        #ax[key].step( datum['hist']['x'], np.abs(datum['fits'][fitfunc]['deconvolve']), where='mid', label = 'dec '+fitfunc )
-                    
-                    if fft:
-                        fourier = lambda x: np.fft.fftshift( np.fft.fft( x ))
-                        y = fourier( datum['hist']['y'] )
-                        ly = np.log( y )
-                        #axfft[key][slicekey].step( datum['hist']['x'], np.imag(ly), where='mid', label='i' )
-                        lamb = np.mean( np.real(ly) )
-                        print slicekey, lamb
-                        axfft[key][slicekey].step( datum['hist']['x'], np.real(y), where='mid', label='r' )
-                        #axfft[key][slicekey].step( datum['hist']['x'], np.abs(ly), where='mid', label='a' )
-                        #axfft[key][slicekey].step( datum['hist']['x'], fourier(iy), where='mid', label='fiy' )
+                    fourier = lambda x: np.fft.fftshift( np.fft.fft( x ))
+                    y = fourier( datum['hist']['y'] )
+                    ly = np.log( y )
+                    #axfft[key][slicekey].step( datum['hist']['x'], np.imag(ly), where='mid', label='i' )
+                    lamb = np.mean( np.real(ly) )
+                    print slicekey, lamb
+                    axfft[key][slicekey].step( datum['hist']['x'], np.real(y), where='mid', label='r' )
+                    #axfft[key][slicekey].step( datum['hist']['x'], np.abs(ly), where='mid', label='a' )
+                    #axfft[key][slicekey].step( datum['hist']['x'], fourier(iy), where='mid', label='fiy' )
 
     if plot:
         if verbose: print 'setting labels and lims'
@@ -694,8 +717,7 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         fig.savefig('%s.png'%(FITSfiles[0]), bbox_inches='tight')
     
     print 'table generated in CSV file', '%s.csv'%(FITSfiles[0])
-    np.savetxt('%s.csv'%(FITSfiles[0]), result, header=', '.join(header), fmt='%s', delimiter=', ')
- 
+    printcsv(FITSfiles[0])
  
 def help_():
     print 'Usage:'
