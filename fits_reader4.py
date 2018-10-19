@@ -463,18 +463,19 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
     else:
         f = lambda x_, *p: convolution_GP2(x_, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0_.items() } )
         y_ = data[mask]
-    pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = y_, bounds=bounds )
-    #pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.sqrt(y_), bounds=bounds )
-    #pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.ones_like(y_), bounds=bounds )
-    error = []
-    for i in range(len(pp)):
-        try:
-          error.append(np.absolute(pcov[i][i])**0.5)
-        except:
-          error.append( 0.00 )
-    perr = np.array(error)
-    hist2 = f( x, *pp )
-    chisq2 = scipy.stats.chisquare( hist2, data, ddof = len(pp) )[0]/(len(data) - len(pp))
+        
+    #pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = y_, bounds=bounds )
+    ##pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.sqrt(y_), bounds=bounds )
+    ##pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.ones_like(y_), bounds=bounds )
+    #error = []
+    #for i in range(len(pp)):
+        #try:
+          #error.append(np.absolute(pcov[i][i])**0.5)
+        #except:
+          #error.append( 0.00 )
+    #perr = np.array(error)
+    #hist2 = f( x, *pp )
+    #chisq2 = scipy.stats.chisquare( hist2, data, ddof = len(pp) )[0]/(len(data) - len(pp))
     
     #residual = lambda p, x_, y_: (y_ - f(x_, *p))**2/y_
     #residual = lambda p, x_, y_: (y_ - f(x_, *p))**2
@@ -484,7 +485,7 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
     hist3 = f( x, *popt )
     chisq3 = scipy.stats.chisquare( hist3, data, ddof = len(popt) )[0]/(len(data) - len(popt))
     
-    if (len(data) > len(popt)) and pcov is not None:
+    if (len(data) > len(popt)) and pcov2 is not None:
         s_sq = ( residual(popt, x, data )**2).sum()/(len(data)-len(popt))
         pcov2 = pcov2 * s_sq
     else:
@@ -502,6 +503,8 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
     #print 'LS', popt, scipy.stats.chisquare( f(x, *popt), data, ddof = len(popt) )[0]/(len(data) - len(popt)), perr2
     perr = perr2
     pp = popt
+    chisq2 = chisq3
+    hist2 = hist3
     
     #minresidual = lambda p, x_, y_: np.sum( (y_ - f(x_, *p))**2 )
     #poptmin = scipy.optimize.minimize( minresidual, p_, args=(x,data) ).x
@@ -640,21 +643,17 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 Afit = fits[r'G(0,σ\')*P(λ\')']['params']['A']
                 Afiterr = fits[r'G(0,σ\')*P(λ\')']['perr']['A']
                 if verbose: print 'fiterr', Afit, Afiterr, str_with_err(Afit, Afiterr)
-                #print fits[r'G(0,σ\')*P(λ\')']['params']['A'], fits[r'G(0,σ\')*P(λ\')']['perr']['A']
-                #gain = fits[r'G(0,σ\')*P(λ\')']['params']['gain']
-                #gain = 1.
-                #print 'gain', gain
-                #gain = 2./3
-                fits[r'G(0,σ)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(0,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(0,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+
+                #fits[r'G(0,σ)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(0,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(0,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σ)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σos)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(0,σ\')*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(0,σ\')*P(λ)p'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(0,σ\')*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(0,σ\')*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(0,σ\')*P(λ)p'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(0,σ\')*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 #fits[r'G(0,σ\')*P(λ)g'] = fitpartial( x, y, p0=p0, adjust = ['lamb', 'gain'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
 
                 #fits[r'log(G(0,σ\')*P(λ))'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], log=True, sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
