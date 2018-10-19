@@ -169,7 +169,10 @@ def runETA( msg, cmd, eta = None, N = None, loop=None, verbose=None ):
         for n, entry in enumerate(loop):
             print term.yellow('entry %s <begin>'%entry)
             etastart = time.time()
-            cmd( entry )
+            try:
+                cmd( entry )
+            except ValueError as error:
+                print term.red('Warning: %s'%error)
             et = time.time() - etastart
             print term.green('entry %s <end '%entry + 't=%s>'%time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - etastart)) )
             finishtimes += [ time.time() + int(et*(len(loop) - n - 1)) ]
@@ -190,7 +193,10 @@ def readCatalog( ROOTfile, runID = None, verbose = False, readGain=True ):
     min_max = lambda x: (np.min(x), np.max(x))
     if verbose: print 'reading start and stop indexes for runID', runID, 'in ROOT file'
     indexlist = np.argwhere( root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'] == runID ).flatten()
-    start, stop = min_max( indexlist )
+    try:
+        start, stop = min_max( indexlist )
+    except ValueError:
+        raise
     if verbose: print 'reading', len(indexlist), 'entries from', start, 'to', stop
     
     readcatalog_once = lambda start_, stop_: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'] + (['gainCu'] if readGain else []), selection='runID==%s'%runID, start=start_, stop=stop_+1 )
@@ -625,8 +631,9 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
             std2os = thishist['os']['std2']
             fits[r'G(0,σ\')'] = fitpartial( x, y, p0=p0, adjust = ['A'], sigma_os = std2os )
             Afit = fits[r'G(0,σ\')']['params']['A']
-            fits[r'G(0,σ)'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'A'], sigma_os = std2os, A = Afit )
-            Afit2 = fits[r'G(0,σ)']['params']['A']
+            fits[r'G(0,σ)A'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'A'], sigma_os = std2os, A = Afit )
+            Afit2 = fits[r'G(0,σ)A']['params']['A']
+            fits[r'G(µ,σ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'A'], sigma_os = std2os, A = Afit )
             #print N, Afit
             #if slicekey == 'os':
                 #fits[r'G(0,σ)A'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'A'], sigma_os = std2os, A = Afit )
@@ -639,7 +646,8 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 if verbose: print 'lambda', lamb0
                 #fits[r'G(µ,σ\')*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_ac', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=2./3 )
                 #fits[r'G(0,σ\')*P(λ\')A'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sigma_os=std2os, A=Afit2, lamb=lamb0 )
-                fits[r'G(0,σ\')*P(λ\')'] = fitpartial( x, y, p0=p0, adjust = ['A'], sigma_os=std2os, A=Afit, lamb=lamb0 )
+                fits[r'G(0,σ\')*P(λ\')'] = fitpartial( x, y, p0=p0, adjust = ['A'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                fits[r'G(µ,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 Afit = fits[r'G(0,σ\')*P(λ\')']['params']['A']
                 Afiterr = fits[r'G(0,σ\')*P(λ\')']['perr']['A']
                 if verbose: print 'fiterr', Afit, Afiterr, str_with_err(Afit, Afiterr)
@@ -776,26 +784,28 @@ def makePlot( ohdu, runID, hist, verbose = False ):
             if slicekey == 'os':
                 listfits = [
                 r'G(0,σ\')', 
-                r'G(0,σ)A',
-                r'G(0,σ)N',
-                r'G(0,σ0-)A',
-                r'G(0,σ0-)N',
-                r'log(G(0,σ))',
-                r'log(G(0,σ))N',
-                r'log(G(0,σ))A',
+                r'G(µ,σ)A',
+                #r'G(0,σ)N',
+                #r'G(0,σ0-)A',
+                #r'G(0,σ0-)N',
+                #r'log(G(0,σ))',
+                #r'log(G(0,σ))N',
+                #r'log(G(0,σ))A',
                 ]
             else:
                 listfits = [
-                r'G(0,σ\')', 
-                r'G(0,σ)', 
-                r'G(µ,σ\')*P(λ)',
-                r'G(0,σ)*P(λ)',
-                r'G(0,σ\')*P(λ\')',
-                r'G(0,σ\')*P(λ)',
-                r'G(0,σ\')*P(λ)g',
-                r'log(G(0,σ\')*P(λ\'))',
-                r'log(G(0,σl)*P(λ))',
+                #r'G(0,σ\')', 
+                #r'G(0,σ)', 
+                #r'G(µ,σ\')*P(λ)',
+                #r'G(0,σ)*P(λ)',
+                #r'G(0,σ\')*P(λ\')',
+                #r'G(0,σ\')*P(λ)',
+                #r'G(0,σ\')*P(λ)g',
+                #r'log(G(0,σ\')*P(λ\'))',
+                #r'log(G(0,σl)*P(λ))',
+                r'G(µ,σ)A',
                 r'G(µ,σ)*P(λ)A',
+                r'G(µ,σos)*P(λ)A',
                 ]
             n = 0
             for i, fitfunc_ in enumerate(listfits):
@@ -870,7 +880,7 @@ def makePlot( ohdu, runID, hist, verbose = False ):
             ax[key][hkey].legend()
             #if fft: 
             #axdiff[key][hkey].legend()
-    plt.subplots_adjust(hspace=.1, wspace=.25)
+    plt.subplots_adjust(hspace=.1, wspace=.05)
     return lambda outfile: fig.savefig('%s.png'%(outfile), bbox_inches='tight')
 
 def plotrunID( ohdu, *FITSfiles, **kwargs ):
@@ -1017,7 +1027,7 @@ if __name__ == "__main__":
                     #for runID_ in l_[1:]:
                         ##print runID_
                         #plot2(outfolder, ohdu_, int(runID_), ROOTfile, gain=vars_['gain'], verbose=False )
-                l = set( listrunID_run( vars_['run'] ) )
+                l = sorted(list(set( listrunID_run( vars_['run'] ) )))
                 print 'from', min(l), 'to', max(l), ' total', len(l)
                 #runETA( 'remove and analyse full run '+vars_['run'], 
                        #cmd = lambda: tmp( vars_['ohdu'], l ), 
