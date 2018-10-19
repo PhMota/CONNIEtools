@@ -50,17 +50,20 @@ class term:
     #r = '\e[31m'
     r = cmd(91)
     g = cmd(32)
+    y = cmd(33)
     b = cmd(34)
     
     red = staticmethod( lambda x: term.r + x + term.Q )
     bold = staticmethod( lambda x: term.B + x + term.Q )
     italic = staticmethod( lambda x: term.I + x + term.Q )
+    green = staticmethod( lambda x: term.g + x + term.Q )
+    yellow = staticmethod( lambda x: term.y + x + term.Q )
 
 def str_with_err(value, error):
     if error == 0.:
         return '{0:e}'.format(value)
     digitsE = -int(math.floor(math.log10(error)))
-    digitsV = -int(math.floor(math.log10(value)))
+    digitsV = -int(math.floor(math.log10(abs(value))))
     #print 'inside', value, error, digitsE, digitsV
     if digitsE<digitsV:
         digitsV = digitsE
@@ -147,9 +150,9 @@ def extractFromFITS( path ):
 
 def getAssociatedCatalogGain( *paths ):
     files = getAssociatedCatalog( *paths )
-    print files[0]
+    #print files[0]
     pattern = re.search( r'(data_[0-9]+_to_[0-9]+)', files[0] ).groups()[0]
-    print pattern
+    #print pattern
     return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/nu_processing/scripts/ProcCat/scn_osi_raw_gain_catalog_%s.root'%pattern) if not 'skim' in catalog and not '-with-' in catalog ]
 
 def getAssociatedCatalog( *paths ):
@@ -158,19 +161,29 @@ def getAssociatedCatalog( *paths ):
 def getAssociatedOSI( *paths ):
     return [ osi for path in paths for osi in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/osi/images/osi_runID_*_%s_*.fits'%(getrunFromPath(path), getrunIDFromPath(path)) ) if not '-with-' in osi ]
 
-def runETA( msg, cmd, eta = None, N = None ):
-    #sys.stdout.write( msg + '...' )
-    #sys.stdout.flush()
-    print 'begin:', msg
+def runETA( msg, cmd, eta = None, N = None, loop=None, verbose=None ):
+    if verbose: print term.yellow('%s <begin>'%msg)
+    if not loop is None:
+        start = time.time()
+        finishtimes = []
+        for n, entry in enumerate(loop):
+            print term.yellow('entry %s <begin>'%entry)
+            etastart = time.time()
+            cmd( entry )
+            et = time.time() - etastart
+            print term.green('entry %s <end '%entry + 't=%s>'%time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - etastart)) )
+            finishtimes += [ time.time() + int(et*(len(loop) - n - 1)) ]
+            print term.yellow('estimated time %s'%time.strftime("%H:%M:%S", time.gmtime( int(np.mean(finishtimes)) - time.time() ) ) + '(finishes at %s)'%time.strftime("%H:%M:%S", time.localtime( int(np.mean(finishtimes)) )) )
+        print term.green('%s <end '%msg + 't=%s>'%time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - start)) )
+        return
     if not eta is None and not N is None:
         etastart = time.time()
         eta()
         et = time.time() - etastart
-        print 'estimated time', time.strftime("%H:%M:%S", time.gmtime(int(et*N))), '(finishes at %s)'% time.strftime("%H:%M:%S", time.localtime( time.time() + int(et*N)))
+        print term.yellow('estimated time %s'%time.strftime("%H:%M:%S", time.gmtime(int(et*N))) + '(finishes at %s)'%time.strftime("%H:%M:%S", time.localtime( time.time() + int(et*N))) )
     start = time.time()
     res = cmd()
-    #print 'elapsed time', time.strftime("%H:%M:%S", time.gmtime(datetime.datetime.time() - start))
-    print 'end:', msg, '[t='+time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - start))+']'
+    if verbose: print term.green('%s <end '%msg + 't=%s>'%time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - start)) )
     return res
 
 def readCatalog( ROOTfile, runID = None, verbose = False, readGain=True ):
@@ -185,6 +198,7 @@ def readCatalog( ROOTfile, runID = None, verbose = False, readGain=True ):
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
         cmd = lambda: readcatalog_once(start, stop), #read all entries and return 
+        verbose = verbose,
         )
     return hitscatalog
 
@@ -199,10 +213,10 @@ def mergeParts( parts ):
     #print [ (i,ohdu.header['OHDU']) for i, ohdu in enumerate(merged) ]
     return merged
 
-def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = None, osi = None, verbose = False, image = True, output = True, dohits = True, gain=None ):
+def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi=None, verbose=False, image=True, output=True, dohits=True, gain=None ):
     FITSfile = listFITS_runID( runID )[0]
     print 'input FITSfile =', FITSfile
-    print 'output flag =', output
+    if verbose: print 'output flag =', output
     if output:
         outputfilenohits = 'hsub_'+os.path.basename(FITSfile)
         if dohits: outputfilehits = 'hits_'+os.path.basename(FITSfile)
@@ -259,13 +273,13 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
     #print root_numpy.list_branches( ROOTfileGain, treename = 'hitSumm' )
     #print root_numpy.root2array( ROOTfileGain, treename = 'hitSumm', branches = ['gainCu'] )
     print 'input ROOTfile =', ROOTfile
-    hitscatalog = readCatalog( ROOTfile, runID=runID, readGain=readGain)
+    hitscatalog = readCatalog( ROOTfile, runID=runID, readGain=readGain, verbose=verbose)
 
     if verbose: print 'removing hits'
     
     for iohdu in range(len(hdulist['nohits'])):
         ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
-        print 'removing hits from ohdus', ohdu_
+        if verbose: print 'removing hits from ohdus', ohdu_
         hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
         if dohits: hdulist['hits'][iohdu].data[:,:] = REMOVE #-1e9
         hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
@@ -273,7 +287,7 @@ def removeHitsFromrunID( runID, outputfolder = None, ohdu = None, ROOTfile = Non
         if readGain: 
             hits_gain = np.array( [ e for e in hitsohdu['gainCu'] ] )
             gain = np.mean(hits_gain) #adu/keV
-        print 'gain', gain
+        if verbose: print 'gain', gain, 'adu/keV'
         hdulist['nohits'][iohdu].data *= 1e3/gain/eIonization #e- (electron unit)
         if len(hits_e) > 0:
             hdulist['nohits'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE
@@ -449,26 +463,51 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
     else:
         f = lambda x_, *p: convolution_GP2(x_, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0_.items() } )
         y_ = data[mask]
-    pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.sqrt(y_), bounds=bounds )
-    error = [] 
+    pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = y_, bounds=bounds )
+    #pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.sqrt(y_), bounds=bounds )
+    #pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = np.ones_like(y_), bounds=bounds )
+    error = []
     for i in range(len(pp)):
         try:
           error.append(np.absolute(pcov[i][i])**0.5)
         except:
           error.append( 0.00 )
     perr = np.array(error)
+    hist2 = f( x, *pp )
+    chisq2 = scipy.stats.chisquare( hist2, data, ddof = len(pp) )[0]/(len(data) - len(pp))
     
     #residual = lambda p, x_, y_: (y_ - f(x_, *p))**2/y_
     #residual = lambda p, x_, y_: (y_ - f(x_, *p))**2
-    #popt, tmp = scipy.optimize.leastsq( residual, p_, args=(x,data) )
-
+    residual = lambda p, x_, y_: (y_ - f(x_, *p))
+    res = scipy.optimize.leastsq( residual, p_, args=(x[mask],data[mask]), full_output=1 )
+    popt, pcov2, infodict, errmsg, success = res
+    hist3 = f( x, *popt )
+    chisq3 = scipy.stats.chisquare( hist3, data, ddof = len(popt) )[0]/(len(data) - len(popt))
+    
+    if (len(data) > len(popt)) and pcov is not None:
+        s_sq = ( residual(popt, x, data )**2).sum()/(len(data)-len(popt))
+        pcov2 = pcov2 * s_sq
+    else:
+        pcov2 = np.inf
+        
+    error2 = []
+    for i in range(len(popt)):
+        try:
+          error2.append(np.absolute(pcov2[i][i])**0.5)
+        except:
+          error2.append( 0.00 )
+    perr2 = np.array(error2)
+    
+    #print 'CF', pp, chisq2, perr
+    #print 'LS', popt, scipy.stats.chisquare( f(x, *popt), data, ddof = len(popt) )[0]/(len(data) - len(popt)), perr2
+    perr = perr2
+    pp = popt
+    
     #minresidual = lambda p, x_, y_: np.sum( (y_ - f(x_, *p))**2 )
     #poptmin = scipy.optimize.minimize( minresidual, p_, args=(x,data) ).x
     
     #hist = f( x, *pp ) if not log else np.exp(f( x, *pp ))
     #chisq = scipy.stats.chisquare( data, hist, ddof = len(pp) )[0]/(len(data) - len(pp))
-    hist2 = f( x, *pp )
-    chisq2 = scipy.stats.chisquare( hist2, data, ddof = len(pp) )[0]/(len(data) - len(pp))
     #pp = odict([ (label, pp[adjust.index(label)] if label in adjust else val) for label, val in p0_.items() ] )
     popt = odict([ (label, pp[adjust.index(label)] if label in adjust else val) for label, val in p0_.items() ] )
     perr = odict([ (label, perr[adjust.index(label)] if label in adjust else 0) for label, val in p0_.items() ] )
@@ -511,7 +550,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
     maxSCN = max(clean(data['scn']))
     bins = np.linspace(-maxSCN, maxSCN, N)
     dx = 2*maxSCN/N
-    print 'dx', dx
+    if verbose: print 'dx', dx
     if verbose: print 'bins', min(bins), max(bins)
 
     if verbose: print 'computing histogram of full ccd'
@@ -577,7 +616,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 ('gain', gain),
                 ] )
                 
-            print slicekey, datum['std2']
+            if verbose: print slicekey, datum['std2']
             fits = datum['fits']
             
             std2os = thishist['os']['std2']
@@ -594,13 +633,13 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 
             if slicekey == 'ac':
                 lamb0 = thishist['ac']['std2']**2 - thishist['os']['std2']**2
-                print 'lambda', lamb0
+                if verbose: print 'lambda', lamb0
                 #fits[r'G(µ,σ\')*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_ac', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=2./3 )
                 #fits[r'G(0,σ\')*P(λ\')A'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sigma_os=std2os, A=Afit2, lamb=lamb0 )
                 fits[r'G(0,σ\')*P(λ\')'] = fitpartial( x, y, p0=p0, adjust = ['A'], sigma_os=std2os, A=Afit, lamb=lamb0 )
                 Afit = fits[r'G(0,σ\')*P(λ\')']['params']['A']
                 Afiterr = fits[r'G(0,σ\')*P(λ\')']['perr']['A']
-                print 'fiterr', Afit, Afiterr, str_with_err(Afit, Afiterr)
+                if verbose: print 'fiterr', Afit, Afiterr, str_with_err(Afit, Afiterr)
                 #print fits[r'G(0,σ\')*P(λ\')']['params']['A'], fits[r'G(0,σ\')*P(λ\')']['perr']['A']
                 #gain = fits[r'G(0,σ\')*P(λ\')']['params']['gain']
                 #gain = 1.
@@ -611,8 +650,8 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 fits[r'G(0,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σ)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(µ,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_ac', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
-                fits[r'G(µ,σos)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_ac', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                fits[r'G(µ,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                fits[r'G(µ,σos)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(0,σ\')*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(0,σ\')*P(λ)p'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(0,σ\')*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
@@ -699,9 +738,10 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
     
     #sep = ', '
     sep = ' '
-    print sep.join( [ str((i,h)) for i, h in enumerate(header)] )
-    print sep.join(header)
-    print '\n'.join( [ sep.join( [ f%entry for f,entry in zip(fmt,line) ] ) for line in result ] )
+    if verbose:
+        print sep.join( [ str((i,h)) for i, h in enumerate(header)] )
+        print sep.join(header)
+        print '\n'.join( [ sep.join( [ f%entry for f,entry in zip(fmt,line) ] ) for line in result ] )
     printcsv = lambda outfile: np.savetxt('%s.csv'%(outfile), result, header=sep.join(header), fmt='%s', delimiter=sep)
     printcsv2 = lambda outfile: np.savetxt('%s.csv2'%(outfile), [line2], header=sep.join(header2), fmt='%s', delimiter=sep)
     return hist, printcsv, printcsv2
@@ -861,9 +901,9 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
     runID = getrunIDFromPath( FITSfiles[0] )
         
     hist, printcsv, printcsv2 = computeFits( ohdu, runID, astropy.io.fits.open( FITSfiles[0] ), verbose, gain )
-    print 'table generated in CSV file', '%s.csv'%(FITSfiles[0])
+    print 'tables generated in CSV file', '%s.csv(2)'%(FITSfiles[0])
     printcsv(FITSfiles[0])
-    print 'table generated in CSV file', '%s.csv2'%(FITSfiles[0])
+    #print 'table generated in CSV file', '%s.csv2'%(FITSfiles[0])
     printcsv(FITSfiles[0])
 
     if plot:
@@ -871,20 +911,21 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         print 'plot generated in PNG file', '%s.png'%(FITSfiles[0])
         saveplot(FITSfiles[0])
 
-def plot2(outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None ):
-    print 'runID', runID
+def plot2(outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbose=True ):
+    if verbose: print 'runID', runID
     outputfile = '%s/runID_%s_ohdu_%s'%(outfolder, runID, ohdu)
     hist, printcsv, printcsv2 = computeFits(ohdu, runID, 
-                                    removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile, output=False, image=False, gain=gain ),
+                                    removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile, output=False, image=False, gain=gain, verbose=verbose ),
                                     plot=plot,
-                                    gain=gain
+                                    gain=gain,
+                                    verbose=verbose,
                                 )
     if not os.path.exists(outfolder):
         print 'creating directory', outfolder
         os.makedirs( outfolder )
-    print 'table generated in CSV file', '%s.csv'%(outputfile)
+    print 'tables generated in CSV file', '%s.csv(2)'%(outputfile)
     printcsv(outputfile)
-    print 'table generated in CSV file', '%s.csv'%(outputfile)
+    #print 'table generated in CSV file', '%s.csv'%(outputfile)
     printcsv2(outputfile)
     
     if plot:
@@ -903,6 +944,12 @@ def help_():
     print 
     print '--ohdu <ohdu> --fft --plot <list of paths>'
     print '\tgenerate plot with FITS files from paths for the given ohdu'
+    print
+    print '--ohdu <ohdu> --runID <runID> --outfolder <outfolder> --gain <gain> --table2'
+    print '\tgenerate plots and table of function fits for the respective runID and given ohdu'
+    print
+    print '--ohdu <ohdu> --run <run> --outfolder <outfolder> --gain <gain> --table2'
+    print '\tgenerate tables of function fits for all the runIDs in the given run and given ohdu'
     print
 
 def getOption( vars_, option, args, f = lambda x:x ):
@@ -966,18 +1013,21 @@ if __name__ == "__main__":
                 runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'] ) )
                 exit(0)
             if not vars_['run'] is None:
-                l = listrunID_run( vars_['run'] )
-                def tmp( ohdu_ ):
-                    print 'tmp'
-                    print l[1:]
-                    for runID_ in l[1:]:
-                        print runID_
-                        plot2(outfolder, ohdu_, int(runID_), ROOTfile, gain=vars_['gain'] )
-                print listrunID_run( vars_['run'] )
+                #def tmp( ohdu_, l_ ):
+                    ##print l[1:]
+                    #for runID_ in l_[1:]:
+                        ##print runID_
+                        #plot2(outfolder, ohdu_, int(runID_), ROOTfile, gain=vars_['gain'], verbose=False )
+                l = set( listrunID_run( vars_['run'] ) )
+                print 'from', min(l), 'to', max(l), ' total', len(l)
+                #runETA( 'remove and analyse full run '+vars_['run'], 
+                       #cmd = lambda: tmp( vars_['ohdu'], l ), 
+                       #eta = lambda: plot2(outfolder, vars_['ohdu'], int(l[0]), ROOTfile, gain=vars_['gain'], verbose=False ),
+                       #N = len(l)
+                       #)
                 runETA( 'remove and analyse full run '+vars_['run'], 
-                       cmd = lambda: tmp( vars_['ohdu'] ), 
-                       eta = lambda: plot2(outfolder, vars_['ohdu'], int(l[0]), ROOTfile, gain=vars_['gain'] ),
-                       N = len(l)
+                       cmd = lambda x: plot2(outfolder, vars_['ohdu'], int(x), ROOTfile, gain=vars_['gain'], verbose=False ),
+                       loop = l
                        )
                 exit(0)
             exit(0)
