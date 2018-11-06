@@ -269,6 +269,9 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
     hdulist['nohits'] = astropy.io.fits.open(FITSfile)
     ohdus = [ hdulist['nohits'][i].header['OHDU'] for i in range(len(hdulist['nohits'])) ]
     print 'ohdus', ohdus
+    badOHDU = [11,12]
+    #ohdus = [ ohdu for ohdu in ohdus if not ohdu in badOHDU ]
+    #print 'ohdus*', ohdus
     if not ohdu is None:
         removeOHDU( hdulist['nohits'], ohdu )
 
@@ -294,35 +297,46 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
 
     if verbose: print 'removing hits'
     
-    levelcut = 4
+    levelcut = 0
+    hitsmask = {}
+    gain = {}
+    #if crosstalk:
+    for iohdu, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ):
+        print 'mask ohdu', thisohdu
+        hitsmask[thisohdu] = np.zeros_like( hdulist['hits'][-1].data, dtype=bool )
+        hitsohdu = hitscatalog[ hitscatalog['ohdu'] == thisohdu ]
+        hits_x = np.concatenate( [ x[l<=levelcut] for x,l in zip( hitsohdu['xPix'], hitsohdu['level'] ) ], axis=0 )
+        hits_y = np.concatenate( [ y[l<=levelcut] for y,l in zip( hitsohdu['yPix'], hitsohdu['level'] ) ], axis=0 )
+        hitsmask[thisohdu][hits_y,hits_x] = True
+        print hitsmask[thisohdu].sum()
+        if readGain:
+            gain[thisohdu] = np.mean( hitsohdu['gainCu'] )
+            if verbose: print 'gain', gain, 'adu/keV'
+
     for iohdu in range(len(hdulist['nohits'])):
-    #for iohdu, thisohdu in enumerate( ohdus ):
         ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
+        print 'crosstalk subtraction'
+        for iohdu2, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ): #[:4]
+            print ohdu_, thisohdu, '%e'%np.mean(hdulist['nohits'][iohdu].data[ hitsmask[thisohdu] ])
+    
+    for iohdu in range(len(hdulist['nohits'])):
+        ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
+        print 'from ohdu', ohdu_, 'remove'
         if verbose: print 'removing hits from ohdus', ohdu_
         hitsohdu = hitscatalog[ hitscatalog['ohdu'] == ohdu_ ]
         if dohits: hdulist['hits'][iohdu].data[:,:] = REMOVE #-1e9
-        hits_xy = np.array( [ [iy,ix] for x,y,l in zip( hitsohdu['xPix'], hitsohdu['yPix'], hitsohdu['level'] ) for ix,iy,ilevel in zip(x,y,l) if ilevel<levelcut ] )
-        hits_e = np.array( [ ie for e,l in zip( hitsohdu['ePix'], hitsohdu['level'] )  for ie,il in zip(e,l) if il<levelcut ] )
-        if readGain: 
-            hits_gain = np.array( [ e for e in hitsohdu['gainCu'] ] )
-            gain = np.mean(hits_gain) #adu/keV
-        if verbose: print 'gain', gain, 'adu/keV'
-        hdulist['nohits'][iohdu].data *= 1e3/gain/eIonization #e- (electron unit)
-        if crosstalk: hdulist['nohitsall'][iohdu].data *= 1e3/gain/eIonization #e- (electron unit)
-        if len(hits_e) > 0:
-            hdulist['nohits'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE
-            if osi: merged[iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE
-            if dohits: hdulist['hits'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = hits_e*1e3/gain/eIonization
-        else:
-            print term.red('Warning:'), 'empty hits_e on', ohdu_
+
+        hdulist['nohits'][iohdu].data *= 1e3/gain[ohdu_]/eIonization #e- (electron unit)
+        
+        hdulist['nohits'][iohdu].data[ hitsmask[ohdu_] ] = REMOVE
+        if osi: merged[iohdu].data[ hitsmask[ohdu_] ] = REMOVE
+        #if dohits: hdulist['hits'][iohdu].data[ hitsmask[ohdu_] ] = hits_e*1e3/gain/eIonization
+        
         if crosstalk:
-            for iohdu2, thisohdu in enumerate( ohdus[:4] ):
-                hitsohdu = hitscatalog[ hitscatalog['ohdu'] == thisohdu ]
-                hits_xy = np.array( [ [iy,ix] for x,y,l in zip( hitsohdu['xPix'], hitsohdu['yPix'], hitsohdu['level'] ) for ix,iy,ilevel in zip(x,y,l) if ilevel<levelcut ] )
-                hits_e = np.array( [ ie for e,l in zip( hitsohdu['ePix'], hitsohdu['level'] )  for ie,il in zip(e,l) if il<levelcut ] )
-                #hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
-                if len(hits_e) > 0:
-                    hdulist['nohitsall'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE            
+            print 'crosstalk subtraction'
+            for iohdu2, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ): #[:4]
+                print 'from ohdu', ohdu_, 'removing', thisohdu
+                hdulist['nohitsall'][iohdu].data[ hitsmask[thisohdu] ] = REMOVE            
 
     if image:
         figs = [ plt.figure() for i in range(2) ]
@@ -483,7 +497,7 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
         if key in p0_: p0_[key] = value
     
     p_ = [ v for k,v in p0_.items() if k in adjust ]
-    print p_
+    #print p_
     mask = data > 0
     if sel: mask = np.all( sel+[ data>0 ], axis=0 )
     
@@ -518,8 +532,8 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
     hist3 = f( x_, *popt )
     chisq3 = scipy.stats.chisquare( hist3, y_, ddof = len(popt) )[0]/(len(y_) - len(popt))
     
-    print 'chi2', chisq3, np.sum( (hist3-y_)**2/y_ )/(len(y_) - len(popt))
-    print np.max(hist3), np.max(y_)
+    #print 'chi2', chisq3, np.sum( (hist3-y_)**2/y_ )/(len(y_) - len(popt))
+    #print np.max(hist3), np.max(y_)
     
     if (len(data) > len(popt)) and pcov2 is not None:
         s_sq = ( residual(popt, x_, y_ )**2).sum()/(len(y_)-len(popt))
@@ -657,7 +671,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 ('gain', gain),
                 ] )
 
-            if verbose: print slicekey, datum['std2']
+            if verbose: print 'std2', slicekey, datum['std2']
             fits = datum['fits']
 
             std2os = thishist['os']['std2']
@@ -682,7 +696,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 fits[r'G(µ,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 Afit = fits[r'G(0,σ\')*P(λ\')']['params']['A']
                 Afiterr = fits[r'G(0,σ\')*P(λ\')']['perr']['A']
-                if verbose: print 'fiterr', Afit, Afiterr, str_with_err(Afit, Afiterr)
+                #if verbose: print 'fiterr', Afit, Afiterr, str_with_err(Afit, Afiterr)
 
                 #fits[r'G(0,σ)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 #fits[r'G(0,σ)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['sigma_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
@@ -968,7 +982,7 @@ def plot2( outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbo
                                     gain=gain,
                                     verbose=verbose,
                                 )
-    if not os.path.exists(outfolder):
+    if not os.path.exists( outfolder ):
         print 'creating directory', outfolder
         os.makedirs( outfolder )
     print 'tables generated in CSV file', '%s.csv(2)'%(outputfile)
@@ -1060,21 +1074,11 @@ if __name__ == "__main__":
     if '--table2' in sys.argv:
         if not vars_['ohdu'] is None:
             if not vars_['runID'] is None:
-                runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'], crosstalk=vars_['crosstalk'] ) )
+                runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'], crosstalk=vars_['crosstalk'], verbose=False ) )
                 exit(0)
             if not vars_['run'] is None:
-                #def tmp( ohdu_, l_ ):
-                    ##print l[1:]
-                    #for runID_ in l_[1:]:
-                        ##print runID_
-                        #plot2(outfolder, ohdu_, int(runID_), ROOTfile, gain=vars_['gain'], verbose=False )
                 l = sorted(list(set( listrunID_run( vars_['run'] ) )))
                 print 'from', min(l), 'to', max(l), ' total', len(l)
-                #runETA( 'remove and analyse full run '+vars_['run'], 
-                       #cmd = lambda: tmp( vars_['ohdu'], l ), 
-                       #eta = lambda: plot2(outfolder, vars_['ohdu'], int(l[0]), ROOTfile, gain=vars_['gain'], verbose=False ),
-                       #N = len(l)
-                       #)
                 runETA( 'remove and analyse full run '+vars_['run'], 
                        cmd = lambda x: plot2(outfolder, vars_['ohdu'], int(x), ROOTfile, gain=vars_['gain'], verbose=False, crosstalk=vars_['crosstalk'] ),
                        loop = l
