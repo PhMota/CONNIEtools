@@ -196,10 +196,14 @@ def readCatalog( ROOTfile, runID = None, verbose = False, readGain=True ):
     try:
         start, stop = min_max( indexlist )
     except ValueError:
+        print '!!!Error'
+        print ROOTfile
+        print list(set(root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['runID'] )['runID'] ))
+        print 'indexlist', indexlist
         raise
     if verbose: print 'reading', len(indexlist), 'entries from', start, 'to', stop
     
-    readcatalog_once = lambda start_, stop_: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu'] + (['gainCu'] if readGain else []), selection='runID==%s'%runID, start=start_, stop=stop_+1 )
+    readcatalog_once = lambda start_, stop_: root_numpy.root2array( ROOTfile, treename = 'hitSumm', branches = ['xPix','yPix','ePix','ohdu','level'] + (['gainCu'] if readGain else []), selection='runID==%s'%runID, start=start_, stop=stop_+1 )
     #if verbose: print 'reading ROOT file'
     hitscatalog = runETA( 
         msg = 'reading ROOTfile',
@@ -219,7 +223,7 @@ def mergeParts( parts ):
     #print [ (i,ohdu.header['OHDU']) for i, ohdu in enumerate(merged) ]
     return merged
 
-def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi=None, verbose=False, image=True, output=True, dohits=True, gain=None ):
+def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi=None, verbose=False, image=True, output=True, dohits=True, gain=None, crosstalk=False ):
     FITSfile = listFITS_runID( runID )[0]
     print 'input FITSfile =', FITSfile
     if verbose: print 'output flag =', output
@@ -263,8 +267,15 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
             removeOHDU( hdulist['hits'], ohdu )
 
     hdulist['nohits'] = astropy.io.fits.open(FITSfile)
+    ohdus = [ hdulist['nohits'][i].header['OHDU'] for i in range(len(hdulist['nohits'])) ]
+    print 'ohdus', ohdus
     if not ohdu is None:
         removeOHDU( hdulist['nohits'], ohdu )
+
+    if crosstalk:
+        hdulist['nohitsall'] = astropy.io.fits.open(FITSfile)
+        if not ohdu is None:
+            removeOHDU( hdulist['nohitsall'], ohdu )
     
     readGain = True
     if ROOTfile is None:
@@ -283,24 +294,35 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
 
     if verbose: print 'removing hits'
     
+    levelcut = 4
     for iohdu in range(len(hdulist['nohits'])):
+    #for iohdu, thisohdu in enumerate( ohdus ):
         ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
         if verbose: print 'removing hits from ohdus', ohdu_
-        hitsohdu = hitscatalog[ hitscatalog['ohdu']==ohdu_ ]
+        hitsohdu = hitscatalog[ hitscatalog['ohdu'] == ohdu_ ]
         if dohits: hdulist['hits'][iohdu].data[:,:] = REMOVE #-1e9
-        hits_xy = np.array( [ [iy,ix] for x,y in zip( hitsohdu['xPix'], hitsohdu['yPix']) for ix,iy in zip(x,y) ] )
-        hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
+        hits_xy = np.array( [ [iy,ix] for x,y,l in zip( hitsohdu['xPix'], hitsohdu['yPix'], hitsohdu['level'] ) for ix,iy,ilevel in zip(x,y,l) if ilevel<levelcut ] )
+        hits_e = np.array( [ ie for e,l in zip( hitsohdu['ePix'], hitsohdu['level'] )  for ie,il in zip(e,l) if il<levelcut ] )
         if readGain: 
             hits_gain = np.array( [ e for e in hitsohdu['gainCu'] ] )
             gain = np.mean(hits_gain) #adu/keV
         if verbose: print 'gain', gain, 'adu/keV'
         hdulist['nohits'][iohdu].data *= 1e3/gain/eIonization #e- (electron unit)
+        if crosstalk: hdulist['nohitsall'][iohdu].data *= 1e3/gain/eIonization #e- (electron unit)
         if len(hits_e) > 0:
             hdulist['nohits'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE
             if osi: merged[iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE
             if dohits: hdulist['hits'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = hits_e*1e3/gain/eIonization
         else:
             print term.red('Warning:'), 'empty hits_e on', ohdu_
+        if crosstalk:
+            for iohdu2, thisohdu in enumerate( ohdus[:4] ):
+                hitsohdu = hitscatalog[ hitscatalog['ohdu'] == thisohdu ]
+                hits_xy = np.array( [ [iy,ix] for x,y,l in zip( hitsohdu['xPix'], hitsohdu['yPix'], hitsohdu['level'] ) for ix,iy,ilevel in zip(x,y,l) if ilevel<levelcut ] )
+                hits_e = np.array( [ ie for e,l in zip( hitsohdu['ePix'], hitsohdu['level'] )  for ie,il in zip(e,l) if il<levelcut ] )
+                #hits_e = np.array( [ ie for e in hitsohdu['ePix'] for ie in e ] )
+                if len(hits_e) > 0:
+                    hdulist['nohitsall'][iohdu].data[ hits_xy[:,0], hits_xy[:,1] ] = REMOVE            
 
     if image:
         figs = [ plt.figure() for i in range(2) ]
@@ -360,8 +382,10 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
         print hdulisthitsfile
         print hdulistnohitsfile
         if osi: print partsfile
-    
-    return hdulist['nohits']
+    if crosstalk:
+        return hdulist['nohitsall']
+    else:
+        return hdulist['nohits']
 
 def fit( x, data, func, sel = None, log=False, p0 = None, labels = None ):
     mask = data > 0
@@ -459,15 +483,16 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
         if key in p0_: p0_[key] = value
     
     p_ = [ v for k,v in p0_.items() if k in adjust ]
+    print p_
     mask = data > 0
     if sel: mask = np.all( sel+[ data>0 ], axis=0 )
     
     x_ = x[mask]
     if log:
-        f = lambda x_, *p: np.log( convolution_GP2(x_, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0_.items() } ) )
+        f = lambda x__, *p: np.log( convolution_GP2(x__, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0_.items() } ) )
         y_ = np.log( data[mask] )
     else:
-        f = lambda x_, *p: convolution_GP2(x_, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0_.items() } )
+        f = lambda x__, *p: convolution_GP2(x__, **{ k: ( p[ adjust.index(k) ] if k in adjust else v ) for k,v in p0_.items() } )
         y_ = data[mask]
         
     #pp, pcov = scipy.optimize.curve_fit( f, x_, y_, p_, sigma = y_, bounds=bounds )
@@ -485,14 +510,19 @@ def fitpartial( x, data, sel = None, log=False, p0 = None, adjust = None, bounds
     
     #residual = lambda p, x_, y_: (y_ - f(x_, *p))**2/y_
     #residual = lambda p, x_, y_: (y_ - f(x_, *p))**2
-    residual = lambda p, x_, y_: (y_ - f(x_, *p))
-    res = scipy.optimize.leastsq( residual, p_, args=(x[mask],data[mask]), full_output=1 )
+    residual = lambda p, x__, y__: (y__ - f(x__, *p))
+    res = scipy.optimize.leastsq( residual, p_, args=(x_,y_), full_output=1 )
     popt, pcov2, infodict, errmsg, success = res
-    hist3 = f( x, *popt )
-    chisq3 = scipy.stats.chisquare( hist3, data, ddof = len(popt) )[0]/(len(data) - len(popt))
+    #hist3 = f( x, *popt )
+    #chisq3 = scipy.stats.chisquare( hist3, data, ddof = len(popt) )[0]/(len(data) - len(popt))
+    hist3 = f( x_, *popt )
+    chisq3 = scipy.stats.chisquare( hist3, y_, ddof = len(popt) )[0]/(len(y_) - len(popt))
+    
+    print 'chi2', chisq3, np.sum( (hist3-y_)**2/y_ )/(len(y_) - len(popt))
+    print np.max(hist3), np.max(y_)
     
     if (len(data) > len(popt)) and pcov2 is not None:
-        s_sq = ( residual(popt, x, data )**2).sum()/(len(data)-len(popt))
+        s_sq = ( residual(popt, x_, y_ )**2).sum()/(len(y_)-len(popt))
         pcov2 = pcov2 * s_sq
     else:
         pcov2 = np.inf
@@ -579,6 +609,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
             'data': clean(datum[vslice,hslice]),
             'hist': parseHist( *np.histogram( clean(datum[vslice,hslice]), bins = bins ) ),
             'pixelcount': len(clean(datum[vslice,hslice])),
+            'totalpixel': len(datum[vslice,hslice].flatten()),
             'mean': np.mean(clean(datum[vslice,hslice])),
             'median': np.median(clean(datum[vslice,hslice])),
             'std': np.std(clean(datum[vslice,hslice])),
@@ -600,6 +631,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
     for datakey, thishist in hist.items():
         for slicekey in hslices.keys():
             datum = thishist[slicekey]
+            print 'pixelcount', datum['pixelcount'], 'total', datum['totalpixel'], 'occupancy', 1.-float(datum['pixelcount'])/datum['totalpixel']
             x = datum['hist']['x']
             y = datum['hist']['y']
             datum['mean2'] = np.mean(crop(x,clean(data[datakey][vslice,hslices[slicekey]])))
@@ -612,7 +644,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
             #print datum['pixelcount']
             #print y.sum()/dx
             #print 2*y[x<0].sum()/dx
-            
+
             datum['fits'] = odict({})
 
             p0 = odict( [ 
@@ -624,10 +656,10 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 ('lamb', 0.), 
                 ('gain', gain),
                 ] )
-                
+
             if verbose: print slicekey, datum['std2']
             fits = datum['fits']
-            
+
             std2os = thishist['os']['std2']
             fits[r'G(0,σ\')'] = fitpartial( x, y, p0=p0, adjust = ['A'], sigma_os = std2os )
             Afit = fits[r'G(0,σ\')']['params']['A']
@@ -659,6 +691,10 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 fits[r'G(µ,σ)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σos)*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'A', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 fits[r'G(µ,σos)*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(µ,σ)*P(λ)A<'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'A', 'lamb'], sel=[x<0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(µ,σ)*P(λ)<'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'sigma_os', 'lamb'], sel=[x<0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(µ,σos)*P(λ)A<'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'A', 'lamb'], sel=[x<0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
+                #fits[r'G(µ,σos)*P(λ)<'] = fitpartial( x, y, p0=p0, adjust = ['mu_os', 'lamb'], sel=[x<0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 #fits[r'G(0,σ\')*P(λ)'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 #fits[r'G(0,σ\')*P(λ)p'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
                 #fits[r'G(0,σ\')*P(λ)A'] = fitpartial( x, y, p0=p0, adjust = ['A', 'lamb'], sel=[x>0], sigma_os=std2os, A=Afit, lamb=lamb0, gain=gain )
@@ -669,7 +705,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 #fits[r'log(G(0,σl)*P(λ))'] = fitpartial( x, y, p0=p0, adjust = ['lamb'], log=True, sel=[x>0], sigma_os=thishist['os']['fits'][r'log(G(0,σ))A']['params']['sigma_os'], A=Afit, lamb=lamb0, gain=gain )
 
                 #fits[r'log(G(µ,σl)*P(λ))'] = fitpartial( x, y, p0=p0, adjust = ['mu_ac','lamb'], log=True, sigma_os=thishist['os']['fits'][r'log(G(0,σ))A']['params']['sigma_os'], A=Afit, lamb=lamb0, gain=gain )
-                            
+
             tablekeys = datum['fits'].keys()
             fitkeylen = max(map(len,tablekeys))+3
             for fitkey in tablekeys:
@@ -824,12 +860,15 @@ def makePlot( ohdu, runID, hist, verbose = False ):
                 #ax[key].step( datum['hist']['x'], np.abs(datum['fits'][fitfunc]['deconvolve']), where='mid', label = 'dec '+fitfunc )
             
             if fft:
-                def fourier( x, y ):
-                    w = np.array(x)
-                    f = np.zeros_like(x)
-                    for w_, f_ in zip(w,f):
-                        f_ = scipy.integrate.quad( lambda x_: y[np.digitize(x_, x)-1]*np.exp(-1.j*w_*x_), -np.inf, np.inf )[0]
-                    return f
+                #def fourier( x, y ):
+                    #w = np.array(x)
+                    #f = np.zeros_like(x)
+                    #for w_, f_ in zip(w,f):
+                        #f_ = scipy.integrate.quad( lambda x_: y[np.digitize(x_, x)-1]*np.exp(-1.j*w_*x_), -np.inf, np.inf )[0]
+                    #return f
+                #def fourier( x, y ):
+                    #dx = x[1]-x[0]
+                    
                 #fourier = lambda w: np.fft.fftshift( np.fft.fft( w ))
                 y = fourier( datum['hist']['x'], datum['hist']['y'] )
                 print y.shape
@@ -920,11 +959,11 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         print 'plot generated in PNG file', '%s.png'%(FITSfiles[0])
         saveplot(FITSfiles[0])
 
-def plot2(outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbose=True ):
+def plot2( outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbose=True, crosstalk=False ):
     if verbose: print 'runID', runID
     outputfile = '%s/runID_%s_ohdu_%s'%(outfolder, runID, ohdu)
     hist, printcsv, printcsv2 = computeFits(ohdu, runID, 
-                                    removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile, output=False, image=False, gain=gain, verbose=verbose ),
+                                    removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile, output=False, image=False, gain=gain, verbose=verbose, crosstalk=crosstalk ),
                                     plot=plot,
                                     gain=gain,
                                     verbose=verbose,
@@ -945,19 +984,19 @@ def plot2(outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbos
 
 def help_():
     print 'Usage:'
-    print '--runID <runID> --outfolder <path> --removehits'
+    print sys.argv[0], '--runID <runID> --outfolder <path> --removehits'
     print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in the associated ROOT catalog'
     print
-    print '--runID <runID> --outfolder <path> --ROOTfile <path> --removehits'
+    print sys.argv[0], '--runID <runID> --outfolder <path> --ROOTfile <path> --removehits'
     print '\tcreate new FITS files from the corresponding runID FITS file subtracting the events in given ROOTfile'
     print 
-    print '--ohdu <ohdu> --fft --plot <list of paths>'
+    print sys.argv[0], '--ohdu <ohdu> --fft --plot <list of paths>'
     print '\tgenerate plot with FITS files from paths for the given ohdu'
     print
-    print '--ohdu <ohdu> --runID <runID> --outfolder <outfolder> --gain <gain> --table2'
+    print sys.argv[0], '--ohdu <ohdu> --runID <runID> --outfolder <outfolder> --gain <gain> --table2'
     print '\tgenerate plots and table of function fits for the respective runID and given ohdu'
     print
-    print '--ohdu <ohdu> --run <run> --outfolder <outfolder> --gain <gain> --table2'
+    print sys.argv[0], '--ohdu <ohdu> --run <run> --outfolder <outfolder> --gain <gain> --table2'
     print '\tgenerate tables of function fits for all the runIDs in the given run and given ohdu'
     print
 
@@ -988,6 +1027,8 @@ if __name__ == "__main__":
     getOption( vars_, 'runID', sys.argv, int )
     getOption( vars_, 'run', sys.argv )
     getOption( vars_, 'inputpath', sys.argv )
+    getOption( vars_, 'crosstalk', sys.argv )
+    
     if vars_['inputpath'] is None:
         vars_['inputpath'] = '.'
         
@@ -1019,7 +1060,7 @@ if __name__ == "__main__":
     if '--table2' in sys.argv:
         if not vars_['ohdu'] is None:
             if not vars_['runID'] is None:
-                runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'] ) )
+                runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'], crosstalk=vars_['crosstalk'] ) )
                 exit(0)
             if not vars_['run'] is None:
                 #def tmp( ohdu_, l_ ):
@@ -1035,7 +1076,7 @@ if __name__ == "__main__":
                        #N = len(l)
                        #)
                 runETA( 'remove and analyse full run '+vars_['run'], 
-                       cmd = lambda x: plot2(outfolder, vars_['ohdu'], int(x), ROOTfile, gain=vars_['gain'], verbose=False ),
+                       cmd = lambda x: plot2(outfolder, vars_['ohdu'], int(x), ROOTfile, gain=vars_['gain'], verbose=False, crosstalk=vars_['crosstalk'] ),
                        loop = l
                        )
                 exit(0)
