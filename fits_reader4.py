@@ -30,6 +30,39 @@ import root_numpy
 import datetime
 import time
 
+class Options:
+    def setparam( self, arg, value = None ):
+        self.__dict__[arg] = value if value else True
+        return
+    
+    def is_option( self, arg ):
+        return ('--' == arg[:2])
+    
+    def __init__( self, argv ):
+        self._cmdline = []
+        for i,arg in enumerate(argv):
+            if self.is_option(arg): 
+                self._cmdline += [ arg ]
+                self.setparam(arg, (argv[i+1] if not self.is_option(argv[i+1]) else 'error') if i < len(argv)-1 else None )
+        return
+    
+    def get_cmdline(self):
+        for _0 in self._cmdline:
+            print _0, self.__dict__[_0]
+
+class Program:
+    def __init__(self):
+        options = Options( sys.argv )
+        options.get_cmdline()
+        return
+
+class ROOTcatalog:
+    pass
+
+class FITSimage:
+    pass
+    
+
 REMOVE = 0
 REMOVEOLD = -1e9
 
@@ -153,7 +186,7 @@ def getAssociatedCatalogGain( *paths ):
     #print files[0]
     pattern = re.search( r'(data_[0-9]+_to_[0-9]+)', files[0] ).groups()[0]
     #print pattern
-    return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/nu_processing/scripts/ProcCat/scn_osi_raw_gain_catalog_%s.root'%pattern) if not 'skim' in catalog and not '-with-' in catalog ]
+    return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/nu_processing/scripts/ProcCat/*scn_osi_raw_gain_catalog_%s.root'%pattern) if not 'skim' in catalog and not '-with-' in catalog ]
 
 def getAssociatedCatalog( *paths ):
     return [ catalog for path in paths for catalog in glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/ext/catalog/catalog_data_*.root'%getrunFromPath(path)) if not 'skim' in catalog and not '-with-' in catalog ]
@@ -223,7 +256,7 @@ def mergeParts( parts ):
     #print [ (i,ohdu.header['OHDU']) for i, ohdu in enumerate(merged) ]
     return merged
 
-def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi=None, verbose=False, image=True, output=True, dohits=True, gain=None, crosstalk=False ):
+def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi=None, verbose=False, image=True, output=True, dohits=True, gain=None, crosstalk=False, onlyoccupancy=False ):
     FITSfile = listFITS_runID( runID )[0]
     print 'input FITSfile =', FITSfile
     if verbose: print 'output flag =', output
@@ -267,6 +300,7 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
             removeOHDU( hdulist['hits'], ohdu )
 
     hdulist['nohits'] = astropy.io.fits.open(FITSfile)
+    #print [ (_1,_2) for _1,_2 in hdulist['nohits'][-1].header.items() ]
     ohdus = [ hdulist['nohits'][i].header['OHDU'] for i in range(len(hdulist['nohits'])) ]
     print 'ohdus', ohdus
     badOHDU = [11,12]
@@ -285,6 +319,7 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
         ROOTfile = getAssociatedCatalog( FITSfile )[0]
         try:
             ROOTfileGain = getAssociatedCatalogGain( FITSfile )[0]
+            print ROOTfileGain
         except:
             readGain = False
             ROOTfileGain = ROOTfile
@@ -300,24 +335,42 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
     levelcut = 0
     hitsmask = {}
     gain = {}
+    occupancy = {}
     #if crosstalk:
-    for iohdu, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ):
-        print 'mask ohdu', thisohdu
-        hitsmask[thisohdu] = np.zeros_like( hdulist['hits'][-1].data, dtype=bool )
+    for iohdu, thisohdu in enumerate( ohdus ):
+        print 'mask ohdu', thisohdu, 
+        hitsmask[thisohdu] = {}
+        occupancy[thisohdu] = {}
         hitsohdu = hitscatalog[ hitscatalog['ohdu'] == thisohdu ]
-        hits_x = np.concatenate( [ x[l<=levelcut] for x,l in zip( hitsohdu['xPix'], hitsohdu['level'] ) ], axis=0 )
-        hits_y = np.concatenate( [ y[l<=levelcut] for y,l in zip( hitsohdu['yPix'], hitsohdu['level'] ) ], axis=0 )
-        hitsmask[thisohdu][hits_y,hits_x] = True
-        print hitsmask[thisohdu].sum()
-        if readGain:
-            gain[thisohdu] = np.mean( hitsohdu['gainCu'] )
-            if verbose: print 'gain', gain, 'adu/keV'
-
+        if len(hitsohdu['xPix']) > 0:
+            x = np.concatenate( hitsohdu['xPix'], axis=0)
+            y = np.concatenate( hitsohdu['yPix'], axis=0)
+            l = np.concatenate( hitsohdu['level'], axis=0)
+            if readGain:
+                gain[thisohdu] = np.mean( hitsohdu['gainCu'] )
+                print 'gain', gain[thisohdu], 'adu/keV'
+            for level in range(4):
+                N = 0
+                rate = 0
+                totalN = (l<=level).sum()
+                hitsmask[thisohdu][level] = np.zeros_like( hdulist['hits'][-1].data, dtype=bool )
+                hitsmask[thisohdu][level][y[l<=level],x[l<=level]] = True
+                N = hitsmask[thisohdu][level].sum()
+                rate = float(N)/len(hitsmask[thisohdu][level].flatten())
+                #print totalN, N
+                occupancy[thisohdu][level] = {'N': N, 'rate': rate, 'gain': gain[thisohdu], 'totalN': totalN }
+        else:
+            print 'ohdu', thisohdu, 'empty'
+    sep=' '
+    np.savetxt('%s/runID_%s_occupancy.csv'%(outputfolder,runID), [ [ ohdukey, levelkey, data['N'], data['rate'] ] for ohdukey, thisohdu in occupancy.items() for levelkey, data in thisohdu.iteritems() ], header=sep.join(['ohdu','level','N','rate']), fmt='%s', delimiter=sep)
+    
+    if onlyoccupancy: return None
+    
     for iohdu in range(len(hdulist['nohits'])):
         ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
         print 'crosstalk subtraction'
         for iohdu2, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ): #[:4]
-            print ohdu_, thisohdu, '%e'%np.mean(hdulist['nohits'][iohdu].data[ hitsmask[thisohdu] ])
+            print ohdu_, thisohdu, '%e'%np.mean(hdulist['nohits'][iohdu].data[ hitsmask[thisohdu][0] ])
     
     for iohdu in range(len(hdulist['nohits'])):
         ohdu_ = hdulist['nohits'][iohdu].header['OHDU']
@@ -328,15 +381,16 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
 
         hdulist['nohits'][iohdu].data *= 1e3/gain[ohdu_]/eIonization #e- (electron unit)
         
-        hdulist['nohits'][iohdu].data[ hitsmask[ohdu_] ] = REMOVE
-        if osi: merged[iohdu].data[ hitsmask[ohdu_] ] = REMOVE
+        hdulist['nohits'][iohdu].data[ hitsmask[ohdu_][3] ] = REMOVE
+        if osi: merged[iohdu].data[ hitsmask[ohdu_][3] ] = REMOVE
+        
         #if dohits: hdulist['hits'][iohdu].data[ hitsmask[ohdu_] ] = hits_e*1e3/gain/eIonization
         
-        if crosstalk:
-            print 'crosstalk subtraction'
-            for iohdu2, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ): #[:4]
-                print 'from ohdu', ohdu_, 'removing', thisohdu
-                hdulist['nohitsall'][iohdu].data[ hitsmask[thisohdu] ] = REMOVE            
+        #if crosstalk:
+            #print 'crosstalk subtraction'
+            #for iohdu2, thisohdu in enumerate( [ ohdu for ohdu in ohdus if not ohdu in badOHDU] ): #[:4]
+                #print 'from ohdu', ohdu_, 'removing', thisohdu
+                #hdulist['nohitsall'][iohdu].data[ hitsmask[thisohdu] ] = REMOVE            
 
     if image:
         figs = [ plt.figure() for i in range(2) ]
@@ -973,11 +1027,13 @@ def plotrunID( ohdu, *FITSfiles, **kwargs ):
         print 'plot generated in PNG file', '%s.png'%(FITSfiles[0])
         saveplot(FITSfiles[0])
 
-def plot2( outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbose=True, crosstalk=False ):
+def plot2( outfolder, ohdu, runID, ROOTfile = None, plot=False, gain=None, verbose=True, crosstalk=False, onlyoccupancy=False ):
     if verbose: print 'runID', runID
     outputfile = '%s/runID_%s_ohdu_%s'%(outfolder, runID, ohdu)
+    result = removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile, output=False, image=False, gain=gain, verbose=verbose, crosstalk=crosstalk, onlyoccupancy=onlyoccupancy )
+    if result is None: return
     hist, printcsv, printcsv2 = computeFits(ohdu, runID, 
-                                    removeHitsFromrunID( runID, outputfolder=outfolder, ohdu = ohdu, ROOTfile=ROOTfile, output=False, image=False, gain=gain, verbose=verbose, crosstalk=crosstalk ),
+                                    result,
                                     plot=plot,
                                     gain=gain,
                                     verbose=verbose,
@@ -1014,9 +1070,9 @@ def help_():
     print '\tgenerate tables of function fits for all the runIDs in the given run and given ohdu'
     print
 
-def getOption( vars_, option, args, f = lambda x:x ):
+def getOption( vars_, option, args, f = lambda x:x, flag=False ):
     if '--%s'%option in args:
-        vars_[option] = f(args[args.index('--%s'%option)+1])
+        vars_[option] = f(args[args.index('--%s'%option)+1]) if not flag else True
         print 'setting %s ='%option, vars_[option]
         return
     vars_[option] = None
@@ -1029,6 +1085,8 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         help_()
         exit(0)
+    p = Program()
+    exit(0)
     vars_ = {}
     outfolder = None
     ROOTfile = None
@@ -1041,7 +1099,8 @@ if __name__ == "__main__":
     getOption( vars_, 'runID', sys.argv, int )
     getOption( vars_, 'run', sys.argv )
     getOption( vars_, 'inputpath', sys.argv )
-    getOption( vars_, 'crosstalk', sys.argv )
+    getOption( vars_, 'crosstalk', sys.argv, flag=True )
+    getOption( vars_, 'onlyoccupancy', sys.argv, flag=True )
     
     if vars_['inputpath'] is None:
         vars_['inputpath'] = '.'
@@ -1074,13 +1133,13 @@ if __name__ == "__main__":
     if '--table2' in sys.argv:
         if not vars_['ohdu'] is None:
             if not vars_['runID'] is None:
-                runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'], crosstalk=vars_['crosstalk'], verbose=False ) )
+                runETA ( 'remove and analyse', lambda: plot2(outfolder, vars_['ohdu'], vars_['runID'], ROOTfile, plot=True, gain=vars_['gain'], crosstalk=vars_['crosstalk'], verbose=False, onlyoccupancy=vars_['onlyoccupancy'] ) )
                 exit(0)
             if not vars_['run'] is None:
                 l = sorted(list(set( listrunID_run( vars_['run'] ) )))
                 print 'from', min(l), 'to', max(l), ' total', len(l)
                 runETA( 'remove and analyse full run '+vars_['run'], 
-                       cmd = lambda x: plot2(outfolder, vars_['ohdu'], int(x), ROOTfile, gain=vars_['gain'], verbose=False, crosstalk=vars_['crosstalk'] ),
+                       cmd = lambda x: plot2(outfolder, vars_['ohdu'], int(x), ROOTfile, gain=vars_['gain'], verbose=False, crosstalk=vars_['crosstalk'], onlyoccupancy=vars_['onlyoccupancy'] ),
                        loop = l
                        )
                 exit(0)
