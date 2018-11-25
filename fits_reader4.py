@@ -89,7 +89,7 @@ class RunID:
             self.initiate()
         
     def getrun(self):
-        return re.search( r'runs/([0-9]+.)/.*/runID_([0-9]+)_', *self.path_scnmerged ).groups()
+        return re.search( r'runs/([0-9]+.)/.*/.*_runID_([0-9]+)_', *self.path_scnmerged ).groups()
 
         
 #    def listFITS( *patterns ):
