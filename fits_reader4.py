@@ -75,15 +75,21 @@ class Run:
         self.run = run
         self
 class RunID:
-    def __init__(self, runID):
-        self.runID = runID
+    def initiate(self):
         self.pattern = '*_runID_*_%05d_*'%self.runID
         self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)
+        self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)
         print self.path_scnmerged
-        self.pattern_osi = '*/data_*/osi/images/*_runID_*_%05d_*.fits'%self.runID
-
-#    def getrun(self):
-#        return re.search(r'runID_([0-9]+)_([0-9]+)', os.path.basename( path )).groups()
+        print self.path_osiparts
+        print self.getrun()
+        
+    def __init__(self, runID=None):
+        if runID:
+            self.runID = runID
+            self.initiate()
+        
+    def getrun(self):
+        return re.search( r'runs/([0-9]+.)/.*/runID_([0-9]+)_', self.path_scnmerged ).groups()
 
         
 #    def listFITS( *patterns ):
