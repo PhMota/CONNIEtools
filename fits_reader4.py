@@ -82,16 +82,15 @@ class RunID:
         print self.path_scnmerged
         self.pattern_osi = '*/data_*/osi/images/*_runID_*_%05d_*.fits'%self.runID
 
-    def getrun(self):
-    def getrun_runIDFromPath( path ):
-        return re.search(r'runID_([0-9]+)_([0-9]+)', os.path.basename( path )).groups()
+#    def getrun(self):
+#        return re.search(r'runID_([0-9]+)_([0-9]+)', os.path.basename( path )).groups()
 
         
-    def listFITS( *patterns ):
-        '''
-        list all files that match the list of patterns given
-        '''
-        return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
+#    def listFITS( *patterns ):
+#        '''
+#        list all files that match the list of patterns given
+#        '''
+#        return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
     
     def getFITS():
         return self.runID
