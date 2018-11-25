@@ -52,8 +52,8 @@ class Options:
 
 class Program:
     def __init__(self):
-        options = Options( sys.argv )
-        options.get_cmdline()
+        self.options = Options( sys.argv )
+        self.options.get_cmdline()
         return
 
 class ROOTcatalog:
@@ -61,8 +61,45 @@ class ROOTcatalog:
 
 class FITSimage:
     pass
-    
 
+
+def rglob( pattern, n=0 ):
+    if n>20: return []
+    return rglob( pattern.replace('//','//*/'), n+1 ) if len(glob.glob( pattern )) == 0 else glob.glob( pattern )
+
+path_connie = '/share/storage2/connie/'
+path_processed02data = 'data_analysis/processed02_data/runs/'
+
+class Run:
+    def __init__(self, run):
+        self.run = run
+        self
+class RunID:
+    def __init__(self, runID):
+        self.runID = runID
+        self.pattern = '*_runID_*_%05d_*'%self.runID
+        self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)
+        print self.path_scnmerged
+        self.pattern_osi = '*/data_*/osi/images/*_runID_*_%05d_*.fits'%self.runID
+
+    def getrun(self):
+    def getrun_runIDFromPath( path ):
+        return re.search(r'runID_([0-9]+)_([0-9]+)', os.path.basename( path )).groups()
+
+        
+    def listFITS( *patterns ):
+        '''
+        list all files that match the list of patterns given
+        '''
+        return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
+    
+    def getFITS():
+        return self.runID
+    
+print 'test'
+runID = RunID(4795)
+exit(0)
+    
 REMOVE = 0
 REMOVEOLD = -1e9
 
@@ -112,17 +149,6 @@ def str_with_err(value, error):
 folder = '/share/storage2/connie/data_analysis/processed02_data/runs/029*/data_*/scn/merged/*'
 folder2 = '/share/storage2/connie/data_analysis/processed02_data/runs/009*/data_*/scn/merged/*'
 
-def rglob( pattern, n=0 ):
-    if n>20: return []
-    #print 'trying pattern', pattern
-    return rglob( pattern.replace('//','//*/'), n+1 ) if len(glob.glob( pattern )) == 0 else glob.glob( pattern )
-
-def listFITS( *patterns ):
-    '''
-    list all files that match the list of patterns given
-    '''
-    return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
-
 def listFITS_run( *runs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s[A-Z]/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
     if len(l) == 0:
@@ -133,9 +159,6 @@ def listrunID_run( *runs ):
     l = listFITS_run( runs )
     #print '\n'.join(l)
     return map( getrunIDFromPath, l )
-
-def listFITS_runID( *runIDs ):
-    return listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/scn_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
 
 def listremovedFITS_runID( *runIDs, **kwargs ):
     #if os.access( '/share/storage2/connie/data_analysis/processed02_data/runs/', os.W_OK):
@@ -153,9 +176,6 @@ def getrunIDFromPath( path ):
 
 def getrunFromPath( path ):
     return re.search(r'runs/(.+)/data', path ).groups()[0]
-
-def getrun_runIDFromPath( path ):
-    return re.search(r'runID_([0-9]+)_([0-9]+)', os.path.basename( path )).groups()
 
 def sortByrunID( paths ):
     '''
