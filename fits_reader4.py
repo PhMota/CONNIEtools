@@ -73,12 +73,16 @@ path_processed02data = 'data_analysis/processed02_data/runs/'
 class Run:
     def initiate(self):
         self.pattern = '*_runID_%s_*'%self.run
-        self.path = rglob(path_connie+path_processed02data+'%03d'%self.run+'*/')
-        print self.path
+        self.path = rglob(path_connie+path_processed02data+self.run+'/data_*/')
+        self.range = re.search( r'/data_([0-9]*_to_[0-9]*)/').groups()
+        print self.path, self.range
         
     def __init__(self, run=None):
         if run:
-            self.run = run
+            if type(run) is int:
+                self.run = '%03d*'%run
+            else: 
+                self.run = run
             self.initiate()
     
     def listAll(self):
