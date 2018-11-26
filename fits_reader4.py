@@ -59,10 +59,10 @@ class Program:
 class ROOTcatalog:
     pass
 
-class FITSimage:
-    pass
-
-
+class SCNimage:
+    def __init__(self, path):
+        self.image = astropy.io.fits.open(path)
+    
 def rglob( pattern, n=0 ):
     if n>20: return []
     return rglob( pattern.replace('//','//*/'), n+1 ) if len(glob.glob( pattern )) == 0 else glob.glob( pattern )
@@ -94,11 +94,14 @@ class Run:
 class RunID:
     def initiate(self):
         self.pattern = '*_runID_*_%05d_*'%self.runID
-        self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)
-        self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)
+        self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)[0]
+        self.subrun, self.range, self.run = re.search( r'runs/([0-9]+.)/data_(.*)/.*_runID_([0-9]+)_', self.path_scnmerged ).groups()
+        self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)[0]
+        self.path_catalog = rglob(path_connie+path_processed02data+'%s/data_%s/ext/catalog/catalog_data_*.root'%( self.subrun, self.range ) )[0]
         print self.path_scnmerged
         print self.path_osiparts
-        print self.getrun()
+        print self.path_catalog
+        print self.subrun, self.range, self.run
         
     def __init__(self, runID=None):
         if runID:
@@ -108,14 +111,14 @@ class RunID:
     def getrun(self):
         return re.search( r'runs/([0-9]+.)/.*/.*_runID_([0-9]+)_', *self.path_scnmerged ).groups()
 
-        
 #    def listFITS( *patterns ):
 #        '''
 #        list all files that match the list of patterns given
 #        '''
 #        return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
     
-    def getFITS():
+    def getSCN():
+        self.image_scn = astropy.io.fits.open( self.path_scnmerged )
         return self.runID
     
 print 'test'
