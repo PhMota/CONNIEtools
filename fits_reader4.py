@@ -73,7 +73,7 @@ path_processed02data = 'data_analysis/processed02_data/runs/'
 class Run:
     def initiate(self):
         self.pattern = '*_runID_%s_*'%self.run
-        self.path = rglob(path_connie+path_processed02data+self.run+'/data_*/')
+        self.path = rglob(path_connie+path_processed02data+self.run+'/data_*/')[0]
         self.range = re.search( r'/data_([0-9]*_to_[0-9]*)/', self.path ).groups()
         print self.path, self.range
         
