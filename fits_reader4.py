@@ -73,7 +73,7 @@ path_processed02data = 'data_analysis/processed02_data/runs/'
 class Run:
     def initiate(self):
         self.pattern = '*_runID_%s_*'%self.run
-        self.path = rglob(path_connie+path_processed02data+'%03d'%sself.run+'*/')
+        self.path = rglob(path_connie+path_processed02data+'%03d'%self.run+'*/')
         print self.path
         
     def __init__(self, run=None):
