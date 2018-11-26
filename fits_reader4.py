@@ -71,9 +71,22 @@ path_connie = '/share/storage2/connie/'
 path_processed02data = 'data_analysis/processed02_data/runs/'
 
 class Run:
-    def __init__(self, run):
-        self.run = run
-        self
+    def initiate(self):
+        self.pattern = '*_runID_%s_*'%self.run
+        self.path = rglob(path_connie+path_processed02data+self.run+'*/')
+        print self.path
+        
+    def __init__(self, run=None):
+        if run:
+            self.run = run
+            self.initiate()
+    
+    def listAll(self):
+        pass
+    
+    def listrunIDs(self):
+        pass
+
 class RunID:
     def initiate(self):
         self.pattern = '*_runID_*_%05d_*'%self.runID
