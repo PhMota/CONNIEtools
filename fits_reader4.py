@@ -95,13 +95,13 @@ class RunID:
     def initiate(self):
         self.pattern = '*_runID_*_%05d_*'%self.runID
         self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)[0]
-        self.subrun, self.range, self.run = re.search( r'runs/([0-9]+.)/data_(.*)/.*_runID_([0-9]+)_', self.path_scnmerged ).groups()
-        self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)[0]
-        self.path_catalog = rglob(path_connie+path_processed02data+'%s/data_%s/ext/catalog/catalog_data_*.root'%( self.subrun, self.range ) )[0]
         print self.path_scnmerged
-        print self.path_osiparts
-        print self.path_catalog
+        self.subrun, self.range, self.run = re.search( r'runs/([0-9]+.)/data_(.*)/.*_runID_([0-9]+)_', self.path_scnmerged ).groups()
         print self.subrun, self.range, self.run
+        self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)[0]
+        print self.path_osiparts
+        self.path_catalog = rglob(path_connie+path_processed02data+'%s/data_%s/ext/catalog/catalog_data_*.root'%( self.subrun, self.range ) )[0]
+        print self.path_catalog
         
     def __init__(self, runID=None):
         if runID:
