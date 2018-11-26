@@ -69,6 +69,7 @@ def rglob( pattern, n=0 ):
 
 path_connie = '/share/storage2/connie/'
 path_processed02data = 'data_analysis/processed02_data/runs/'
+path_nuprocessing = 'nu_processing/scripts/ProcCat/'
 
 class Run:
     def initiate(self):
@@ -91,17 +92,20 @@ class Run:
     def listrunIDs(self):
         pass
 
+pickfirst = lambda x: None if len(x)==0 else x[0]
 class RunID:
     def initiate(self):
         self.pattern = '*_runID_*_%05d_*'%self.runID
-        self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)[0]
+        self.path_scnmerged = pickfirst( rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern) )
         print self.path_scnmerged
         self.subrun, self.range, self.run = re.search( r'runs/([0-9]+.)/data_(.*?)/.*_runID_([0-9]+)_', self.path_scnmerged ).groups()
         print self.subrun, self.range, self.run
-        self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)[0]
+        self.path_osiparts = pickfirst( rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern) )
         print self.path_osiparts
-        self.path_catalog = rglob(path_connie+path_processed02data+'%s/data_%s/ext/catalog/catalog_data_*.root'%( self.subrun, self.range ) )[0]
+        self.path_catalog = pickfirst( rglob(path_connie+path_processed02data+'%s/data_%s/ext/catalog/catalog_data_*.root'%( self.subrun, self.range ) ) )
         print self.path_catalog
+        self.path_gaincatalog = pickfirst( rglob(path_connie+path_nuprocessing+'*scn_osi_raw_gain_catalog_%s.root'%self.range ) )
+        print self.path_gaincatalog
         
     def __init__(self, runID=None):
         if runID:
