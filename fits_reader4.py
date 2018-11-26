@@ -96,7 +96,7 @@ class RunID:
         self.pattern = '*_runID_*_%05d_*'%self.runID
         self.path_scnmerged = rglob(path_connie+path_processed02data+'*/data_*/scn/merged/'+self.pattern)[0]
         print self.path_scnmerged
-        self.subrun, self.range, self.run = re.search( r'runs/([0-9]+.)/data_(.*)/.*_runID_([0-9]+)_', self.path_scnmerged ).groups()
+        self.subrun, self.range, self.run = re.search( r'runs/([0-9]+.)/data_(.*?)/.*_runID_([0-9]+)_', self.path_scnmerged ).groups()
         print self.subrun, self.range, self.run
         self.path_osiparts = rglob(path_connie+path_processed02data+'*/data_*/osi/images/'+self.pattern)[0]
         print self.path_osiparts
