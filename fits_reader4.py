@@ -1671,15 +1671,19 @@ def pca( data_, inv = None, method='invert' ):
     if not inv is None and method == 'inverteach':
         data = np.append( data, datainv )
     
+    term = lambda d1, d2, f1, f2: np.mean( d1[f1]*d2[f2] )/np.sqrt( np.std(d1[f1])*np.std(d2[f2]) )
+    invterm = lambda d1, d2, f1, f2: np.mean( 1./(d1[f1]*d2[f2]) )/np.sqrt( np.std(1./d1[f1])*np.std(1./d2[f2]) )
     covmatrix = np.zeros( (len(data.dtype.names),len(data.dtype.names)) )
     for i1, field1 in enumerate(data.dtype.names):
         for i2, field2 in enumerate(data.dtype.names):
             #covmatrix[i1,i2] = np.mean( data[field1]*data[field2] )#/np.sqrt(np.std(data[field1])*np.std(data[field2]))
-            covmatrix[i1,i2] = np.sum( data[field1]*data[field2])/np.sqrt(np.std(data[field1])*np.std(data[field2]))
+            covmatrix[i1,i2] = term(data,data,field1,field2)
             if method == 'invert' and not inv is None:
                 covmatrix[i1,i2] += 1. / (np.sum( datainv[field1]*datainv[field2])/np.sqrt(np.std(datainv[field1])*np.std(datainv[field2])))
             if method == 'subtract' and not inv is None:
-                covmatrix[i1,i2] -= np.sum( datainv[field1]*datainv[field2])/np.sqrt(np.std(datainv[field1])*np.std(datainv[field2]))
+                covmatrix[i1,i2] += invterm( datainv, datainv, field1, field2 )
+                #covmatrix[i1,i2] = -term( data, datainv, field1, field2 )
+
     eigenvalues, eigenvectors = np.linalg.eigh( covmatrix )
     #return eigenvalues, eigenvectors/eigenvalues
     return eigenvalues, eigenvectors
@@ -1716,7 +1720,10 @@ def muonPixFraction( x, y, e, g ):
     c2ChiSqr = np.zeros(len(x))
     meanE = np.zeros(len(x))
     stdE = np.zeros(len(x))
-    diffE = np.zeros(len(x))
+    difflE = np.zeros(len(x))
+    difftE = np.zeros(len(x))
+    nL = np.zeros(len(x))
+    eL = np.zeros(len(x))
     for i, (ix, iy, ie) in enumerate(zip(x,y,e)):
         ix = ix.astype(float)
         iy = iy.astype(float)
@@ -1736,12 +1743,15 @@ def muonPixFraction( x, y, e, g ):
 
         tLen[i] = it.max() - it.min() + 1
         lLen[i] = il.max() - il.min() + 1
+        nL[i] = len( it[ np.abs(it) < 1 ] )
+        eL[i] = np.sum( ie[ np.abs(it) < 1 ] )
         
         if len(it[il<0]) < 2:
             cChiSqr[i] = 1
             eChiSqr[i] = 1
             c2ChiSqr[i] = 1
-            diffE[i] = 1
+            difflE[i] = 1
+            difftE[i] = 1
             print 'error'
         else:
             t1Var0 = std(it[il<0],ie[il<0])
@@ -1749,7 +1759,8 @@ def muonPixFraction( x, y, e, g ):
             t2Var0 = std(it[il>0],ie[il>0])
             l2 = np.mean(il[il>0])
             #print 'tVar', tVar0[i], t1Var0, t2Var0, l1, l2, il.min(), il.max()
-            diffE[i] = np.abs( np.sum(ie[il<0]) - np.sum(ie[il>0]) )
+            difflE[i] = np.abs( np.sum(ie[il<0]) - np.sum(ie[il>0]) )
+            difftE[i] = np.abs( np.sum(ie[it<0]) - np.sum(ie[it>0]) )
 
             tGauss = scipy.stats.norm.pdf(it, 0, tVar0[i])
             lGauss = scipy.stats.norm.pdf(il, 0, lVar0[i])
@@ -1776,7 +1787,7 @@ def muonPixFraction( x, y, e, g ):
                 if eChiSqr[i] > 1e30:
                     eChiSqr[i] = 1
                 
-    return np.array( zip( *[ lVar0, tVar0, lLen, tLen, cChiSqr, eChiSqr, c2ChiSqr, meanE, stdE, diffE ] ), dtype = [('lVar0', 'f4'), ('tVar0', 'f4'), ('lLen', 'f4'), ('tLen', 'f4'), ('cChiSqr', 'f4'), ('eChiSqr', 'f4'), ('c2ChiSqr', 'f4'), ('meanE', 'f4'), ('stdE', 'f4'), ('diffE', 'f4')] )
+    return np.array( zip( *[ lVar0, tVar0, lLen, tLen, cChiSqr, eChiSqr, c2ChiSqr, meanE, stdE, difflE, difftE, nL, eL ] ), dtype = [('lVar0', 'f4'), ('tVar0', 'f4'), ('lLen', 'f4'), ('tLen', 'f4'), ('cChiSqr', 'f4'), ('eChiSqr', 'f4'), ('c2ChiSqr', 'f4'), ('meanE', 'f4'), ('stdE', 'f4'), ('difflE', 'f4'), ('difftE', 'f4'), ('nL', 'f4'), ('eL', 'f4')] )
 
 def apply_to_structured( data, func ):
     return np.array( zip( *[ func(data[field]) for field in data.dtype.names ]), dtype = data.dtype )
@@ -1870,10 +1881,10 @@ def machinelearning( inputpositive, inputnegative, catalog, outputcatalog ):
         #'log10(n0)': lambda x: np.log10(x['n0']),
         }
     #dimensionsManual['log10(eChiSqr/meanE)'] = lambda x: np.log10(x['eChiSqr']/x['meanE'])
-    denomfields_ = ['E0', 'meanE', 'stdE', 'lLen', 'n0', 'tLen', 'lVar0', 'tVar0', 'diffE' ]
-    numerfields_ = denomfields_ + ['cChiSqr', 'eChiSqr', 'c2ChiSqr' ]
+    denomfields_ = ['E0', 'meanE', 'stdE', 'lLen', 'n0', 'tLen', 'lVar0', 'tVar0', 'difftE', 'difflE', 'eL', 'nL' ]
+    numerfields_ = denomfields_ + [ 'cChiSqr', 'eChiSqr', 'c2ChiSqr' ]
     dimensions3 = {}
-    dimensions3 = dict( ('log10(%s/%s)'%(key,key2), lambda x,key=key,key2=key2: np.log10(x[key]/x[key2]) ) for i, key in enumerate(numerfields_) for j, key2 in enumerate(denomfields_) if key!=key2 )
+    dimensions3 = dict( ('log10(%s/%s)'%(key,key2), lambda x,key=key,key2=key2: np.log10(x[key]/x[key2]) ) for i, key in enumerate(numerfields_) for j, key2 in enumerate(denomfields_) if i>j )
     dimensions = dimensions3
     #dimensions = {}
     dimensions.update( dimensions1 )
@@ -1884,7 +1895,7 @@ def machinelearning( inputpositive, inputnegative, catalog, outputcatalog ):
     dataneg = np.array( zip( *[ dimension(negativedata) for dimension in dimensions.values() ] ), dtype = [ (key, None) for key in dimensions.keys() ] )
     #print 'isnan', [ (key, np.argwhere( np.isnan(dataneg[key]) ) ) for key in dimensions.keys() ]
     #print 'isinf', [ (key, np.argwhere( np.isinf(dataneg[key]) ) ) for key in dimensions.keys() ]
-    print datapos[146]
+    #print datapos[146]
 
     #print datapos.shape
     #datapos = np.delete( datapos, np.argwhere( datapos['log10(E0/Var0)'] > 3 ) )
@@ -1903,22 +1914,26 @@ def machinelearning( inputpositive, inputnegative, catalog, outputcatalog ):
     pcaneg = pca(dataneg)
     print 'eigenvalues neg', list(enumerate(pcaneg[0]))[-3:]
 
-    pcapos_ineg = pca( datapos, inv = dataneg, method = '2')
+    pcapos_ineg = pca( datapos, inv = dataneg, method = 'subtract')
     print 'eigenvalues pos_ineg', list(enumerate(pcapos_ineg[0]))[-3:]
 
-    pcaneg_ipos = pca( dataneg, inv = datapos, method = '2' )
+    pcaneg_ipos = pca( dataneg, inv = datapos, method = 'subtract' )
     print 'eigenvalues neg_ipos', list(enumerate(pcaneg_ipos[0]))[-3:]
 
     #pca_ = pcaneg_ipos
-    pca_ = pcaneg
+    pca_ = pcapos_ineg
     #pca_ = pcacluster
     #pca_ = pcaneg
-    print 'eigenvalues', list(enumerate(pca_[0]))
+    #print 'eigenvalues', list(enumerate(pca_[0]))
     print 'eigenvectors0', sorted( [ (dimensions.keys()[i], abs(v)) for i, v in enumerate(pca_[1][:,-1]) ], key= lambda x: x[-1] )[-4:]
     print 'eigenvectors1', sorted( [ (dimensions.keys()[i], abs(v)) for i, v in enumerate(pca_[1][:,-2]) ], key= lambda x: x[-1] )[-4:]
     print 'eigenvectors2', sorted( [ (dimensions.keys()[i], abs(v)) for i, v in enumerate(pca_[1][:,-3]) ], key= lambda x: x[-1] )[-4:]
     rpos = rotatedata( datapos, *pca_ )
+    rpos_pos = rotatedata( datapos, *pcapos )
+    rpos_neg = rotatedata( dataneg, *pcapos )
     rneg = rotatedata( dataneg, *pca_ )
+    rneg_pos = rotatedata( datapos, *pcaneg )
+    rneg_neg = rotatedata( dataneg, *pcaneg )
     
     #centers, radii = findclusters( rpos )
     #print 'eigenvalues', pca_[0]
@@ -1933,39 +1948,45 @@ def machinelearning( inputpositive, inputnegative, catalog, outputcatalog ):
     
     kwargs = {'fill': False, 'color': 'k' }
 
-    ax2 = fig.add_subplot(211)
-    axis0 = -1
-    axis1 = -2
-    #print rpos.dtype.names[axis0]
-    #print rpos.dtype.names[axis1]
-    ax2.scatter( rpos[ rpos.dtype.names[axis0] ], rpos[ rpos.dtype.names[axis1] ] )
-    ax2.scatter( rneg[ rneg.dtype.names[axis0] ], rneg[ rneg.dtype.names[axis1] ] )
-    ax2.set_xlabel(rpos.dtype.names[axis0])
-    ax2.set_ylabel(rpos.dtype.names[axis1])
-    #ax2.add_artist( 
-        #patches.Ellipse(( centers[axis0], centers[axis1] ), width=stds[axis0], height=stds[axis1], angle=0, **kwargs )
-        #)
-    ax2.add_artist( 
-        patches.Rectangle(( bottoms[axis0], bottoms[axis1] ), width=tops[axis0]-bottoms[axis0], height=tops[axis1]-bottoms[axis1], **kwargs )
-        )
-    #print centers[axis0], centers[axis1], stds[axis0], stds[axis1]
+    #axis_pairs = [ [-1,-2], [-2,-3], [-3,-4] ]
+    axis_pairs = [ [-1,0], [-2,1], [-3,2] ]
+    for i, axis_pair in enumerate(axis_pairs):
+        ax2 = fig.add_subplot( len(axis_pairs), 1, i+1 )
+        axis0 = axis_pair[0]
+        axis1 = axis_pair[1]
+        #ax2.scatter( rneg[ rneg.dtype.names[axis0] ], rneg[ rneg.dtype.names[axis1] ] )
+        #ax2.scatter( rpos[ rpos.dtype.names[axis0] ], rpos[ rpos.dtype.names[axis1] ] )
+        
+        ax2.scatter( rneg_neg[ rneg_neg.dtype.names[axis0] ], rpos_neg[ rpos_neg.dtype.names[axis1] ] )
+        ax2.scatter( rneg_pos[ rneg_pos.dtype.names[axis0] ], rpos_pos[ rpos_pos.dtype.names[axis1] ] )
 
-    ax = fig.add_subplot(212)
-    #axis0 = 'log10(E0/lVar0)'
-    #axis0 = 'log10(E0/lLen)'
-    #axis0 = 'log10(eChiSqr)'
-    #axis1 = 'log10(cChiSqr)'
-    #ax.scatter( datapos[axis0], datapos[axis1] )
-    #ax.scatter( dataneg[axis0], dataneg[axis1] )
-    axis0_ = -3
-    axis1_ = -2
-    ax.scatter( rpos[ rpos.dtype.names[axis0_] ], rpos[ rpos.dtype.names[axis1_] ] )
-    ax.scatter( rneg[ rneg.dtype.names[axis0_] ], rneg[ rneg.dtype.names[axis1_] ] )
-    ax.set_xlabel(rpos.dtype.names[axis0_])
-    ax.set_ylabel(rpos.dtype.names[axis1_])
-    ax.add_artist( 
-        patches.Rectangle(( bottoms[axis0_], bottoms[axis1_] ), width=tops[axis0_]-bottoms[axis0_], height=tops[axis1_]-bottoms[axis1_], **kwargs )
-        )
+        ax2.set_xlabel(rneg_neg.dtype.names[axis0])
+        ax2.set_ylabel(rpos_pos.dtype.names[axis1])
+        #ax2.add_artist( 
+            #patches.Rectangle(( bottoms[axis0], bottoms[axis1] ), width=tops[axis0]-bottoms[axis0], height=tops[axis1]-bottoms[axis1], **kwargs )
+            #)
+        
+    #ax2 = fig.add_subplot(211)
+    #axis0 = -1
+    #axis1 = -2
+    #ax2.scatter( rpos[ rpos.dtype.names[axis0] ], rpos[ rpos.dtype.names[axis1] ] )
+    #ax2.scatter( rneg[ rneg.dtype.names[axis0] ], rneg[ rneg.dtype.names[axis1] ] )
+    #ax2.set_xlabel(rpos.dtype.names[axis0])
+    #ax2.set_ylabel(rpos.dtype.names[axis1])
+    #ax2.add_artist( 
+        #patches.Rectangle(( bottoms[axis0], bottoms[axis1] ), width=tops[axis0]-bottoms[axis0], height=tops[axis1]-bottoms[axis1], **kwargs )
+        #)
+
+    #ax = fig.add_subplot(212)
+    #axis0_ = -3
+    #axis1_ = -2
+    #ax.scatter( rpos[ rpos.dtype.names[axis0_] ], rpos[ rpos.dtype.names[axis1_] ] )
+    #ax.scatter( rneg[ rneg.dtype.names[axis0_] ], rneg[ rneg.dtype.names[axis1_] ] )
+    #ax.set_xlabel(rpos.dtype.names[axis0_])
+    #ax.set_ylabel(rpos.dtype.names[axis1_])
+    #ax.add_artist( 
+        #patches.Rectangle(( bottoms[axis0_], bottoms[axis1_] ), width=tops[axis0_]-bottoms[axis0_], height=tops[axis1_]-bottoms[axis1_], **kwargs )
+        #)
 
     fig.savefig( 'pca.png' )
     
@@ -1973,10 +1994,11 @@ def machinelearning( inputpositive, inputnegative, catalog, outputcatalog ):
     
     #for select in selecteddata:
         #draw_entry( select )
-    ax2.scatter( rotatedalldata[ rpos.dtype.names[axis0] ], rotatedalldata[ rpos.dtype.names[axis1] ], s=.1 )
-    ax.scatter( rotatedalldata[ rpos.dtype.names[axis0_] ], rotatedalldata[ rpos.dtype.names[axis1_] ], s=.1 )
-    ax2.scatter( rotatedselecteddata[ rpos.dtype.names[axis0] ], rotatedselecteddata[ rpos.dtype.names[axis1] ], s=.1 )
-    ax.scatter( rotatedselecteddata[ rpos.dtype.names[axis0_] ], rotatedselecteddata[ rpos.dtype.names[axis1_] ], s=.1 )
+    for i, axis_pair in enumerate(axis_pairs):
+        axis0 = axis_pair[0]
+        axis1 = axis_pair[1]
+        fig.axes[i].scatter( rotatedalldata[ rpos.dtype.names[axis0] ], rotatedalldata[ rpos.dtype.names[axis1] ], s=.1 )
+        fig.axes[i].scatter( rotatedselecteddata[ rpos.dtype.names[axis0] ], rotatedselecteddata[ rpos.dtype.names[axis1] ], s=.1 )
 
     fig.savefig( 'pca2.png' )
     
@@ -2004,7 +2026,7 @@ def selectCluster( catalog, start, stop, dimensions, pca_, tops, bottoms ):
     extradata = muonPixFraction( data['xPix'], data['yPix'], data['ePix'], data['gainCu'] )
     data = append_struct( data, extradata )
 
-    print [ (key) for key in dimensions.keys() ]
+    #print [ (key) for key in dimensions.keys() ]
     datadim = np.array( zip( *[ dimension(data) for dimension in dimensions.values() ] ), dtype = [ (key, None) for key in dimensions.keys() ] )
     rdata = rotatedata( datadim, *pca_ )
     
