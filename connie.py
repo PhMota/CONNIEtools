@@ -2740,7 +2740,7 @@ class SpectrumWindow(Gtk.Window):
     def __init__(self):
         self.id = time.time()
         print 'id', self.id
-        self.tempPath = 'gui/session%s.png'%self.id
+        self.tempPath = '/home/mota/public/gui/session_spectrum_%s.png'%self.id
         Gtk.Window.__init__( self, title="Spectrum Viewer [session%s]"%self.id )
         self.set_border_width(3)
 
@@ -2895,7 +2895,7 @@ class ImageWindow(Gtk.Window):
     def __init__(self):
         self.id = time.time()
         print 'id', self.id
-        self.tempPath = 'gui/session%s.png'%self.id
+        self.tempPath = '/home/mota/public/gui/session_image_%s.png'%self.id
         Gtk.Window.__init__( self, title="Image Viewer [session%s]"%self.id )
         self.set_border_width(3)
 
