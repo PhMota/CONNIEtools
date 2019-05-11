@@ -21,6 +21,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib import patches, colors
+from mpl_toolkits.axes_grid1 import make_axes_locatable, ImageGrid
 
 from functools import partial
 
@@ -40,7 +41,8 @@ import json
 
 import gi
 gi.require_version('Gtk', '2.0')
-from gi.repository import Gtk, Gdk, GdkPixbuf
+from gi.repository import Gtk, Gdk, GdkPixbuf, GObject, GLib
+import threading
 
 #np.seterr(all='raise')
 
@@ -274,9 +276,34 @@ def listFITS( *patterns ):
     '''
     return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
 
-def listAll_runs():
-    l = glob.glob( '/share/storage2/connie/data_analysis/processed02_data/runs/*/' )
-    return [ re.search(r'runs/(.+)', i ).groups()[0] for i in l ]
+def list_runs():
+    l = glob.glob( '/share/storage2/connie/data/runs/*/' )
+    runs = [ re.search(r'runs/(.+)/', i ).groups()[0] for i in l ]
+    return sorted(runs)
+
+#/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/runs/*/
+def list_subruns( run='all' ):
+    if run == 'all':
+        l = glob.glob( '/share/storage2/connie/data_analysis/processed02_data/runs/*/' )
+        #l.extend( glob.glob( '/share/storage2/connie/data_analysis/processed02_data/runs/*/' ) )
+    else:
+        l = glob.glob( '/share/storage2/connie/data_analysis/processed02_data/runs/%03d*/'%int(run) )
+    subruns = [ re.search(r'runs/(.+)/', i ).groups()[0] for i in l ]
+    return sorted(runs)
+
+def list_all_runIDs():
+    l = glob.glob( '/share/storage2/connie/data/runs/*/runID_*_*_p1.fits.fz' )
+    return l
+
+def list_runIDs( *runs ):
+    l = listFITS( *[ '/share/storage2/connie/data/runs/%s/runID_%s_*_p1.fits.fz'%(run,run) for run in runs ] )
+
+    #l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s[A-Z]/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
+    #if len(l) == 0:
+        #l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
+    #if len(l) == 0:
+        #l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/scn/images/scn_mbs_osi_runID_%s_*.fits'%run for run in runs ] )
+    return l
 
 def listFITS_run( *runs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s[A-Z]/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
@@ -290,8 +317,7 @@ def listFITSosi_run( *runs ):
         l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s/data_*/osi/images/osi_*.fits'%run for run in runs ] )
     return l
 
-def listFITSraw_runID( *runIDs ):
-    #print( 'runIDs', runIDs )
+def get_raw_path( *runIDs ):
     l = listFITS( *[ '/share/storage2/connie/data/runs/*/runID_*_%05d_*.fits.fz'%run for run in runIDs ] )
     return l
 
@@ -305,28 +331,31 @@ def listrunID_run( *runs ):
     #print( '\n'.join(l) )
     return map( getrunIDFromPath, l )
 
-def listFITSscn_runID( *runIDs ):
+def get_scn_path( *runIDs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/scn_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     if len(l) == 0:
-        l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/sim_*/scn/images/scn_mbs_osi_draw_runID_*_%05d_Int*.fits'%runID for runID in runIDs ] )
+        l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/scn/images/scn_mbs_osi_runID_*_%05d_Int*.fits'%runID for runID in runIDs ] )
+        l = [ il for il in l if 'to_6226/' not in il ]
     if len(l) == 0:
-        return 'file not found'
+        return ['file not found']
     return l
 
-def listFITSosi_runID( *runIDs ):
+def get_osi_path( *runIDs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/osi/images/osi_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     if len(l) == 0:
-        l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/sim_*/osi/images/osi_draw_runID_*_%05d_Int*.fits'%runID for runID in runIDs ] )
+        l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/osi/images/osi_runID_*_%05d_Int*.fits'%runID for runID in runIDs ] )
+        l = [ il for il in l if 'to_6226/' not in il ]
     if len(l) == 0:
-        return 'file not found'
+        return ['file not found']
     return l
 
-def listFITSmbs_runID( *runIDs ):
+def get_mbs_path( *runIDs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/mbs/images/mbs_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
     if len(l) == 0:
-        l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/sim_*/mbs/images/mbs_draw_runID_*_%05d_Int*.fits'%runID for runID in runIDs ] )
+        l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/mbs/images/mbs_osi_runID_*_%05d_Int*.fits'%runID for runID in runIDs ] )
+        l = [ il for il in l if 'to_6226/' not in il ]
     if len(l) == 0:
-        return 'file not found'
+        return ['file not found']
     return l
 
 def listremovedFITS_runID( *runIDs, **kwargs ):
@@ -346,7 +375,7 @@ def getrunIDFromPath( path ):
 def getrunFromPath( path ):
     if type(path) is list: path=path[0]
     #print( '(from %s'%path, )
-    run = re.search(r'runs/(.+)/data', path ).groups()[0]
+    run = re.search(r'runs/(.+)/', path ).groups()[0]
     #print( 'run %s)'%run, )
     return run
 
@@ -1005,7 +1034,43 @@ def poisson_( x, lamb ):
     x += lamb
     y[x>0] = np.exp( x[x>0]*np.log(lamb) -lamb -scipy.special.loggamma(x[x>0]+1) )
     return y
-    
+
+def poisson_gaussian_pdf( x, loc = 0, scale = 1, mu = 1, verbose = False, tol=1e-6 ):
+    result = np.zeros_like(x)
+    mu = abs(mu)
+    scale = abs(scale)
+    k = 0
+    poisson_sum = 0
+    if verbose: print 'poisson_gaussian_pdf call with', loc, scale, mu,
+    while True:
+        poisson_weight = scipy.stats.poisson.pmf(k,mu=mu)
+        poisson_sum += poisson_weight
+        result += poisson_weight * scipy.stats.norm.pdf( x, loc = loc + k*mu, scale = scale )
+        if poisson_weight/poisson_sum < tol: break
+        k += 1
+    if verbose: print 'took', k, 'iteractions'
+    return result
+
+def random_pdf_continuous( pdf, a, b, N, normed=False ):
+    if not normed:
+        pdf_max = -scipy.optimize.fmin( lambda x: -pdf(x), 0, full_output=True )[1]
+        print 'pdf_max', pdf_max
+        normedpdf = lambda x: pdf(x)/pdf_max
+    else:
+        normedpdf = pdf
+    results = []
+    print '(random',
+    while 1:
+        x = (b - a) * np.random.random_sample( N ) + a
+        tests = np.random.random_sample( N )
+        y = normedpdf(x)
+        mask = tests < y
+        results = np.concatenate( (results, x[mask]) )
+        if len(results) >= N: break
+        print '%.2f'%( float(len(results))/N ),
+    print ')'
+    return results[:N]
+
 def convolution_GP( x, mu = 0, sigma = 1, A = 1, lamb = 0, Nmax = 500 ):
     lamb = abs(lamb)
     mu = abs(mu)
@@ -2170,16 +2235,18 @@ def getOption( vars_, option, args, f = lambda x:x, flag=False ):
     vars_[option] = None
     return
 
-def processImage3( image, threshold ):
+def processImage3( image, threshold, structure='cross' ):
     image[ image == 1e10 ] = 0
 
     t0 = time.clock()
-    s33 = [[1,1,1],
-        [1,1,1],
-        [1,1,1]]
-    #s33 = [[0,1,0],
-        #[1,1,1],
-        #[0,1,0]]
+    if structure == 'cross':
+        s33 = [[0,1,0], [1,1,1], [0,1,0]]
+    elif structure == 'square':
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    else:
+        print 'unpredicted structure'
+        exit(0)
+    
     scicluster, num = scipy.ndimage.label( image >= threshold, structure=s33 )
     print( 't/px %.2es'%( float(time.clock()-t0)/len(image.flatten()) ), )
     print( 'N3', len( np.unique(scicluster.flatten()) ), )
@@ -2260,13 +2327,17 @@ def processImage3( image, threshold ):
     #print( 'num', len(E3) )
     return data
 
-def processImage4( image, threshold ):
+def processImage4( image, threshold, structure='cross' ):
     image[ image == 1e10 ] = 0
 
     t0 = time.clock()
-    s33 = [[1,1,1],
-        [1,1,1],
-        [1,1,1]]
+    if structure == 'cross':
+        s33 = [[0,1,0], [1,1,1], [0,1,0]]
+    elif structure == 'square':
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    else:
+        print 'unpredicted structure'
+        exit(0)
 
     cluster0, num0 = scipy.ndimage.label( image >= 4*threshold, structure=s33 )
     
@@ -2891,258 +2962,606 @@ class SpectrumWindow(Gtk.Window):
         self.show_all()
 
 class ImageWindow(Gtk.Window):
+    def __del__(self):
+        os.remove( self.tempPath )
+        Gtk.Window.__del__(self)
 
-    def __init__(self):
+    def __init__(self, **kwargs ):
+        GObject.threads_init()
         self.id = time.time()
         print 'id', self.id
         self.tempPath = '/home/mota/public/gui/session_image_%s.png'%self.id
         Gtk.Window.__init__( self, title="Image Viewer [session%s]"%self.id )
         self.set_border_width(3)
+        self.add( self.build_window() )
 
         self.paths = []
-        self.pathslabel = Gtk.Label()
-        self.pathslabel.set_label( 'None' )
-        self.drawimagebutton = Gtk.Button()
-        self.drawimagebutton.set_label('image')
-        self.drawimagebutton.connect( 'clicked', self.plotImage )
-        
-        footer = Gtk.HBox()
-        footer.pack_end( self.drawimagebutton, False, False, 1 )
-        footer.pack_start( self.pathslabel, True, True, 1 )
-        
+        self.run = None
         self.runID = None
-        self.runIDcolumns = {}
-        self.runButtons = []
-        self.runIDButtons = []
         
-        runsLabel = Gtk.Label()
-        runsLabel.set_label('runs')
+        if 'run' in kwargs: self.run = int(kwargs['run'])
+        else: self.run = sorted(list_runs())[-1]
+        if 'runID' in kwargs:
+            self.runID = int(kwargs['runID'])
+            self.run = getrunFromPath( get_raw_path(self.runID) )
+        else: self.runID = None
+        if 'ohdu' in kwargs: self.ohdu = int(kwargs['ohdu'])
+        else: self.ohdu = 2
+        self.runIDcolumn = None
+        self.imageType = None
+        if 'imageType' in kwargs:
+            self.imageType = kwargs['imageType']
+        elif 'imagetype' in kwargs:
+            self.imageType = kwargs['imagetype']
+        else:
+            self.imageType = 'raw'
         
-        runlabel = Gtk.Label()
-        runlabel.set_label( 'runs' )
+        if self.run is not None: self.runButtons[self.run].set_active(True)
+        if self.runID is not None: self.runIDButtons[self.runID].set_active(True)
 
-        runcolumn = Gtk.VBox()
-        runcolumn.pack_start( runlabel, False, True, 1 )
-        for run in listAll_runs()[::-1]:
-            self.runButtons.append( Gtk.ToggleButton() )
-            self.runButtons[-1].set_label( run )
-            self.runButtons[-1].connect( 'toggled', self.ontogglebuttonruns, run )
-            runcolumn.pack_start( self.runButtons[-1], False, False, 0 )
+        self.optionEntry['ohdu'].set_text(str(self.ohdu))
+        self.optionEntry['ohdu'].set_width_chars(2)
+        self.optionEntry['E'].set_text('8*mad')
+        self.optionEntry['E'].set_width_chars(8)
 
-        scrolledwindow = Gtk.ScrolledWindow()
-        scrolledwindow.add_with_viewport( runcolumn )
+        self.imageTypeButtons[self.imageType].set_active(True)
         
-        self.selectionLabel = Gtk.Label()
-        self.selectionLabel.set_label( 'selection' )
-        self.selectionEntry = Gtk.Entry()
-        self.selectionEntry.set_text( '' )
-
-        self.radio = {}
-        firstLine = Gtk.HBox()
-        for key in ['scn','mbs','osi','raw']:
-            self.radio[key] = Gtk.ToggleButton()
-            self.radio[key].set_label( key )
-            self.radio[key].connect( 'toggled', self.onradiotoggled )
-            firstLine.pack_end( self.radio[key], False, False, 1 )
-        self.radio['scn'].set_active(True)
-        
-        ohduLabel = Gtk.Label()
-        ohduLabel.set_label( 'ohdu' )
-        self.ohduEntry = Gtk.Entry()
-        self.ohduEntry.set_text('2')
-        eWidthLabel = Gtk.Label()
-        eWidthLabel.set_label( 'eWidth' )
-        self.eWidthEntry = Gtk.Entry()
-        self.eWidthEntry.set_text('10')
-
-        xLabel = Gtk.Label()
-        xLabel.set_label( 'x' )
-        self.xMinEntry = Gtk.Entry()
-        self.xMinEntry.set_text('auto')
-        self.xMaxEntry = Gtk.Entry()
-        self.xMaxEntry.set_text('auto')
-
-        yLabel = Gtk.Label()
-        yLabel.set_label( 'y' )
-        self.yMinEntry = Gtk.Entry()
-        self.yMinEntry.set_text('auto')
-        self.yMaxEntry = Gtk.Entry()
-        self.yMaxEntry.set_text('auto')
-        firstLine.pack_start( ohduLabel, False, False, 1 )
-        firstLine.pack_start( self.ohduEntry, False, False, 3 )
-        firstLine.pack_start( eWidthLabel, False, False, 1 )
-        firstLine.pack_start( self.eWidthEntry, False, False, 3 )
-        firstLine.pack_start( xLabel, False, False, 1 )
-        firstLine.pack_start( self.xMinEntry, False, False, 0 )
-        firstLine.pack_start( self.xMaxEntry, False, False, 3 )
-        firstLine.pack_start( yLabel, False, False, 1 )
-        firstLine.pack_start( self.yMinEntry, False, False, 1 )
-        firstLine.pack_start( self.yMaxEntry, False, False, 1 )
-        
-        self.imageCanvas = Gtk.Image()
-        scrolledwindowImage = Gtk.ScrolledWindow()
-        scrolledwindowImage.add_with_viewport( self.imageCanvas )
-        
-        optionsPanel = Gtk.VBox()
-        optionsPanel.pack_start(firstLine, False, True, 1)
-
-        imagePanel = Gtk.VBox()
-        imagePanel.pack_start( optionsPanel, False, False, 1 )
-        imagePanel.pack_start( scrolledwindowImage, True, True, 1 )
-
-        self.body = Gtk.HBox()
-        self.body.pack_start( scrolledwindow, False, False, 1 )
-        self.body.pack_end( imagePanel, True, True, 1 )
-        
-        self.document = Gtk.VBox()
-        self.document.pack_start( self.body, True, True, 3 )
-        self.document.pack_start( footer, False, False, 3 )
-        
-        self.add( self.document )
+        if 'plot' in kwargs:
+            self.plotButton.clicked()
+            
         self.maximize()
         self.connect( 'destroy', Gtk.main_quit )
         self.show_all()
+    
+    def build_window(self):
+        body = self.build_body()
+        foot = self.build_foot()
         
-    def onradiotoggled( self, radio ):
-        if radio.get_active() == True:
-            self.imageType = radio.get_label()
-            for key, button in self.radio.items():
-                if radio != button:
-                    button.set_active(False)
-            if self.runID is not None:
-                self.pathslabel.set_label( '\n'.join( self.getPath( self.runID ) ) )
-        self.show_all()
-        
-    def showListRunIDs( self, run ):
-        self.runIDcolumns[ run ] = Gtk.VBox()
-        self.body.pack_start( self.runIDcolumns[ run ], False, False, 1 )
-        scrolledwindow = Gtk.ScrolledWindow()
-        runlabel = Gtk.Label()
-        runlabel.set_label( run )
-        self.runIDcolumns[ run ].pack_start( runlabel, False, True, 1 )
-        self.runIDcolumns[ run ].pack_start( scrolledwindow, True, True, 1 )
-        
+        window = Gtk.VBox()
+        window.pack_start( body, True, True, 3 )
+        window.pack_start( foot, False, False, 3 )
+        return window
+    
+    def build_foot(self):
+        self.pathsLabel = Gtk.Label()
+        self.pathsLabel.set_label( 'None' )
+        self.plotButton = Gtk.Button()
+        self.plotButton.set_label('Plot')
+        self.plotButton.connect( 'clicked', self.on_plotButton_click )
         subbox = Gtk.VBox()
+        subbox.pack_end(self.plotButton, False, False, 0 )
+        foot = Gtk.HBox()
+        foot.pack_end( subbox, False, False, 1 )
+        foot.pack_start( self.pathsLabel, True, True, 1 )
+        return foot
+
+    def build_body( self ):
+        runPanel = self.build_runPanel()
+        runIDPanel = self.build_runIDPanel()
+        mainPanel = self.build_mainPanel()
+        
+        body = Gtk.HBox()
+        body.pack_start( runPanel, False, False, 1 )
+        body.pack_start( runIDPanel, False, False, 1 )
+        body.pack_end( mainPanel, True, True, 1 )
+        return body
+
+    def build_runPanel(self):
+        runlabel = Gtk.Label()
+        runlabel.set_label( 'runs' )
+
+        runPanel = Gtk.VBox()
+        runPanel.pack_start( runlabel, False, True, 1 )
+        
+        self.runEntry = Gtk.Entry()
+        self.runEntry.set_width_chars(4)
+        self.runEntry.connect('activate', self.on_runEntry_activate )
+        runPanel.pack_start( self.runEntry, False, True, 1 )
+        
+        scrolledwindow = Gtk.ScrolledWindow()
+        scrolledwindow.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        runPanel.pack_start( scrolledwindow, True, True, 1 )
+
+        self.runButtons = {}
+        subbox = Gtk.VBox()
+        for run in sorted(list_runs())[::-1]:
+            self.runButtons[run] = Gtk.ToggleButton()
+            self.runButtons[run].set_label( run )
+            self.runButtons[run].connect( 'toggled', self.on_runButton_toggle, run )
+            subbox.pack_start( self.runButtons[run], False, False, 0 )
         scrolledwindow.add_with_viewport( subbox )
+
+        return runPanel
         
-        self.runIDButtons = []
-        for path in listFITS_run( run ):
-            runID = getrunIDFromPath(path)
-            self.runIDButtons.append( Gtk.ToggleButton() )
-            self.runIDButtons[-1].set_label( runID )
-            self.runIDButtons[-1].connect( 'toggled', self.ontogglebuttonrunID, runID )
-            subbox.pack_start( self.runIDButtons[-1], False, False, 1 )
+    def build_runIDPanel(self):
+        runIDcolumn = Gtk.VBox()
+
+        self.runLabel = Gtk.Label()
+        self.runLabel.set_label( 'runIDs' )
+        runIDcolumn.pack_start( self.runLabel, False, False, 1 )
+
+        self.runIDEntry = Gtk.Entry()
+        self.runIDEntry.set_width_chars(5)
+        self.runIDEntry.connect('activate', self.on_runIDEntry_activate )
+        runIDcolumn.pack_start( self.runIDEntry, False, False, 1 )
+
+        self.runIDScrolledWindow = Gtk.ScrolledWindow()
+        self.runIDScrolledWindow.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        runIDcolumn.pack_start( self.runIDScrolledWindow, True, True, 1 )
+        
+        return runIDcolumn
+
+    def build_runIDButtons( self, run ):
+        if len(self.runIDScrolledWindow.get_children()) > 0: self.runIDScrolledWindow.get_children()[0].destroy()
+        runIDs = [ int(getrunIDFromPath(path)) for path in sorted(list_runIDs( run ))[::-1] ]
+        subbox = Gtk.VBox()
+        self.runIDButtons = {}
+        for runID in runIDs:
+            self.runIDButtons[runID] = Gtk.ToggleButton()
+            self.runIDButtons[runID].set_label( str(runID) )
+            self.runIDButtons[runID].connect( 'toggled', self.on_runIDButton_toggle, runID )
+            subbox.pack_start( self.runIDButtons[runID], False, False, 1 )
+        self.runIDScrolledWindow.add_with_viewport(subbox)
+        return
     
-    def getPath( self, runID ):
-        if self.imageType == 'raw':
-            return listFITSraw_runID( int(runID) )
+    def build_imagePanel(self):
+        self.imageCanvas = Gtk.Image()
+        scrolledwindowImage = Gtk.ScrolledWindow()
+        scrolledwindowImage.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scrolledwindowImage.add_with_viewport( self.imageCanvas )
+
+        subbox = Gtk.VBox()
+        title = Gtk.Label()
+        title.set_text('Statistics')
+        subbox.pack_start(title, False, False, 3)
+        
+        self.stats = Gtk.Label()
+        self.stats.set_selectable(True)
+        self.stats.set_text('none')
+        
+        scrolledStat = Gtk.ScrolledWindow()
+        scrolledStat.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolledStat.add_with_viewport( self.stats )
+
+        subbox.pack_start( scrolledStat, True, True, 0)
+        
+        imagePanel = Gtk.HBox()
+        imagePanel.pack_start( scrolledwindowImage, True, True, 0 )
+        imagePanel.pack_end( subbox, False, False, 0 )
+        return imagePanel
+    
+    def build_mainPanel(self):
+        optionsPanel = self.build_optionsPanel()
+        imagePanel = self.build_imagePanel()
+        
+        mainPanel = Gtk.VBox()
+        mainPanel.pack_start( optionsPanel, False, False, 1 )
+        mainPanel.pack_start( imagePanel, True, True, 1 )
+        return mainPanel
+    
+    def build_optionsPanel(self):
+        optionsPanel = Gtk.VBox()
+        firstLine = Gtk.HBox()
+
+        self.plotOptions = ['ohdu','E', 'x', 'y']
+        self.optionEntry = {}
+        for key in self.plotOptions:
+            optionLabel = Gtk.Label()
+            optionLabel.set_label(key)
+            firstLine.pack_start( optionLabel, False, False, 3 )
+            if key == 'x' or key =='y':
+                for s in ['Min','Max']:
+                    self.optionEntry['%s%s'%(key,s)] = Gtk.Entry()
+                    self.optionEntry['%s%s'%(key,s)].set_text('auto')
+                    self.optionEntry['%s%s'%(key,s)].set_width_chars(5)
+                    firstLine.pack_start( self.optionEntry['%s%s'%(key,s)], False, False, 0 )
+            else:
+                self.optionEntry[key] = Gtk.Entry()
+                firstLine.pack_start( self.optionEntry[key], False, False, 3 )
+
+        self.imageTypeOptions = ['raw','raw*','osi','mbs','scn','scn*']
+
+        subbox = Gtk.HBox()
+        firstLine.pack_end( subbox, False, False, 1 )
+        
+        self.imageTypeButtons = {}
+        for key in self.imageTypeOptions:
+            self.imageTypeButtons[key] = Gtk.ToggleButton()
+            self.imageTypeButtons[key].set_label( key )
+            self.imageTypeButtons[key].connect( 'toggled', self.on_imageTypeButton_toggle, key )
+            subbox.pack_start( self.imageTypeButtons[key], True, True, 0 )
+        optionsPanel.pack_start(firstLine, False, True, 1)
+        return optionsPanel
+
+    def on_runEntry_activate( self, entry ):
+        self.run = '%03d'%int(entry.get_text())
+        print 'activaterun', self.run
+        self.runButtons[ self.run ].set_active(True)
+    
+    def on_runIDEntry_activate( self, entry ):
+        print 'activaterunID', entry.get_text()
+        self.set_runID( int( entry.get_text() ) )
+    
+    def set_runID( self, runID ):
+        self.runID = runID
+        self.run = '%03d'%int( getrunFromPath( get_raw_path(self.runID) ) )
+        self.runButtons[self.run].set_active( True )
+        if not runID in self.runIDButtons.keys(): self.build_runIDButtons( self.run )
+        self.runIDButtons[ runID ].set_active( True )
+        self.runIDEntry.set_text( str(runID) )
+        self.refresh_pathsLabel()
+        return
+    
+    def set_imageType( self, imageType ):
+        self.imageType = imageType
+        self.refresh_pathsLabel()
+        return
+
+    def refresh_pathsLabel( self ):
+        self.pathsLabel.set_label( '\n'.join( self.getPath( self.runID, self.imageType ) ) )
+        if self.pathsLabel.get_text() == 'file not found': self.plotButton.set_sensitive(False)
+        else: self.plotButton.set_sensitive(True)
+        
+    def deactivateSiblings( self, button ):
+        for sibling in button.get_parent().get_children():
+            if sibling is not button:
+                sibling.set_active(False)
+        return
+            
+    def on_imageTypeButton_toggle( self, button, key ):
+        if button.get_active() == True:
+            self.deactivateSiblings(button)
+            self.set_imageType( key )
+        
+    def getPath( self, runID, imageType ):
+        self.imageType = imageType
+        if self.imageType == 'raw' or self.imageType == 'raw*':
+            return get_raw_path( int(runID) )
         elif self.imageType == 'osi':
-            return listFITSosi_runID( int(runID) )
-        elif self.imageType == 'scn':
-            return listFITSscn_runID( int(runID) )
-        return ['no file found']
+            return get_osi_path( int(runID) )
+        elif self.imageType == 'scn' or self.imageType == 'scn*':
+            return get_scn_path( int(runID) )
+        return ['file not found']
     
-    def ontogglebuttonruns( self, button, run ):
-        firstRunID = listFITS_run( run )[0]
-        catalog = getAssociatedCatalog( firstRunID )[0]
+    def on_runButton_toggle( self, button, run ):
+        print 'toggle run', run, button.get_active()
+        firstRunID = list_runIDs( run )[0]
         if button.get_active() == True:
-            self.paths.append( catalog )
-            self.showListRunIDs( run )
-            for runButton in self.runButtons:
-                if runButton != button:
-                    runButton.set_active(False)
-        else:
-            self.paths.remove( catalog )
-            self.runIDcolumns[run].destroy()
-            self.pathslabel.set_label( 'not file selected' )
-        self.runID = None
-        self.pathslabel.set_label( 'not file selected' )
-
+            self.deactivateSiblings( button )
+            self.run = run
+            self.build_runIDButtons( run )
+            self.runEntry.set_text( str(self.run) )
         self.show_all()
         
-    def ontogglebuttonrunID( self, button, runID ):
+    def on_runIDButton_toggle( self, button, runID ):
+        print 'toggle runID', runID, button.get_active()
         if button.get_active() == True:
-            self.runID = runID
-            for runIDButton in self.runIDButtons:
-                if runIDButton != button:
-                    runIDButton.set_active(False)
-            self.pathslabel.set_label( '\n'.join( self.getPath( self.runID ) ) )
+            self.deactivateSiblings(button)
+            self.set_runID( runID )
         self.show_all()
-
+    
+    def on_plotButton_click( self, button ):
+        thread = threading.Thread( target = lambda: self.plotImage(button) )
+        thread.daemon = True
+        thread.start()
+    
     def plotImage( self, button ):
-        ohdu = self.ohduEntry.get_text()
-        image = Image( runID = self.runID, ohdu = int(ohdu), imageType = self.imageType )
-        
-        text = lambda s: None if s.get_text() == 'auto' else int(s.get_text())
-        mask = np.s_[ text(self.xMinEntry):text(self.xMaxEntry), text(self.yMinEntry):text(self.yMaxEntry) ]
-        image = image(mask)
-        
-        if self.xMaxEntry.get_text() == 'auto':
-            self.xMaxEntry.set_text( str( image.shape[0] ) )
-        if self.yMaxEntry.get_text() == 'auto':
-            self.yMaxEntry.set_text( str( image.shape[1] ) )
-        
-        w, h = plt.figaspect(1.)
-        fig = plt.figure(figsize=(2*w, 2*h))
-        fig.suptitle( 'ohdu=%s'%ohdu )
-        yticks = [ 0, 1055, 2*1055, 3*1055, 4*1055 ]
-        xticks = [ 0, image.shape[1] - image.overscanWidth, image.shape[1] ]
-        grid = plt.GridSpec(4, 4, hspace=0, wspace=0)
-        
-        main_ax = fig.add_subplot(grid[1:, :-1])
-        y_hist = fig.add_subplot(grid[1:, -1], yticks=yticks, yticklabels=[], sharey=main_ax)
-        x_hist = fig.add_subplot(grid[0, :-1], xticks=xticks, xticklabels=[], sharex=main_ax)
-        zoom_ax = fig.add_subplot(grid[0, -1], yticklabels=[], sharex=y_hist)
-        zoom_ax.yaxis.tick_right()
-        zoom_ax.xaxis.tick_top()
-        
-        main_ax.tick_params(direction='in')
-        
-        median = image.median()
-        mad = image.mad()
+        buttonLabel = button.get_label()
+        def running():
+            button.set_label('running...')
+            button.set_sensitive(False)
+            #self.imageCanvas.destroy()
+        GLib.idle_add( running )
 
+        stats = ['Statistics:']
+        self.ohdu = int( self.optionEntry['ohdu'].get_text() )
+        
+        image = FullImage( runID = self.runID, ohdu = self.ohdu, imageType = self.imageType )
+        stats.append( 'type %s'%self.imageType )
+        stats.append( 'ohdu %s'%self.ohdu )
+        stats.append( 'runID %s'%self.runID )
+        
+        xMin = unicode(self.optionEntry['xMin'].get_text())
+        xMax = unicode(self.optionEntry['xMax'].get_text())
+        yMin = unicode(self.optionEntry['yMin'].get_text())
+        yMax = unicode(self.optionEntry['yMax'].get_text())
+        
+        xMin = int(xMin) if xMin.isnumeric() else xMin
+        xMax = int(xMax) if xMax.isnumeric() else xMax
+        yMin = int(yMin) if yMin.isnumeric() else yMin
+        yMax = int(yMax) if yMax.isnumeric() else yMax
+        
+        textEval = lambda var: None if var == 'auto' else eval(str(var),{},{'xMin':xMin,'xMax':xMax,'yMin':yMin,'yMax':yMax})
+        mask = np.s_[ textEval(yMin):textEval(yMax), textEval(xMin):textEval(xMax) ]
+        imageSection = image(mask)
+        
+        section = False
+        if xMin != 'auto' or xMax != 'auto' or yMin != 'auto' or yMax != 'auto':
+            section = True
+        
+        w = imageSection.shape[1]
+        h = imageSection.shape[0]
+        
+        w0, h0 = plt.figaspect(1.)
+        ratio = float(h0)/w0
+        print 'ratio', ratio
+        fig = plt.figure(figsize=(2*h0, 2*h0))
+        w1 = float(w)/max(w,h)
+        h1 = float(h)/max(w,h)
+        main_ax = fig.add_axes([.1,.1, .6*w1,.6*h1])
+
+        median = imageSection.median()
+        mad = imageSection.mad()
         mid = lambda _: .5*(_[1:]+_[:-1])
         diff = lambda _: _[1:]-_[:-1]
         
-        eWidth = float(self.eWidthEntry.get_text())
-        eMin = median - eWidth*mad
-        eMax = median + eWidth*mad
-        ebins = np.arange( eMin, eMax, 1 )
+        eRange = eval(self.optionEntry['E'].get_text(),{},{'mad':mad})
+        eMin = median - eRange
+        eMax = median + eRange
+        ebins = np.linspace( eMin, eMax, 100 )
+        if ebins[1]-ebins[0] < 2: ebins = np.arange( eMin, eMax, 2 )
 
-        main_ax.imshow( image.image, vmin = eMin, vmax = eMax )
-        x_hist.hist2d( np.repeat(range(image.shape[1]), image.shape[0] ), image.T.flatten(), bins=[image.shape[1], ebins ], norm = colors.LogNorm() )
-        x_hist.plot( range(image.shape[1]), image.median( axis = 0 ) )
+        imageSection.add_image_to_axis( main_ax, eMin, eMax )
+        x_hist = fig.add_axes([.1,.1+.6*h1,.6*w1,.2], sharex=main_ax)
+        imageSection.add_projection_to_axis( x_hist, axis=0, bins=ebins, align='horizontal')
 
-        y_hist.hist2d( image.flatten(), np.repeat(range(image.shape[0]), image.shape[1] ) , bins=[ebins, image.shape[0]], norm = colors.LogNorm() )
-        y_hist.plot( image.median( axis = 1 ), range(image.shape[0]) )
+        y_hist = fig.add_axes([.1+.6*w1,.1,.2,.6*h1], sharey=main_ax)
+        imageSection.add_projection_to_axis( y_hist, axis=1, bins=ebins, align='vertical')
 
-        hist, bins, _ = zoom_ax.hist( image.flatten(), bins=ebins, histtype='step', color='b' )
-        if image.overscanWidth != 0 and self.imageType == 'scn':
-            zoom_ax.hist( image.os().flatten(), bins=ebins, histtype='step', color='r' )
-            
+        def addStats( label, hist, data ):
+            mu = data.median()
+            sigma = np.average( (mid(ebins)-mu)**2, weights = hist )**(1./2) if np.sum(hist) > 0  else 0
+            if len(data.shape) == 2: stats.append( '\n%s %s,%s'%(label,data.shape[0],data.shape[1]) )
+            else: stats.append( '\n%s:'%label )
+
+            stats.append( 'median %.4g'%mu )
+            stats.append( 'mad %.4g'%data.mad() )
+
+        zoom_ax = fig.add_axes([.1+.6*w1,.1+.6*h1,.2,.2], sharex=y_hist)
+
+        activeSection = image.left().active()
+        hist_L = zoom_ax.hist( activeSection.flatten(), bins=ebins, histtype='step', color='b', label='L' )[0]
+        addStats( 'Left AC', hist_L, activeSection )
+        
+        overscanSection = image.left().overscan()
+        hist_osL = zoom_ax.hist( overscanSection.flatten(), bins=ebins, histtype='step', color='r', label='oL' )[0]
+        addStats( 'Left OS', hist_osL, overscanSection )
+        
+        if self.imageType.startswith('raw') or self.imageType == 'osi' or self.imageType == 'mbs':
+            rightSection = image.right()
+            hist_R = zoom_ax.hist( rightSection.flatten(), bins=ebins, histtype='step', color='g', label='R' )[0]
+            addStats( 'Right', hist_R, rightSection )
+        if section == True:
+            hist_section = zoom_ax.hist( imageSection.flatten(), bins=ebins, histtype='step', color='c', label='sec' )[0]
+            addStats( 'Section', hist_section, imageSection )
+        
+        void_image = image.void( thr=15 )
+        if void_image is not None:
+            hist_void = zoom_ax.hist( void_image.flatten(), bins=ebins, histtype='step', color='y', label='void' )[0]
+            addStats( 'Void', hist_void, void_image )
+        stats.append( 'dc %.4g'%image.darkCurrentEstimate() )
+        
+        if self.imageType == 'scn' or self.imageType == 'scn*' and void_image is not None:
+            stats.append( 'dc2 %.4g'%image.darkCurrentEstimate2() )
+            stats.append( 'dc2* %.4g'%image.darkCurrentEstimate2( sigmaVoid=void_image.mad() ) )
+            stats.append( 'dc2 %.4g'%image.darkCurrentEstimate2( medianVoid=void_image.median(), sigmaVoid=void_image.mad() ) )
+
+        plt.setp(x_hist.get_xticklabels(), visible=False)
+        plt.setp(y_hist.get_yticklabels(), visible=False)
+        zoom_ax.yaxis.tick_right()
+        zoom_ax.xaxis.tick_top()
+        zoom_ax.legend( fancybox=True, framealpha=0 )
         zoom_ax.set_yscale('log')
         a, b = zoom_ax.get_ylim()
         zoom_ax.set_ylim((.1, b))
         zoom_ax.grid( True )
-        main_ax.invert_yaxis()
-        main_ax.set_xlim( (0,image.shape[1]) )
-        main_ax.set_ylim( (0,image.shape[0]) )
 
-        fig.savefig( self.tempPath )
+        #fig.subplots_adjust(hspace=0, wspace=0)
+        self.stats.set_text( '\n'.join(stats) + '\n' + '='*len('Statiscs') + '\n' + self.stats.get_text()  )
+
+        fig.savefig( self.tempPath, bbox_inches='tight' )
         plt.close()
+        
+        def finished():
+            button.set_label(buttonLabel)
+            button.set_sensitive(True)
+        GLib.idle_add( finished )
         self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
         self.show_all()
+        print 'image shown'
         
+    
+class MonitorWindow(Gtk.Window):
+    
+    def __del__(self):
+        os.remove( self.tempPath )
+        self.remove_locks()
+        Gtk.Window.__del__(self)
+        
+    def __init__(self):
+        GObject.threads_init()
+        self.id = time.time()
+        print 'id', self.id
+        self.tempPath = '/home/mota/public/gui/monitor_image_%s.png'%self.id
+        self.darkCurrentRawTable = '/home/mota/public/gui/darkCurrentRawTable.csv'
+        self.readoutNoiseRawTable = '/home/mota/public/gui/readoutNoiseRawTable.csv'
+        Gtk.Window.__init__( self, title="Image Viewer [session%s]"%self.id )
+        self.connect( 'destroy', Gtk.main_quit )
+        self.set_border_width(3)
+        self.add( self.build_window() )
+        
+        self.plot_darkCurrentTable()
+        self.show_all()
+        def loop():
+            while 1:
+                self.update_darkCurrentTable()
+        self.start_thread( loop )
+
+    def build_window(self):
+        vbox = Gtk.VBox()
+        header = self.build_header()
+        body = self.build_body()
+        vbox.pack_start(header, False, False, 1)
+        vbox.pack_start(body, True, True, 1)
+        return vbox
+    
+    def build_header(self):
+        label = Gtk.Label()
+        label.set_label('Dark Current and Readout Noise')
+        return label
+    
+    def build_body(self):
+        self.imageCanvas = Gtk.Image()
+        return self.imageCanvas
+    
+    def remove_darkCurrentTable_lock(self):
+        os.remove( self.darkCurrentRawTable + '%s.lock'%self.id )
+        
+    def remove_readnoiseNoiseTable_lock(self):
+        os.remove( self.readoutNoiseRawTable + '%s.lock'%self.id )
+
+    def create_darkCurrentTable_lock(self):
+        open( self.darkCurrentRawTable + '%s.lock'%self.id, 'w' )
+
+    def create_readnoiseNoiseTable_lock(self):
+        open( self.readoutNoiseRawTable + '%s.lock'%self.id, 'w' )
+    
+    def is_darkCurrentTable_locked(self):
+        if len(glob.glob(self.darkCurrentRawTable + '*.lock')) == 0: return False
+        print 'locked', self.darkCurrentRawTable
+        return True
+
+    def is_readoutNoise_locked(self):
+        if len(glob.glob(self.readoutNoiseRawTable + '*.lock')) == 0: return False
+        return True
+    
+    def start_thread(self, callback):
+        thread = threading.Thread(target=callback)
+        thread.daemon = True
+        thread.start()
+        
+    def update_darkCurrentTable(self):
+        self.plot_darkCurrentTable()
+        if self.is_darkCurrentTable_locked(): return
+        self.create_darkCurrentTable_lock()
+        if os.path.exists( self.darkCurrentRawTable ):
+            data = np.genfromtxt( self.darkCurrentRawTable, names=True )
+            min_runID = data['runID'].min()
+            max_runID = data['runID'].max()
+            data = data.tolist()
+            #print 'read data', data
+        else:
+            runID = int(getrunIDFromPath(sorted(list_all_runIDs())[::-1][0]))
+            data = self.make_entry(runID)
+            min_runID = data[0][0]
+            max_runID = min_runID
+            #print 'min,max', min_runID, max_runID
+        
+        runIDs = zip(*data)[0]
+        for runIDpath in sorted(list_all_runIDs())[::-1]:
+            runID = int(getrunIDFromPath(runIDpath))
+            if runID > max_runID or runID < min_runID:
+                data.extend( self.make_entry(runID) )
+                break
+            elif not runID in runIDs:
+                data.extend( self.make_entry(runID) )
+                break
+        
+        np.savetxt( self.darkCurrentRawTable, data, header='#runID ohdu darkCurrent', fmt='%d %d %.6f' )
+        self.remove_darkCurrentTable_lock()
+        self.plot_darkCurrentTable()
+    
+    def make_entry( self, runID ):
+        entry = []
+        for ohdu in self.list_ohdus(runID):
+            entry.append( [runID, ohdu, self.compute_darkCurrent(runID, ohdu)] )
+        #print 'entry', entry
+        return entry
+    
+    def list_ohdus(self, runID):
+        ohdus = hitSumm.list_ohdus(runID)
+        #print runID, 'ohdus', ohdus
+        return ohdus
+        
+    def compute_darkCurrent( self, runID, ohdu ):
+        return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).darkCurrentEstimate()
+    
+    def plot_darkCurrentTable( self ):
+        data = np.genfromtxt( self.darkCurrentRawTable, names=True )
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot( data['runID'], data['darkCurrent'], '.' )
+        ax.set_ylabel('dark current')
+        ax.set_xlabel('runID')
+        fig.savefig(self.tempPath)
+        plt.close()
+        def finished():
+            self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
+            #self.show_all()
+        GLib.idle_add( finished )
+    
 class Callable:
     @staticmethod
-    def spectrumViewer():
-        win = SpectrumWindow()
+    def spectrumViewer( **kwargs ):
+        win = SpectrumWindow( **kwargs )
         Gtk.main()
 
     @staticmethod
-    def imageViewer():
-        win = ImageWindow()
+    def imageViewer( **kwargs ):
+        win = ImageWindow( **kwargs )
         Gtk.main()
+
+    @staticmethod
+    def monitorViewer( **kwargs ):
+        win = MonitorWindow( **kwargs )
+        Gtk.main()
+        
+    @staticmethod
+    def analyseDC( **kwargs ):
+        N = int(1e6)
+        if 'e' in kwargs: e = float(kwargs['e'])
+        else: e = 7.2
+        if 'sigma' in kwargs: sigma = float(kwargs['sigma'])*e
+        else: sigma = 1.8*e
+        if 'lambda' in kwargs: mu = float(kwargs['lambda'])*e
+        else: mu = .2*e
+
+        norm_rvs = scipy.stats.norm.rvs( loc=0, scale=sigma, size=N)
+        xmin, xmax = 1.5*norm_rvs.min(), 3*norm_rvs.max()
+        x = np.linspace( xmin, xmax, 100)
+        dx = x[1]-x[0]
+        x0 = -mu**2
+        poisson_norm_rvs = random_pdf_continuous( lambda x, sigma=sigma, mu=mu: poisson_gaussian_pdf(x, loc=x0, scale=sigma, mu=mu ), xmin, xmax, N )
+        norm = scipy.stats.norm.pdf(x,scale=sigma)*N
+        poisson_norm = poisson_gaussian_pdf( x, loc=x0, mu=mu, scale=sigma)*N
+        
+        print 'median', np.median(norm_rvs), np.median(poisson_norm_rvs)#, np.sqrt(np.median(poisson_norm_rvs))
+        print 'mean', np.mean(norm_rvs), np.mean(poisson_norm_rvs)#, np.sqrt(np.mean(poisson_norm_rvs))
+        print 'mad', mad(norm_rvs), mad(poisson_norm_rvs), -mad(norm_rvs)**2 + mad(poisson_norm_rvs)**2, np.sqrt( -mad(norm_rvs)**2 + mad(poisson_norm_rvs)**2 )
+        print 'siqr', siqr(norm_rvs), siqr(poisson_norm_rvs), -siqr(norm_rvs)**2 + siqr(poisson_norm_rvs)**2, np.sqrt( -siqr(norm_rvs)**2 + siqr(poisson_norm_rvs)**2 )
+        print 'ratio', mad(poisson_norm_rvs)/mad(norm_rvs), np.sqrt( mad(poisson_norm_rvs)/mad(norm_rvs) ), np.sqrt( mad(poisson_norm_rvs)**2/mad(norm_rvs) ), np.sqrt( -mad(norm_rvs)**2 + mad(poisson_norm_rvs)**2 )/mad(norm_rvs)
+        
+        print 'solve', mu**4 + mu**3 + 2*x0*mu**2 + x0**2, mu**3 + sigma**2, mad(poisson_norm_rvs)**2
+        print 'lambda', ( mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 )**(1./3)
+        print 'sigma', sigma, mu, np.sqrt(mu), sigma**2, mu/sigma, mu/sigma**2, np.sqrt( sigma**2 + mu )#, sigma - mu
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        bins = ax.hist( norm_rvs, bins=x, label='norm rvs', histtype='step' )[1]
+        poisson_norm_hist = ax.hist( poisson_norm_rvs, bins=x, label='poisson_norm rvs', histtype='step' )[0]
+        
+        p = scipy.optimize.curve_fit( lambda x, l, scale=mad(norm_rvs): poisson_gaussian_pdf(x, loc=-l**2, scale=scale, mu=l ), x[:-1], poisson_norm_hist/N, p0=[.1] )[0]
+        print 'mu_p', p
+        
+        ax.plot( x, norm*dx, label='norm pdf' )
+        ax.plot( x, poisson_norm*dx, label='poisson_norm pdf' )
+        ylim = list(ax.get_ylim())
+        ylim[0] = 1.
+        ax.set_ylim( ylim )
+        ax.legend( fancybox=True, framealpha=0 )
+        ax.set_yscale('log')
+        fig.savefig('dc_analysis.pdf')
+        plt.close()
 
     @staticmethod
     def plotSpectrumSimulated( c ):
@@ -3596,7 +4015,7 @@ class hitSumm:
         
     @staticmethod
     def _readGain( runID, ohdu ):
-        scnFile = listFITSscn_runID( int(runID) )
+        scnFile = get_scn_path( int(runID) )
         if len(scnFile) == 0: return None
         scnFile = scnFile[0]
         associatedCatalog = getAssociatedCatalogGain( scnFile )[0]
@@ -3621,24 +4040,30 @@ class hitSumm:
 
     @staticmethod
     def _getOSIImage_adu( runID, ohdu ):
-        print( 'runID', runID, 'ohdu', ohdu, )
-        rawFiles = listFITSosi_runID( int(runID) )
+        print 'runID', runID, 'ohdu', ohdu,
+        rawFiles = get_osi_path( int(runID) )
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = np.concatenate( [ ohdus(astropy.io.fits.open(rawFile)) for rawFile in rawFiles[::-1] ], axis=0 )
         return image
 
     @staticmethod
     def _getMBSImage_adu( runID, ohdu ):
-        print( 'runID', runID, 'ohdu', ohdu, )
-        rawFiles = listFITSmbs_runID( int(runID) )
+        print 'runID', runID, 'ohdu', ohdu,
+        rawFiles = get_mbs_path( int(runID) )
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = np.concatenate( [ ohdus(astropy.io.fits.open(rawFile)) for rawFile in rawFiles[::-1] ], axis=0 )
         return image
 
     @staticmethod
+    def list_ohdus( runID ):
+        rawFiles = get_raw_path( int(runID) )
+        ohdus = [ int(fit.header['OHDU']) for fit in astropy.io.fits.open(rawFiles[0]) if fit.data is not None ]
+        return ohdus
+
+    @staticmethod
     def _getRawImage_adu( runID, ohdu ):
-        print( 'runID', runID, 'ohdu', ohdu, )
-        rawFiles = listFITSraw_runID( int(runID) )
+        print 'runID', runID, 'ohdu', ohdu,
+        rawFiles = get_raw_path( int(runID) )
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = np.concatenate( [ ohdus(astropy.io.fits.open(rawFile)) for rawFile in rawFiles[::-1] ], axis=0 )
         return image
@@ -3646,31 +4071,29 @@ class hitSumm:
     def getRawImage_adu( self, runID=None, save = False, ohdu=None ):
         if ohdu is None: ohdu = self.config.ohdu
         if runID is None: runID = self.config.runID
-        print( 'runID', runID, 'ohdu', ohdu, )
+        print 'runID', runID, 'ohdu', ohdu,
         path = self.config.outPath + self.raw_id + str(runID) + self.image_ext
         if os.path.exists( path ):
             return readImage( path )
-        rawFiles = listFITSraw_runID( int(runID) )
+        rawFiles = get_raw_path( int(runID) )
         return hitSumm._getRawImage_adu( runID, ohdu )
     
     @staticmethod
     def _getSCNImage_adu( runID, ohdu ):
-        print( 'runID', runID, 'ohdu', ohdu, )
-        scnFile = listFITSscn_runID( int(runID) )[0]
+        print 'runID', runID, 'ohdu', ohdu,
+        scnFile = get_scn_path( int(runID) )[0]
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
-        #print( astropy.io.fits.open(scnFile).header )
         image = ohdus(astropy.io.fits.open(scnFile))
-        #print( 'scn.shape', image.shape )
         return image
 
     def getSCNImage_adu( self, runID=None, ohdu=None ):
         if runID is None: runID = self.config.runID
         if ohdu is None: ohdu = self.config.ohdu
-        print( 'runID', runID, 'ohdu', ohdu, )
+        print 'runID', runID, 'ohdu', ohdu,
         path = self.config.outPath + self.scn_id + str(runID) + self.image_ext
         if os.path.exists( path ):
             return readImage( path )
-        scnFile = listFITSscn_runID( int(runID) )[0]
+        scnFile = get_scn_path( int(runID) )[0]
         return hitSumm._getSCNImage_adu( runID, ohdu )
 
     def getSCNHits_adu( self, runID, ohdu=None, save = False ):
@@ -3891,8 +4314,6 @@ class hitSumm:
         print( 'all', len(hits_adu) )
         neutrinoHits = readTable( self.config.outPath+self.neutrino_id+self.table_ext )
         print( 'nu', len(neutrinoHits) )
-        #neutrinoHits2_adu = self.convertImage2Hits( self.getNeutrinosImage_adu(), threshold_adu=2 )
-        #print( 'nuR', len(neutrinoHits2_adu) )
         
         center = lambda hits: ( hits['xBary2'], hits['yBary2'] )
         center2 = lambda hits: ( hits[0]/self.rebin[0], hits[1]/self.rebin[1] )
@@ -4120,201 +4541,74 @@ def madCovSqr( data0, data1 ):
 def normFit( data, loc=None, scale=None ):
     return scipy.stats.norm.fit( data, floc=loc, fscale=scale )
 
-def mad( data ):
-    return np.median( np.abs( data - np.median(data) ) )
 
-class Image:
-    def __init__( self, image=None, runID=None, ohdu=None, imageType='raw' ):
-        if image is not None:
-            self.image = image.astype(float)
-        elif imageType == 'raw':
-            self.image = hitSumm._getRawImage_adu( runID=runID, ohdu=ohdu )[::-1,:]
-            self.image = self.image.astype(float)
-        elif imageType == 'osi':
-            self.image = hitSumm._getOSIImage_adu( runID=runID, ohdu=ohdu )[::-1,:]
-            self.image = self.image.astype(float)
-        elif imageType == 'mbs':
-            self.image = hitSumm._getMBSImage_adu( runID=runID, ohdu=ohdu )[::-1,:]
-            self.image = self.image.astype(float)
-        elif imageType == 'scn':
-            self.image = hitSumm._getSCNImage_adu( runID=runID, ohdu=ohdu )[::-1,:]
-            self.image = self.image.astype(float)
-        else:
-            print( 'imageType not predicted', self.imageType )
-            exit(0)
-        
+def iqr( data ):
+    return scipy.stats.iqr( data )/1.34897
+
+def mad( data, axis = None, scale=1.4826 ):
+    if axis == 0:
+        median = np.median( data, axis = axis )[None,:]
+    elif axis == 1:
+        median = np.median( data, axis = axis )[:,None]
+    else:
+        median = np.median( data )
+    return scale * np.median( np.abs( data - median ), axis = axis )
+
+class ArrayExtension:
+    def __init__(self, array ):
+        self.array = array.astype(float)
+        self.shape = self.array.shape
+        self.size = self.array.size
+    
+    def median(self, axis=None): return np.median( self.array, axis=axis )
+
+    def mad(self, axis=None): return mad( self.array, axis=axis )
+
+    def iqr(self): return iqr( self.array )
+
+    def mean(self, axis=None): return np.mean( self.array, axis=axis )
+
+    def median(self, axis=None): return np.median( self.array, axis=axis )
+
+    def std(self, axis=None): return np.std( self.array, axis=axis )
+
+    def flatten(self): return self.array.flatten()
+
+class ImageBase(ArrayExtension):
+    def __init__( self, image ):
+        ArrayExtension.__init__(self, image.astype(float))
+        self.image = self.array
         self.shape = self.image.shape
+        self.size = self.image.size
         self.T = self.image.T
-        self.overscanWidth = 0
-        if imageType == 'section':
-            return
-        
-        self.overscanWidth = 150
-        
-        if self.image.shape[1] == 8540 and imageType == 'raw':
-            self.right = np.s_[:, 8:4270]
-            self.left =  np.s_[:, 8:4270]
+        self.width = self.shape[1]
+        self.height = self.shape[0]
 
-        elif self.image.shape[1] == 8524 and (imageType == 'osi' or imageType == 'mbs'):
-            self.right = np.s_[:, :4262]
-            self.left =  np.s_[:, :4262]
-            
-        elif self.image.shape[1] == 4262 and imageType == 'scn':
-            self.overscan = np.s_[:, -self.overscanWidth: ]
-            self.verticalOS = np.s_[ -100:,:]
-            self.active = np.s_[:-100, :-self.overscanWidth]
-            
-        elif self.image.shape[1] == self.overscanWidth:
-            pass
-        
-        elif self.image.shape[1] == 4112:
-            self.overscanWidth = 0
-        
-        elif self.image.shape[1] == 9340:
-            self.right = np.s_[:, 8:4670]
-            self.left =  np.s_[:, 8:4670]
-            
-        elif self.image.shape[1] == 4662:
-            self.overscanWidth = 550
-            self.overscan = np.s_[:, -self.overscanWidth:]
-            self.verticalOS = np.s_[-100:,:]
-            self.active = np.s_[:-100,:-self.overscanWidth]
-            
-        elif self.image.shape[1] == 550:
-            pass
-        else:
-            print( 'shape not predited', self.image.shape )
-            exit(0)
-    
-    def __call__( self, mask ):
-        return Image( self.image[mask], imageType='section' )
-    def flatten( self ):
-        return self.image.flatten()
-    
-    def R( self ):
-        return Image( self.image[:,::-1][self.right] )
-    
-    def L( self ):
-        return Image( self.image[self.left] )
+    def __call__( self, mask ): return ImageBase( self.image[mask] )
 
-    def part(self, i):
-        return Image( self.image[i*1055:(i+1)*1055,:] )
+    def flatten( self ): return self.image.flatten()
     
-    def ac( self ):
-        return Image( self.image[self.active] )
+    def h_medians( self ): return self.median( axis = 1 )
+    def h2_medians( self ): return np.median( self.image[:,self.width/2:], axis = 1 )
+    def v_medians( self ): return self.median( axis = 0 )
     
-    def os( self ):
-        return Image( self.image[self.overscan] )
-    
-    def vos( self ):
-        return Image( self.image[-50:,:] )
-    
-    def sub( self ):
-        return Image( self.L().image - self.R().image )
-    
-    def subSmooth( self, radius, func=np.mean ):
-        return Image( self.image - self.smooth2D( radius, func ).image )
-    
-    def area( self ):
-        return self.image.shape[0]*self.image.shape[1]
-    
-    def smartSub( self ):
-        active_hlines = np.median( self.image[:, 20*(-150):-150], axis=1 )
-        overscan_hlines = np.mean( self.image[:, -150:], axis=1 )
-        diff_hlines = active_hlines - overscan_hlines
-        print( '\n(meanMed %.2f %.2f)'%( np.mean( diff_hlines ), np.std( diff_hlines ) ),  )
-        
-        image = Image( self.image - overscan_hlines[:,None] )
-        
-        active_hlines = np.median( image.image[:, 20*(-150):-150], axis=0 )
-        overscan_hlines = np.mean( image.image[:, -150:], axis=0 )
-        #diff_hlines = active_hlines - overscan_hlines
-        print( '(meanMed %.2f %.2f)'%( np.mean( active_hlines ), np.std( active_hlines ) ), )
-        print( '(meanMed %.2f %.2f)'%( np.mean( overscan_hlines ), np.std( overscan_hlines ) ), )
-        return image
-    
-    @staticmethod
-    def lineFunction( x, x0, x1, a, b, c ):
-        y = np.zeros_like(x)
-        y[x<x0] = a*( x[x<x0] - x1 )**2 + b
-        y[x>x0] = c
-        return y
+    def biasImage( self ):
+        return np.median( self.image, axis=1 )[:,None] + np.median( self.image, axis=0 )[None,:]
 
-    def biasImageSub( self ):
-        image = self.image
-        bias = np.median( image, axis=1 )[:,None] + np.median( image, axis=0 )[None,:]
-        return Image(image-bias).osSub(axis=None)
+    def biasImageCorrected( self ):
+        image = ImageBase( self.image - self.median() )
+        image.image -= image.biasImage()
+        print 'bias shape', image.shape
+        return ImageBase( image.image - image.median() )
     
-    def biasImageSub2( self ):
-        right = self.R().image
-        left = self.L().image
-        
-        bias = np.median( right, axis=1 )[:,None] + np.median( right, axis=0 )[None,:]
-        left = left - bias
-        right = right - bias
+    def biasImage2( self ):
+        return np.median( self.image[:,self.width/2:], axis=1 )[:,None] + np.median( self.image, axis=0 )[None,:]
 
-        return Image(left).osSub(axis=None), Image(right).osSub(axis=None)
-        
-    def biasImage( self, func = np.median ):
-        image = func( self.image, axis=1 )[:,None] + func( self.image, axis=0 )[None,:]
-        image -= np.median( image )
-        return Image(image)
-    
-    def vertSub( self ):
-        med = np.median( self.image[:, 10*(-150):-150] )
-        medOs = self.os().median()
-        image = Image( self.image - np.median( self.image, axis=0 )[None,:] )
-        image.image[:,:-150] += med
-        image.image[:,-150:] += medOs
-        return image
-
-    def horiSub( self ):
-        med = np.median( self.image[:, 10*(-150):-150] )
-        medOs = self.os().median()
-        image = Image( self.image - np.median( self.image, axis=1 )[:,None] )
-        image.image[:,:-150] += med
-        image.image[:,-150:] += medOs
-        return image
-        
-    def vertR( self ):
-        a = self.L().os().median()/self.R().os().median()
-        return Image( a*np.tile( np.median( self.R().image, axis=0 ), self.image.shape[0] ).reshape(self.R().image.shape[0], self.R().image.shape[1]) )
-        
-    def shiftCenter( self, func=np.mean ):
-        return Image( self.image - func( self.image, axis=1 )[:,None] )
-    
-    def osSub( self, func=np.median, axis=1 ):
-        if axis == 1:
-            return Image( self.image - func( self.os().image, axis = 1 )[:,None] )
-        else:
-            return Image( self.image - func( self.os().image ) )
-    
-    def hSub( self, func=np.median ):
-        #return hitSumm.Image( (self.image - func( self.image, axis = 1 )[:,None])/func( self.os().image, axis = 1 )[:,None] )
-        a = self.image - func( self.os().image, axis = 1 )[:,None]
-        #r = self.R().image - func( self.R().os().image, axis = 1 )[:,None]
-        return hitSumm.Image( a )
-    
-    def vosSub( self, func=np.median ):
-        return Image( self.image - func( self.vos().image, axis = 0 )[None,:] )
-    
-    def hvosSub( self, func=np.median ):
-        return hitSumm.Image( self.image - .5*(func( self.vos().image, axis = 0 )[None,:] + func( self.os().image, axis = 1 )[:,None] ) )
-    
-    def vos_osSub( self, func=np.median ):
-        return self.vosSub( func = func ).osSub( func = func )
-
-    def vos_osSubNorm( self, func=np.median ):
-        return hitSumm.Image( self.vosSub( func = func ).osSub( func = func ).image/self.os().std()**2 )
-    
-    def vSub( self, func=np.median ):
-        return hitSumm.Image( self.image - func( self.image, axis = 0 )[None,:] )
-            
-    def raw( self ):
-        return hitSumm.Image( self.L().ac().image - hitSumm.normFit( self.L().os().image )[0] )
-    
-    def mask( self, m ):
-        return hitSumm.Image( self.image[ m(self.image) ] )
+    def biasImage2Corrected( self ):
+        image = ImageBase( self.image - self.median() )
+        image.image -= image.biasImage2()
+        print 'bias2 shape', image.shape
+        return ImageBase( image.image - image.median() )
     
     def negatives( self ):
         return hitSumm.Image( -self.image[ self.image<0 ] )
@@ -4330,67 +4624,36 @@ class Image:
         print( '(', muDCNoise, stdDCNoise, stdDCNoise0, stdDCNoiseNeg0, stdNoise, stdNoiseNeg, ')', gain )
         return muDCNoise, stdDCNoise
     
-    def mean(self, axis=None):
-        return np.mean( self.image, axis=axis )
-    
-    def median(self, axis=None):
-        return np.median( self.image, axis=axis )
-    
-    def std(self, axis=None):
-        return np.std( self.image, axis=axis )
-    
-    def subtract(self, m ):
-        return hitSumm.Image( self.image - m )
-    
-    def submean(self, axis=None ):
-        return hitSumm.Image( self.image - self.mean() )
-    
-    def submedian(self, axis=None ):
-        return hitSumm.Image( self.image - self.median() )
-    
-    def normFit(self):
-        return np.array( hitSumm.normFit( self.image ) )
-    
-    def halfnormFit(self):
-        return scipy.stats.halfnorm.fit( self.image )
-    
-    def subfit(self, axis=None ):
-        return hitSumm.Image( self.image - self.normFit()[0] )
-    
-    def mad( self ):
-        return mad( self.image )
-    
     def extract(self, thr=15):
         return processImage3(self.image, threshold = thr)
     
-    def electron2( self ):
-        return hitSumm.normFit( self.negatives().image.flatten(), loc=0 )[1] - hitSumm.normFit( self.os().negatives().image.flatten(), loc=0 )[1]
-    
-    def osi_scn( self, gain=None ):
-        #print( 'LosSub', self.L().osSub(np.median).vosSub().os().printImage('osLosSub.pdf' ).normFit() )
-        #print( 'RosSub', self.R().osSub(np.median).vosSub().os().printImage('osRosSub.pdf' ).normFit() )
-        a = np.cov( [ self.L().osSub(np.median).vosSub().os().image.flatten(), self.R().osSub().vosSub().os().image.flatten() ] )
-        print( 'a', a, a[0,1]/a[1,1] )
-        sub = hitSumm.Image( self.L().osSub().vosSub().image - a[0,1]/a[1,1]*self.R().osSub().vosSub().image )
-        print( 'os', sub.os().printImage( 'os0.pdf' ) )
-        print( 'ac', sub.printImage( 'ac0.pdf' ) )
-        
-        #print( 'Losmean', self.L().os().subfit().printImage( 'osLsubmean.pdf' ).normFit() )
-        #print( 'Rosmean', self.R().os().subfit().printImage( 'osRsubmean.pdf' ).normFit() )
-        aFull = np.sum( self.L().image*self.R().image )/np.sum( self.R().image**2 )
-        print( 'a*', aFull, aFull*self.R().normFit(), aFull*self.R().os().normFit() )
-        aOs = np.sum( self.L().os().image*self.R().os().image )/np.sum( self.R().os().image**2 )
-        print( 'a**', aOs, aOs*self.R().normFit(), aOs*self.R().os().normFit() )
-        am = self.L().os().mean()/self.R().os().mean()
-        print( 'am', am, am*self.R().normFit(), am*self.R().os().normFit() )
-        print( 'L', self.L().normFit(), self.L().os().normFit() )
-        sub = hitSumm.Image( self.L().image - aFull*self.R().image )
-        print( 'os', sub.os().printImage( 'os.pdf' ).normFit() )
-        print( 'ac', sub.printImage( 'ac.pdf' ).normFit() )
-        print( 'os', sub.osSub(np.median).os().printImage( 'osSub.pdf' ).normFit() )
-        print( 'ac', sub.osSub(np.median).printImage( 'acSub.pdf' ).normFit() )
-        return L.electron(), L2.electron()
+    def add_image_to_axis( self, axes, eMin, eMax ):
+        axes.imshow( self.image, vmin = eMin, vmax = eMax )
+        axes.set_adjustable('box-forced')
+        axes.set_xlabel('x[pix]')
+        axes.set_ylabel('y[pix]')
 
+    def add_projection_to_axis( self, axes, bins, axis, align='horizontal' ):
+        length = self.shape[axis-1]
+        other_length = self.shape[axis]
+        
+        x = range(length)
+        medians = self.median( axis = axis )
+        one_mad = medians + self.mad( axis = axis )
+        if axis == 1: image = self.image
+        elif axis == 0: image = self.T
+        if align == 'horizontal':
+            axes.hist2d( np.repeat(x, other_length), image.flatten(), bins=[length, bins], norm = colors.LogNorm() )
+            axes.plot( x, medians )
+            axes.plot( x, one_mad )
+            axes.set_ylabel('E[adu]')
+        elif align == 'vertical':
+            axes.hist2d( image.flatten(), np.repeat(x, other_length), bins=[bins, length], norm = colors.LogNorm() )
+            axes.plot( medians, x )
+            axes.plot( one_mad, x )
+            axes.set_xlabel('E[adu]')
+        return axes
+    
     def printFlat( self, fname ):
         fig = plt.figure()
         grid = plt.GridSpec(1, 4, hspace=0, wspace=0)
@@ -4567,9 +4830,6 @@ class Image:
         plt.close()
         return self
 
-    def smooth2D( self, radius, func = np.mean ):
-        return hitSumm.Image( hitSumm.smooth( self.image, radius=radius, func=func).reshape( self.image.shape ) )
-
     @staticmethod
     def imageCov( image1, image2 ):
         return np.sum( image1.image.flatten()*image2.image.flatten() )
@@ -4664,36 +4924,6 @@ class Image:
         plt.close()
         return
     
-    @staticmethod
-    def polyFit( data, func=np.median, axis=1 ):
-        line = func( data, axis=1 )
-        x = range(data.shape[0])
-        p = np.poly1d( np.polyfit( range(data.shape[0]), line, 15 ) )
-        return p(x)
-    
-    @staticmethod
-    def submad( data0, data1 ):
-        return data0 - madCovSqr(data0,data1)/hitSumm.mad(data1)**2*data1
-    
-    @staticmethod
-    def shiftCenter( data, loc=None ):
-        if loc is None:
-            return data - hitSumm.normFit( data )[0]
-        else:
-            return data - loc
-
-    @staticmethod
-    def smooth( data, radius, func = np.mean ):
-        if radius == 0:
-            return data
-        if len(data.shape) > 1:
-            data = data.flatten()
-        startData = [ func( data[:radius+i], axis=0 ) for i in range(radius) ]
-        centerData = func( [ data[i:i-2*radius if i < 2*radius else None] for i in range(2*radius+1) ], axis=0 )
-        endData = [ func( data[i-2*radius:], axis=0 ) for i in range(radius) ]
-        movingMean = np.concatenate( (startData, centerData, endData) )
-        return movingMean
-                
     def spectrumDiff( self, bins ):
         print( 'spectrumDiff' )
         #self.reconstructionEfficiency()
@@ -4931,16 +5161,11 @@ class Image:
         iE = np.arange( 0, max_, dE )
         print( idN_dE.shape, x(iE).shape )
         
-        #return [ [ x(iE), smooth2(np.abs(idN_dE),1) ], [] ]
         return [ [ 1./freq, np.log10(dN_df)], [ 1./freq0, np.log10(dN_df0)], [ 1./freq, np.log10(dN_df/dN_df0) ], [ 1./freqA, np.log10(dN_dfA) ] ]
     
         flatten = lambda l: [item for sublist in l for item in sublist]
         print( flatten([ [sl+'0', sl+'1'] for sl in slices ]) )
         return [ [ result[key[0]], result[key[1]] ] for key in [ [sl+'.E', sl+'.dN_dE'] for sl in slices ] ]
-        #return [[range(len(result[key])), result[key]] for key in flatten([ [sl+'0', sl+'1'] for sl in slices ]) ]
-        #return [[x(E), dN_dE], [] ]
-        #return ((lambda_, dN_df))#(x(E), dN_dE0), (x(sigmas), dN_dsigma)
-        #return (x(E), dN_dE), (lambda_, dN_df)#(x(E), dN_dE0), (x(sigmas), dN_dsigma)
 
     @staticmethod
     def fourier( x, dE ):
@@ -4957,7 +5182,172 @@ class Image:
         f2 = np.fft.fftshift( np.fft.fft( y2 ) )
         print( 'shapes', f.shape, f2.shape )
         return np.fft.fftshift( np.abs(np.fft.ifft( f/f2 )) )
+
+class OverScanImage(ImageBase):
+    def __init__(self, image ):
+        ImageBase.__init__(self, image)
+        if not self.width in [ 150, 550 ]:
+            print 'unpredicted overscan shape', self.shape
+            exit(1)
+
+class DataImage(ImageBase):
+    def __init__( self, image ):
+        ImageBase.__init__( self,image )
+        
+    def void( self, thr=15 ):
+        clusters = scipy.ndimage.label( self.image >= 4*thr, structure=[[0,1,0],[1,1,1],[0,1,0]] )[0]
+        print 'void shape', clusters.shape
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        #print distance_from_thr.shape
+        x, y = np.unravel_index( np.argmax( distance_from_thr ), self.shape )
+        print 'void max dist', distance_from_thr[x,y]
+        image = self.image[ distance_from_thr >= 5 ]
+        if image.size == 0:
+            return None
+        return ArrayExtension( image )
     
+class ActiveImage(ImageBase):
+    def __init__( self, image ):
+        ImageBase.__init__(self,image)
+        self.width = self.image.shape[1]
+        
+        if self.image.shape[0] == 4220:
+            self.overscanHeight = 90
+        if self.image.shape[0] == 900:
+            self.overscanHeight = 70
+
+        self.dataSection = np.s_[ :-self.overscanHeight,:]
+        self.vos = np.s_[-self.overscanHeight:,:]
+        
+    def data( self ):
+        return DataImage( self.image[self.dataSection] )
+
+    def verticalOverScan( self ):
+        return VerticalOverScanImage( self.image[self.vos] )
+
+    def median2( self, axis=1 ):
+        return np.median( self.image[:,-self.width/2:], axis=axis )
+    
+class SideImage(ImageBase):
+    def __init__( self, image ):
+        ImageBase.__init__(self,image)
+        self.width = self.image.shape[1]
+        self.trim = 8
+        
+        if self.image.shape[1] == 4262:
+            self.overscanWidth = 150
+        elif self.image.shape[1] == 4662:
+            self.overscanWidth = 550
+        else:
+            print( 'side shape not predited', self.image.shape )
+            exit(0)
+        
+        self.os = np.s_[:,-self.overscanWidth:]
+        self.ac = np.s_[:,:-self.overscanWidth]
+        
+    def active( self ):
+        return ActiveImage( self.image[self.ac] )
+    
+    def overscan( self ):
+        return OverScanImage( self.image[self.os] )
+
+    def darkCurrentMedian( self ):
+        return np.sqrt( np.mean( self.active().h2_medians() - self.overscan().h_medians() ) )
+
+    def biasImageCorrected( self ):
+        #print 'side bias', self.active().biasImage2Corrected().image.shape
+        return SideImage( np.concatenate( (self.active().biasImage2Corrected().image, self.overscan().biasImageCorrected().image), axis=1 ) )
+
+class FullImage(ImageBase):
+    def __init__( self, runID, ohdu, imageType ):
+        self.has_right = True
+        if imageType.startswith('raw'):
+            ImageBase.__init__(self, hitSumm._getRawImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            if self.width in [ 8540, 9340, 8716]:
+                self.trim = 8
+                self.side =  np.s_[:, self.trim:self.width/2]
+            else:
+                print( 'full shape not predited', self.image.shape )
+                exit(1)
+                
+        elif imageType == 'osi':
+            ImageBase.__init__(self, hitSumm._getOSIImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            if self.width in [ 8524, 9324]:
+                self.trim = 0
+                self.side =  np.s_[:, :self.width/2]
+            else:
+                print( 'full shape not predited', self.image.shape )
+                exit(1)
+                
+        elif imageType == 'mbs':
+            ImageBase.__init__(self, hitSumm._getMBSImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            if self.width in [ 8524, 9324 ]:
+                self.trim = 0
+                self.side =  np.s_[:, :self.width/2]
+            else:
+                print( 'full shape not predited', self.image.shape )
+                exit(1)
+        
+        elif imageType.startswith('scn'):
+            self.has_right = False
+            ImageBase.__init__(self, hitSumm._getSCNImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            if self.width in [ 4262, 4662 ]:
+                self.trim = 0
+                self.side =  np.s_[:, :self.width]
+            else:
+                print( 'full shape not predited', self.image.shape )
+                exit(1)
+
+        else:
+            print( 'imageType not predited', self.image.shape )
+            exit(1)
+        
+        if imageType in [ 'raw*', 'scn*' ]: 
+            self.correct_biasImage()
+
+    def right( self ):
+        if not self.has_right: return None
+        return SideImage( self.image[:,::-1][self.side] )
+    
+    def left( self ):
+        return SideImage( self.image[self.side] )
+
+    def active( self ):
+        return self.left().active()
+    
+    def overscan( self ):
+        return self.left().overscan()
+
+    def data( self ):
+        return self.active().data()
+    
+    def void( self, thr=15 ):
+        return self.data().void(thr)
+
+    def part(self, i):
+        return Image( self.image[i*1055:(i+1)*1055,:] )
+    
+    def correct_biasImage( self ):
+        if not self.has_right: return self.left().biasImageCorrected()
+        self.image = np.concatenate( ( self.left().biasImageCorrected().image, self.right().biasImageCorrected().image[:,::-1] ), axis=1 )
+        return self
+    
+    def darkCurrentEstimate( self ):
+        #print 'darkCurrent', np.sqrt( np.median( self.image[:, self.width-4*self.overscanWidth:self.width-self.overscanWidth] ) - np.median( self.image[self.overscan] ) )
+        #return np.sqrt( np.mean( np.median( self.image[:, self.width-4*self.overscanWidth:self.width-self.overscanWidth], axis=1 ) - np.median( self.image[self.overscan], axis=1 ) ) )
+        return self.left().darkCurrentMedian()
+
+    def darkCurrentEstimate2( self, medianVoid = None, sigmaVoid=None, sigmaBase = None ):
+        def eq( l, mu, sigma, sigma2 ):
+            return l**4 + l**3 + 2*mu*l**2 + mu**2 + sigma**2 - sigma2**2
+        def deq( l, mu, sigma, sigma2 ):
+            return 4*l**3 + 3*l**2 + 4*mu*l
+        if sigmaVoid is None: sigmaVoid = self.data().mad()
+        if medianVoid is None: medianVoid = self.data().median()
+        if sigmaBase is None: sigmaBase = self.overscan().mad()
+        return scipy.optimize.newton( eq, 1., fprime=deq, args=( medianVoid, sigmaBase, sigmaVoid ) )
+    
+
 class Plot:
     def __init__():
         self.lines = {}
@@ -5086,16 +5476,20 @@ if __name__ == "__main__":
         efficiencyNeutrinosReconstruction( config )
         #simulateNeutrinos( config )
         exit(0)
-    args = {}
-    for iarg, arg in enumerate(sys.argv):
-        if arg.startswith('-') and not arg.startswith('--'):
-            args[arg.strip('-')] = sys.argv[iarg+1]
-    #print( args )
-    for arg in sys.argv:
-        if arg.startswith('--'):
-            #print( Callable.__dict__ )
-            getattr(Callable, arg.strip('--'))( **args )
-            exit(0)
+    option = ' '.join(sys.argv).split('--')
+    if len(option) > 1:
+        option = option[-1]
+        method = option.split(' ')[0]
+        subargs = option.split(' -')[1:]
+        kwargs = {}
+        for arg in subargs:
+            pair = arg.split(' ')
+            if len(pair) > 1:
+                kwargs[pair[0]] = pair[1]
+            else:
+                kwargs[pair[0]] = None
+        getattr(Callable, method)( **kwargs )
+        exit(0)
     print( 'callables', Callable.__dict__ )
     print( 'options not recognized', sys.argv )
     help_()
