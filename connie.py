@@ -1035,7 +1035,7 @@ def poisson_( x, lamb ):
     y[x>0] = np.exp( x[x>0]*np.log(lamb) -lamb -scipy.special.loggamma(x[x>0]+1) )
     return y
 
-def poisson_gaussian_pdf( x, loc = 0, scale = 1, mu = 1, verbose = False, tol=1e-6 ):
+def poisson_gaussian_pdf( x, loc = 0, scale = 1, mu = 1, g = 1, verbose = False, tol=1e-8 ):
     result = np.zeros_like(x)
     mu = abs(mu)
     scale = abs(scale)
@@ -1045,7 +1045,7 @@ def poisson_gaussian_pdf( x, loc = 0, scale = 1, mu = 1, verbose = False, tol=1e
     while True:
         poisson_weight = scipy.stats.poisson.pmf(k,mu=mu)
         poisson_sum += poisson_weight
-        result += poisson_weight * scipy.stats.norm.pdf( x, loc = loc + k*mu, scale = scale )
+        result += poisson_weight * scipy.stats.norm.pdf( x, loc = loc + g*k*mu, scale = scale )
         if poisson_weight/poisson_sum < tol: break
         k += 1
     if verbose: print 'took', k, 'iteractions'
@@ -2802,6 +2802,14 @@ def efficiencyNeutrinosReconstruction( c ):
                   )
     return
 
+class utils:
+    @staticmethod
+    def try_convertion( s, t ):
+        result = None
+        try: result = t(s)
+        except: pass
+        return result
+    
 class SpectrumWindow(Gtk.Window):
 
     def __del__(self):
@@ -3373,10 +3381,14 @@ class ImageWindow(Gtk.Window):
     
 class MonitorWindow(Gtk.Window):
     
-    def __del__(self):
+    def __del__(self, widget, msg ):
+        self.destroy()
+        Gtk.main_quit(widget)
+        print 'safely quitting...'
+        self.quit = True
         os.remove( self.tempPath )
-        self.remove_locks()
-        Gtk.Window.__del__(self)
+        #self.remove_darkCurrentTable_lock()
+        return True
         
     def __init__(self):
         GObject.threads_init()
@@ -3386,15 +3398,18 @@ class MonitorWindow(Gtk.Window):
         self.darkCurrentRawTable = '/home/mota/public/gui/darkCurrentRawTable.csv'
         self.readoutNoiseRawTable = '/home/mota/public/gui/readoutNoiseRawTable.csv'
         Gtk.Window.__init__( self, title="Image Viewer [session%s]"%self.id )
-        self.connect( 'destroy', Gtk.main_quit )
+        self.connect( 'delete-event', self.__del__ )
         self.set_border_width(3)
         self.add( self.build_window() )
         
+        self.update = True
         self.plot_darkCurrentTable()
         self.show_all()
+        self.quit = False
         def loop():
             while 1:
                 self.update_darkCurrentTable()
+                if self.quit: return
         self.start_thread( loop )
 
     def build_window(self):
@@ -3406,9 +3421,28 @@ class MonitorWindow(Gtk.Window):
         return vbox
     
     def build_header(self):
+        subbox = Gtk.HBox()
         label = Gtk.Label()
         label.set_label('Dark Current and Readout Noise')
-        return label
+        runIDLabel = Gtk.Label()
+        runIDLabel.set_label('runIDs')
+        self.runIDRangeEntry = Gtk.Entry()
+        self.runIDRangeEntry.set_text('auto:auto')
+        self.runIDRangeEntry.set_width_chars(len('auto:auto'))
+        subbox.pack_start(label, True, True, 1 )
+        subbox.pack_start(runIDLabel, False, False, 1 )
+        subbox.pack_start(self.runIDRangeEntry, False, False, 1 )
+        
+        self.ohdusBox = Gtk.HBox()
+        subbox.pack_start(self.ohdusBox, False, False, 1 )
+        for ohdu in range(2,16):
+            toggleButton = Gtk.ToggleButton()
+            toggleButton.set_label( '%2s'%(ohdu) )
+            toggleButton.set_active(True)
+            if ohdu in [11,12,15]: toggleButton.set_active(False)
+            self.ohdusBox.pack_start( toggleButton, False, False, 0 )
+
+        return subbox
     
     def build_body(self):
         self.imageCanvas = Gtk.Image()
@@ -3416,6 +3450,7 @@ class MonitorWindow(Gtk.Window):
     
     def remove_darkCurrentTable_lock(self):
         os.remove( self.darkCurrentRawTable + '%s.lock'%self.id )
+        print 'lock removed'
         
     def remove_readnoiseNoiseTable_lock(self):
         os.remove( self.readoutNoiseRawTable + '%s.lock'%self.id )
@@ -3436,9 +3471,8 @@ class MonitorWindow(Gtk.Window):
         return True
     
     def start_thread(self, callback):
-        thread = threading.Thread(target=callback)
-        thread.daemon = True
-        thread.start()
+        self.thread = threading.Thread(target=callback)
+        self.thread.start()
         
     def update_darkCurrentTable(self):
         self.plot_darkCurrentTable()
@@ -3475,12 +3509,10 @@ class MonitorWindow(Gtk.Window):
         entry = []
         for ohdu in self.list_ohdus(runID):
             entry.append( [runID, ohdu, self.compute_darkCurrent(runID, ohdu)] )
-        #print 'entry', entry
         return entry
     
     def list_ohdus(self, runID):
         ohdus = hitSumm.list_ohdus(runID)
-        #print runID, 'ohdus', ohdus
         return ohdus
         
     def compute_darkCurrent( self, runID, ohdu ):
@@ -3488,17 +3520,73 @@ class MonitorWindow(Gtk.Window):
     
     def plot_darkCurrentTable( self ):
         data = np.genfromtxt( self.darkCurrentRawTable, names=True )
+        
+        ohdus = [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
+        runIDRange_str = self.runIDRangeEntry.get_text()
+        try:
+            runIDMin_str, runIDMax_str = runIDRange_str.split(':')
+        except:
+            runIDMin_str, runIDMax_str = None, None
+        
+        runIDMin = utils.try_convertion(runIDMin_str, int)
+        runIDMax = utils.try_convertion(runIDMax_str, int)
+        
+        if runIDMin is None: 
+            runIDMin = data['runID'].min()
+            self.update = True
+        if runIDMax is None: 
+            runIDMax = data['runID'].max()
+            self.update = True
+        if runIDMin < data['runID'].min(): 
+            runIDMin = data['runID'].min()
+            self.update = True
+        if runIDMax > data['runID'].max(): 
+            runIDMax = data['runID'].max()
+            self.update = True
+        print 'range', runIDMin, runIDMax
+        if not self.update: return
+    
+        if runIDMin > data['runID'].min() and runIDMax < data['runID'].max(): 
+            self.update = False
 
+        runIDMask = np.all( [ data['runID'] >= runIDMin, data['runID'] <= runIDMax], axis=0 )
+        
         fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.plot( data['runID'], data['darkCurrent'], '.' )
-        ax.set_ylabel('dark current')
-        ax.set_xlabel('runID')
-        fig.savefig(self.tempPath)
+        w, h = fig.get_size_inches()
+        fig.set_size_inches((2*w,h))
+        m = int(np.ceil(np.sqrt(len(ohdus))))
+        print 'number of plots', m
+        if m==0: return
+        n = int(np.ceil(float(len(ohdus))/m))
+        
+        grid = []
+        ohdus_ranges = []
+        for i in range(m):
+            share = None if grid == [] else grid[0]
+            grid.append( fig.add_axes([ .1, .1+(m-i-1)*.8/m, .8, .8/m ], sharex=share, sharey=share ))
+            plt.setp(grid[i].get_xticklabels(), visible=False)
+            ohdus_ranges.append( ohdus[ i*n : (i+1)*n ] )
+
+        for i, ohdus_range in enumerate(ohdus_ranges):
+            for ohdu in ohdus_range:
+                ohduMask = np.all( [runIDMask, data['ohdu']==ohdu], axis=0 )
+                grid[i].plot( data['runID'][ohduMask], data['darkCurrent'][ohduMask], '.', ms=3., label = '%d'%ohdu )
+
+            print 'placement', .1+float(m-i)*8./m
+            #grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., .1+(m-i)*8./m ), loc='upper left' )
+            grid[i].grid(True)
+            grid[i].set_ylabel('dark current')
+
+        grid[-1].set_xlabel('runID')
+        plt.setp(grid[-1].get_xticklabels(), visible=True)
+        for i in range(m):
+            box = grid[i].get_position()
+            grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., .9*box.y1+.1 ), loc='upper left' )
+
+        fig.savefig( self.tempPath )
         plt.close()
         def finished():
             self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
-            #self.show_all()
         GLib.idle_add( finished )
     
 class Callable:
@@ -3518,50 +3606,396 @@ class Callable:
         Gtk.main()
         
     @staticmethod
-    def analyseDC( **kwargs ):
-        N = int(1e6)
-        if 'e' in kwargs: e = float(kwargs['e'])
-        else: e = 7.2
-        if 'sigma' in kwargs: sigma = float(kwargs['sigma'])*e
-        else: sigma = 1.8*e
-        if 'lambda' in kwargs: mu = float(kwargs['lambda'])*e
-        else: mu = .2*e
+    def dcObservations( **kwargs ):
+        '''
+        find the relation between the parameters of a convoluted poisson-normal distribution and the unbinned estimates by producing random distributions and then computing the principal component analysis to look for correlated variables
+        '''
+        # elections in eV
+        eV_e = 3.745#eV/e
 
-        norm_rvs = scipy.stats.norm.rvs( loc=0, scale=sigma, size=N)
-        xmin, xmax = 1.5*norm_rvs.min(), 3*norm_rvs.max()
-        x = np.linspace( xmin, xmax, 100)
-        dx = x[1]-x[0]
-        x0 = -mu**2
-        poisson_norm_rvs = random_pdf_continuous( lambda x, sigma=sigma, mu=mu: poisson_gaussian_pdf(x, loc=x0, scale=sigma, mu=mu ), xmin, xmax, N )
-        norm = scipy.stats.norm.pdf(x,scale=sigma)*N
-        poisson_norm = poisson_gaussian_pdf( x, loc=x0, mu=mu, scale=sigma)*N
+        #generate observations
+        samples = 5
+        min_gain = 500
+        max_gain = 25000
+        gain_adu_e_list = (max_gain - min_gain) * np.random.random_sample( samples ) + min_gain
+        min_lambda = .01
+        max_lambda = 2.
+        lambda_list = (max_lambda - min_lambda) * np.random.random_sample( samples ) + min_lambda
+        min_sigma = .1
+        max_sigma = 3.
+        sigma_e_list = (max_sigma - min_sigma) * np.random.random_sample( samples ) + min_sigma
         
-        print 'median', np.median(norm_rvs), np.median(poisson_norm_rvs)#, np.sqrt(np.median(poisson_norm_rvs))
-        print 'mean', np.mean(norm_rvs), np.mean(poisson_norm_rvs)#, np.sqrt(np.mean(poisson_norm_rvs))
-        print 'mad', mad(norm_rvs), mad(poisson_norm_rvs), -mad(norm_rvs)**2 + mad(poisson_norm_rvs)**2, np.sqrt( -mad(norm_rvs)**2 + mad(poisson_norm_rvs)**2 )
-        print 'siqr', siqr(norm_rvs), siqr(poisson_norm_rvs), -siqr(norm_rvs)**2 + siqr(poisson_norm_rvs)**2, np.sqrt( -siqr(norm_rvs)**2 + siqr(poisson_norm_rvs)**2 )
-        print 'ratio', mad(poisson_norm_rvs)/mad(norm_rvs), np.sqrt( mad(poisson_norm_rvs)/mad(norm_rvs) ), np.sqrt( mad(poisson_norm_rvs)**2/mad(norm_rvs) ), np.sqrt( -mad(norm_rvs)**2 + mad(poisson_norm_rvs)**2 )/mad(norm_rvs)
+        #define the desired observables
+        observations = {
+            'mean': lambda X: np.mean(X),
+            'm2': lambda X: np.mean(X**2),
+            'm3': lambda X: np.mean(X**3),
+            'median': lambda X: np.median(X),
+            'mad': lambda X: mad(X,scale=1),
+            }
+        ptiles = 4
+        #loop in the parameters
+        header = ['gain_adu_e', 'lambda', 'sigma_e']
+        for key in observations.keys():
+            header.append('%s_0'%key)
+            header.append(key)
+        for n in range(2**ptiles-1):
+            header.append('q%d_0'%n)
+            header.append('q%d'%n)
+        print 'header', header, len(header)
+        table = []
+        for gain_adu_e in gain_adu_e_list:
+            for lambda_ in lambda_list:
+                for sigma_e in sigma_e_list:
+                    #generate the rvs
+                    N = int(1e6)
+                    sigma_adu = sigma_e*gain_adu_e
+                    frozen_pdf = lambda E, s=sigma_adu, mu=lambda_, g=gain_adu_e: poisson_gaussian_pdf(E, scale=s, mu=mu, g=g )
+                    norm_rvs = scipy.stats.norm.rvs(scale=sigma_adu, size=N)
+                    Emin_adu, Emax_adu = 1.5*norm_rvs.min(), 3*norm_rvs.max()
+                    poisson_norm_rvs = random_pdf_continuous( frozen_pdf, Emin_adu, Emax_adu, N )
+                    
+                    #sample multiple times the same rvs
+                    for i in range(100):
+                        sub_norm_rvs = np.random.choice(norm_rvs, int(1e4))
+                        sub_poisson_norm_rvs = np.random.choice(poisson_norm_rvs, int(1e4))
+                        
+                        #add entries to table
+                        entry = [ gain_adu_e, lambda_, sigma_e ]
+                        for key, obs in observations.items():
+                            entry.append( obs(sub_norm_rvs) )
+                            entry.append( obs(sub_poisson_norm_rvs) )
+                        sub_norm_tiles = tiles( sub_norm_rvs, ptiles )
+                        sub_poisson_norm_tiles = tiles( sub_poisson_norm_rvs, ptiles )
+                        #print 'len octatiles', len(sub_norm_tiles)
+                        for n in range(2**ptiles-1):
+                            entry.append( sub_norm_tiles[n] )
+                            entry.append( sub_poisson_norm_tiles[n] )
+                        #print 'len entry', len(entry)
+                        table.append(entry)
+
+        #append observations in file
+        if os.path.exists('darkCurrentTraining.csv'):
+            oldtable = np.genfromtxt('darkCurrentTraining.csv')
+            print len(oldtable), len(oldtable[0])
+            extended = np.concatenate((oldtable,table), axis=0)
+            print len(extended), len(extended[0])
+            np.savetxt( 'darkCurrentTraining.csv', extended, header=' '.join(header) )
+        else:
+            np.savetxt( 'darkCurrentTraining.csv', table, header=' '.join(header) )
+        return
+    
+    @staticmethod
+    def dcAnalysis():
+        if 'g' in kwargs: adu_e = float(kwargs['g'])
+        else: adu_e = 2000
+        if 'sigma' in kwargs: sigma_e = float(kwargs['sigma'])
+        else: sigma_e = 1.8
+        if 'lambda' in kwargs: mu = float(kwargs['lambda'])
+        else: mu = .2
+
+        sigma_adu = sigma_e*adu_e
         
-        print 'solve', mu**4 + mu**3 + 2*x0*mu**2 + x0**2, mu**3 + sigma**2, mad(poisson_norm_rvs)**2
-        print 'lambda', ( mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 )**(1./3)
-        print 'sigma', sigma, mu, np.sqrt(mu), sigma**2, mu/sigma, mu/sigma**2, np.sqrt( sigma**2 + mu )#, sigma - mu
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        bins = ax.hist( norm_rvs, bins=x, label='norm rvs', histtype='step' )[1]
-        poisson_norm_hist = ax.hist( poisson_norm_rvs, bins=x, label='poisson_norm rvs', histtype='step' )[0]
+        frozen_pdf = lambda E, s=sigma_adu, mu=mu, g=adu_e: poisson_gaussian_pdf(E, scale=s, mu=mu, g=g )
+        #rvs
+        norm_rvs = scipy.stats.norm.rvs(scale=sigma_adu, size=N)
+        Emin_adu, Emax_adu = 1.5*norm_rvs.min(), 3*norm_rvs.max()
+        E_adu = np.linspace( Emin_adu, Emax_adu, 100)
+        dE_adu = E_adu[1]-E_adu[0]
+        poisson_norm_rvs = random_pdf_continuous( frozen_pdf, Emin_adu, Emax_adu, N )
+
+        print tiles(norm_rvs,p=1), np.median(norm_rvs)
+        print tiles(norm_rvs,p=2), quartiles(norm_rvs)
+        print tiles(norm_rvs,p=4)
+        print tiles(poisson_norm_rvs,p=4)
+        return
+        #pdf
+        norm = scipy.stats.norm.pdf(E_adu, scale=sigma_adu)*N
+        poisson_norm = frozen_pdf( E_adu )*N
         
-        p = scipy.optimize.curve_fit( lambda x, l, scale=mad(norm_rvs): poisson_gaussian_pdf(x, loc=-l**2, scale=scale, mu=l ), x[:-1], poisson_norm_hist/N, p0=[.1] )[0]
-        print 'mu_p', p
+        ##first estimate with mu=<E> overscan
+        #DeltaMean = np.mean(poisson_norm_rvs) - np.mean(norm_rvs) #ADU
+        #DeltaVar = np.var(poisson_norm_rvs) - np.var(norm_rvs) #ADU**2
+        #l = DeltaMean**2/DeltaVar
+        #g = DeltaVar**2/DeltaMean**3 # ADU**4/ADU**3 = ADU
+        #print '1st estimate', l, g, np.sqrt(np.var(norm_rvs))/g #ADU/ADU
+
+        ##first estimate with mu=<E> overscan, robust
+        #DeltaMean = np.median(poisson_norm_rvs) - np.median(norm_rvs) #ADU
+        #DeltaVar = mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 #ADU**2
+        #l = DeltaMean**2/DeltaVar
+        #g = DeltaVar**2/DeltaMean**3 # ADU**4/ADU**3 = ADU
+        #print '1st estimate', l, g, mad(norm_rvs)/g #ADU/ADU
         
-        ax.plot( x, norm*dx, label='norm pdf' )
-        ax.plot( x, poisson_norm*dx, label='poisson_norm pdf' )
-        ylim = list(ax.get_ylim())
-        ylim[0] = 1.
-        ax.set_ylim( ylim )
-        ax.legend( fancybox=True, framealpha=0 )
-        ax.set_yscale('log')
-        fig.savefig('dc_analysis.pdf')
-        plt.close()
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111)
+        ##linear regression
+        #dVar = []
+        #dE = []
+        #lamb = []
+        #for i in range(10):
+            #d0 = np.random.choice(norm_rvs, int(1e4), replace=False)
+            #d1 = np.random.choice(poisson_norm_rvs, int(1e4), replace=False)
+            #_dVar = np.var(d1) - np.var(d0)
+            #_dE = np.mean(d1) - np.mean(d0)
+            #dVar.append( _dVar )
+            #dE.append( _dE )
+            #lamb.append( _dE**2/_dVar )
+            
+        #args = np.argsort(dVar)
+        #dVar = np.array(dVar)[args]
+        #dE = np.array(dE)[args]
+        #lamb = np.array(lamb)[args]
+
+        #_lambda = scipy.linalg.lstsq( (dVar)[:,None], dE**2 )[0]
+        #_g = scipy.linalg.lstsq( (dE**3)[:,None], dVar**2 )[0]
+        #ax.scatter( dVar, dE**2, c='r', label='lambda', s=1. )
+        #ax.scatter( dVar, lamb*dE**2, c='b', label='lambda', s=1. )
+        #ax.plot( dVar, mu*dVar, c='r' )
+        #ax.plot( dVar, _lambda*dVar, ':', c='r' )
+
+        #print 'lstsq', _lambda, _g
+
+        ##linear regression
+        #dVar = []
+        #dE = []
+        #for i in range(10):
+            #d0 = np.random.choice(norm_rvs, int(1e4), replace=False)
+            #d1 = np.random.choice(poisson_norm_rvs, int(1e4), replace=False)
+            #_dVar = iqr(d1)**2 - iqr(d0)**2
+            #_dE = np.median(d1) - np.median(d0)
+            #dVar.append( _dVar )
+            #dE.append( _dE )
+        #args = np.argsort(dVar)
+        #dVar = np.array(dVar)[args]
+        #dE = np.array(dE)[args]
+        #_lambda = scipy.linalg.lstsq( dVar[:,None], dE**2 )[0]
+        #_g = scipy.linalg.lstsq( (dE**3)[:,None], dVar**2 )[0]
+        ##ax.scatter( dVar, np.array(dE)**2, c='b', label='lambda', s=1. )
+        ##ax.plot( dVar, mu*dVar, c='b' )
+        ##ax.plot( dVar, _lambda*dVar, ':', c='b' )
+        ##ax.scatter( dE**3, dVar**2, c='r', label='g', s=1. )
+        ##ax.plot( dE**3, adu_e*dE**3, c='r' )
+        ##ax.plot( dE**3, _g*dE**3, ':', c='r' )
+        
+        #ax.legend(fancybox=False, framealpha=0)
+        #fig.savefig('linregress.pdf')
+        #plt.close()
+        #print 'lstsq_mad', _lambda, _g
+
+        ##second estimate
+        #mean = np.mean(poisson_norm_rvs)
+        #Var = np.var(poisson_norm_rvs)
+        #DeltaVar = Var - np.var(norm_rvs) #ADU**2
+        #m3 = np.mean( (poisson_norm_rvs - mean )**3 )
+        #def eqs( x ):
+            #l = x[0]
+            #g = x[1]
+            #return [
+                #g**2*l**3 - DeltaVar,
+                #g*l*(l+1) + l**2 - (m3/DeltaVar/3 + mean )
+                #]
+        
+        #l, g = scipy.optimize.least_squares( eqs, x0=[1,1], loss='cauchy', bounds=([0, 0], [np.inf,np.inf]) )['x']
+        #print '2nd estimate', l, g, np.sqrt(np.var(norm_rvs))/g
+        
+        ##second estimate
+        #mean = np.median(poisson_norm_rvs)
+        #Var = mad(poisson_norm_rvs)**2
+        #DeltaVar = Var - mad(norm_rvs)**2 #ADU**2
+        #m3 = np.mean( (poisson_norm_rvs - mean )**3 )
+        #def eqs( x ):
+            #l = x[0]
+            #g = x[1]
+            #return [
+                #g**2*l**3 - DeltaVar,
+                #g*l*(l+1) + l**2 - (m3/DeltaVar/3 + mean )
+                #]
+        
+        #l, g = scipy.optimize.least_squares( eqs, x0=[1.,2000.], loss='cauchy', bounds=([0, 0], [np.inf,np.inf]) )['x']
+        #print '2nd estimate', l, g, mad(norm_rvs)/g
+
+        ##second estimate robust
+        #q4 = quartiles(poisson_norm_rvs)
+        #QS = ((q4[2]-q4[1])-(q4[1]-q4[0]))/(q4[2]-q4[0])
+        #rm3 = m3/(Var)**(3./2)
+        #print 'ratio', rm3, QS, rm3/QS
+        
+        #return
+        ##extras
+        #qnorm4 = quartiles(norm_rvs)
+        #print 'norm quartiles', qnorm4, (qnorm4[2]-qnorm4[0]), ((qnorm4[2]-qnorm4[1])-(qnorm4[1]-qnorm4[0]))/(qnorm4[2]-qnorm4[0])
+        #q4 = quartiles(poisson_norm_rvs)
+        #print 'pnorm quartiles', q4, q4[2]-q4[0], ((q4[2]-q4[1])-(q4[1]-q4[0]))/(q4[2]-q4[0])
+        #print (q4[2]-q4[0])/(qnorm4[2]-qnorm4[0])
+        #mad0 = mad(norm_rvs)
+        #print 'glambda', mu*adu_e, mu**2*adu_e
+        #return
+        #def summation( f, n_0=0, N=None, tol=1e-4 ):
+            #n=n_0
+            #s_ = 0.
+            #while 1:
+                #f_ = float(f(n))
+                #if f_ == 0.: return 0
+                #s_ += f_
+                ##if N is not None: 
+                    ##if n>=N: return s_
+                #if abs(f_) < tol*float(s_): 
+                    #print 'iteractions', n
+                    #return s_
+                #n+=1
+            #return
+        
+        #def medianEq( g, lamb, mu, sigma, tol=1e-4 ):
+            #if abs(lamb) < tol:
+                #print 'zero'
+                #return scipy.special.erf( mu/(np.sqrt(2)*sigma) )
+            #def term(n):
+                #t = scipy.stats.poisson.pmf(n,abs(lamb))*scipy.special.erf( (mu - n*abs(g)*abs(lamb))/(np.sqrt(2)*sigma) )
+                #print 'term', n, lamb, t, mu, g, sigma, scipy.special.erf( (mu - n*abs(g)*abs(lamb))/(np.sqrt(2)*sigma) ), scipy.stats.poisson.pmf(n,abs(lamb))
+                #return t
+            #return summation( term , n_0=0 )
+
+        
+        #def eqQuartiles( x, mean, q4, std ):
+            #return [
+                #medianEq( x[0], x[1], q4[0] - mean, std ) + .25,
+                #medianEq( x[0], x[1], q4[1] - mean, std ),
+                #medianEq( x[0], x[1], q4[2] - mean, std ) - .25,
+                #]
+
+        #x0 = np.array([2000.,.1])
+        ##print 'lsq quartiles', scipy.optimize.least_squares( eqQuartiles, x0, loss='cauchy', bounds=([0, 0,-np.inf], [np.inf,np.inf,np.inf]), args=(0, q4, mad0) )['x']
+        #print 'lsq quartiles', scipy.optimize.least_squares( eqQuartiles, x0, loss='cauchy', bounds=([0, 0.01], [np.inf,np.inf]), args=(0, q4, float(mad0) ) )['x']
+
+        #def compute( d1, d0 ):
+            #DeltaMean = np.median(d1) - np.median(d0)
+            #DeltaVar = mad(d1)**2 - mad(d0)**2
+            #l = DeltaMean**2/DeltaVar
+            #g = DeltaVar**2/DeltaMean**3
+            #s = mad(d0)
+            #return l, g, s
+
+        #def compute2( d1, d0 ):
+            #m1 = np.median(d1) 
+            #m0 = np.median(d0)
+            #M1 = mad(d1) 
+            #M0 = mad(d0)
+            #return m1,M1,m0,M0
+        
+        #m0, m1, M0, M1 = [], [], [], []
+        #for i in range(1000):
+            #d0 = np.random.choice(norm_rvs, int(5e2), replace=False)
+            #d1 = np.random.choice(poisson_norm_rvs, int(5e2), replace=False)
+            #res = compute2(d1,d0)
+            #m1.append(res[0])
+            #M1.append(res[1])
+            #m0.append(res[2])
+            #M0.append(res[3])
+        #m0 = np.mean(m0)
+        #m1 = np.mean(m1)
+        #M0 = np.mean(M0)
+        #M1 = np.mean(M1)
+        #l = (m1-m0)**2/(M1**2-M0**2)
+        #g = (M1**2-M0**2)**2/abs(m1-m0)**3
+        #s = M0
+        #print 'values', l, g, s/g
+        #l0 = m1**2/(M1**2-M0**2)
+        #g0 = (M1**2-M0**2)**2/m1**3
+        
+        ##return
+        #median0 = np.median(norm_rvs)
+        #mad0 = mad(norm_rvs,scale=1.)
+        #median1 = np.median(poisson_norm_rvs)
+        #mad1 = mad(poisson_norm_rvs,scale=1.)
+
+        #def eqQuartiles( x, q4, std ):
+            #return [
+                #medianEq( x[0], x[1], q4[0] - x[2], std ) + .25,
+                #medianEq( x[0], x[1], q4[1] - x[2], std ),
+                #medianEq( x[0], x[1], q4[2] - x[2], std ) - .25,
+                #]
+
+        #x0 = np.array([2000.,1.,0.])
+        #print scipy.optimize.least_squares( eqQuartiles, x0, loss='cauchy', bounds=([0, 0,-np.inf], [np.inf,np.inf,np.inf]), args=(q4, mad0) )['x']
+        
+        #return
+        #def eqMed( x, m0, m1, std0 ):
+            #return medianEq( x[0], x[1], median1 - median0, mad0 )
+        #x0 = np.array([2000.,1.])
+        #print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0, 0], [np.inf,np.inf]), args=(m0, m1, mad0) )['x']
+        ##x0 = np.array([2000.,1.])
+        ##print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0, 0], [np.inf,np.inf]), args=(0, m1, mad0) )
+
+        ##def eqMed( x, l, m0, m1, std0 ):
+            ##return medianEq( x[0], l, median1 - median0, mad0 )
+        ##x0 = np.array([2000.])
+        ##print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0], [np.inf]), args=(l, m0, m1, mad0) )
+
+        #def medianEq2( g, lamb, mu, sigma ):
+            #a = abs(g)*abs(lamb)/(np.sqrt(2)*sigma)
+            #b = mu/(np.sqrt(2)*sigma)
+            #N = int(np.floor(b/a))
+            #s0 = summation( lambda n: scipy.stats.poisson.pmf(n,abs(lamb))*scipy.special.erf( b - n*a ), n_0=0, N=N )
+            #s1 = summation( lambda n: scipy.stats.poisson.pmf(n,abs(lamb))*scipy.special.erf( b - n*a ), n_0=N )
+            #return s0+s1
+
+        #def eqMed( x, m0, m1, std0 ):
+            #return medianEq2( x[0], x[1], median1 - median0, mad0 )
+        #x0 = np.array([2000.,1.])
+        #print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0, 0], [np.inf,np.inf]), args=(m0, m1, mad0) )['x']
+        
+        #return
+        #def eqs( x ):
+            #return np.array( [ 
+                #medianEq( x[0], x[1], median1-median0, mad0 ), 
+                #medianEq( x[0], x[1], mad1+median1-median0, mad0 ) - medianEq( x[0], x[1], mad1 - (median1-median0), mad0 ) - .5
+                #] )
+        
+        #x0 = np.array([ 2000., .5 ])
+        #print 'fitting with mad'
+        #print scipy.optimize.least_squares( eqs, x0, xtol=1e-10, loss='cauchy', bounds=([0, 0], [np.inf,1.]), x_scale=[1./x0[0],1./x0[1]], diff_step=.1, verbose=0 )
+        #print 'done'
+
+        ##iqr1 = iqr(poisson_norm_rvs,scale=1.)
+        ##mad0 = iqr(norm_rvs,scale=1.)
+        #def eqs2( x ):
+            #return np.array( [ 
+                #medianEq( x[0], x[1], median1-median0, mad0 ),
+                ##medianEq( x[0], x[1], x[2]-median0, mad0 )+.5,
+                ##medianEq( x[0], x[1], x[3]-median0, mad0 )-.5,
+                ##medianEq( x[0], x[1], iqr1+median1-median0, mad0 )-.5,
+                #medianEq( x[0], x[1], mad1+median1-median0, mad0 )-.5,
+                ##medianEq( x[0], x[1], mad1+median1-median0, mad0 ) - medianEq( x[0], x[1], mad1 - (median1-median0), mad0 ) - .5
+                ##x[3] - x[2] - iqr1
+                #] )
+
+        ##x0 = np.array([ g1, lamb1 ])
+        #x0 = np.array([ 2000., .5 ])
+        #print 'fitting iqr complete'
+        #print scipy.optimize.least_squares( eqs, x0 )
+        #print 'done'
+        
+        ##print 'solve', mu**4 + mu**3 + 2*x0*mu**2 + x0**2, mu**3 + sigma**2, mad(poisson_norm_rvs)**2
+        ##print 'lambda', ( mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 )**(1./3)
+        ##print 'sigma', sigma, mu, np.sqrt(mu), sigma**2, mu/sigma, mu/sigma**2, np.sqrt( sigma**2 + mu )#, sigma - mu
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111)
+        #bins = ax.hist( norm_rvs, bins=E_adu, label='norm rvs', histtype='step' )[1]
+        #poisson_norm_hist = ax.hist( poisson_norm_rvs, bins=E_adu, label='poisson_norm rvs', histtype='step' )[0]
+        
+        ##p = scipy.optimize.curve_fit( lambda x, l, scale=mad(norm_rvs): poisson_gaussian_pdf(x, loc=-l**2, scale=scale, mu=l ), x[:-1], poisson_norm_hist/N, p0=[.1] )[0]
+        ##print 'mu_p', p
+        
+        #ax.plot( E_adu, norm*dE_adu, label='norm pdf' )
+        #ax.plot( E_adu, poisson_norm*dE_adu, label='poisson_norm pdf' )
+        #ylim = list(ax.get_ylim())
+        #ylim[0] = 1.
+        #ax.set_ylim( ylim )
+        #ax.legend( fancybox=True, framealpha=0 )
+        #ax.set_yscale('log')
+        #fig.savefig('dc_analysis.pdf')
+        #plt.close()
 
     @staticmethod
     def plotSpectrumSimulated( c ):
@@ -4541,9 +4975,19 @@ def madCovSqr( data0, data1 ):
 def normFit( data, loc=None, scale=None ):
     return scipy.stats.norm.fit( data, floc=loc, fscale=scale )
 
+def tiles( data, p ):
+    m = np.median(data)
+    if p - 1 == 0: return [m]
+    return tiles(data[data<m], p-1 ) + [m] + tiles(data[data>m], p-1 )
 
-def iqr( data ):
-    return scipy.stats.iqr( data )/1.34897
+def quartiles( data ):
+    q2 = np.median(data)
+    q1 = np.median(data[data<q2])
+    q3 = np.median(data[data>q2])
+    return q1,q2,q3
+
+def iqr( data, scale=1.34897 ):
+    return scipy.stats.iqr( data )/scale
 
 def mad( data, axis = None, scale=1.4826 ):
     if axis == 0:
@@ -5211,10 +5655,13 @@ class ActiveImage(ImageBase):
         ImageBase.__init__(self,image)
         self.width = self.image.shape[1]
         
-        if self.image.shape[0] == 4220:
+        if self.image.shape[0] in [4220, 1055]:
             self.overscanHeight = 90
-        if self.image.shape[0] == 900:
+        elif self.image.shape[0] == 900:
             self.overscanHeight = 70
+        else:
+            print 'unpredicted active shape', self.shape
+            exit(1)
 
         self.dataSection = np.s_[ :-self.overscanHeight,:]
         self.vos = np.s_[-self.overscanHeight:,:]
@@ -5234,7 +5681,7 @@ class SideImage(ImageBase):
         self.width = self.image.shape[1]
         self.trim = 8
         
-        if self.image.shape[1] == 4262:
+        if self.image.shape[1] in [4262, 4350]:
             self.overscanWidth = 150
         elif self.image.shape[1] == 4662:
             self.overscanWidth = 550
@@ -5252,7 +5699,9 @@ class SideImage(ImageBase):
         return OverScanImage( self.image[self.os] )
 
     def darkCurrentMedian( self ):
-        return np.sqrt( np.mean( self.active().h2_medians() - self.overscan().h_medians() ) )
+        var = np.mean( self.active().h2_medians() - self.overscan().h_medians() )
+        if var < 0: return 0
+        return np.sqrt( var )
 
     def biasImageCorrected( self ):
         #print 'side bias', self.active().biasImage2Corrected().image.shape
@@ -5263,11 +5712,11 @@ class FullImage(ImageBase):
         self.has_right = True
         if imageType.startswith('raw'):
             ImageBase.__init__(self, hitSumm._getRawImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
-            if self.width in [ 8540, 9340, 8716]:
+            if self.width in [ 8540, 9340, 8716, ]:
                 self.trim = 8
                 self.side =  np.s_[:, self.trim:self.width/2]
             else:
-                print( 'full shape not predited', self.image.shape )
+                print 'full shape not predited', self.image.shape, self.imageType
                 exit(1)
                 
         elif imageType == 'osi':
