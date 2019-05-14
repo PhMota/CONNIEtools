@@ -289,21 +289,23 @@ def list_subruns( run='all' ):
     else:
         l = glob.glob( '/share/storage2/connie/data_analysis/processed02_data/runs/%03d*/'%int(run) )
     subruns = [ re.search(r'runs/(.+)/', i ).groups()[0] for i in l ]
-    return sorted(runs)
+    return sorted(subruns)
 
 def list_all_runIDs():
     l = glob.glob( '/share/storage2/connie/data/runs/*/runID_*_*_p1.fits.fz' )
     return l
 
 def list_runIDs( *runs ):
-    l = listFITS( *[ '/share/storage2/connie/data/runs/%s/runID_%s_*_p1.fits.fz'%(run,run) for run in runs ] )
-
-    #l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s[A-Z]/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
-    #if len(l) == 0:
-        #l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
-    #if len(l) == 0:
-        #l = listFITS( *[ '/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/scn/images/scn_mbs_osi_runID_%s_*.fits'%run for run in runs ] )
+    l = listFITS( *[ '/share/storage2/connie/data/runs/%s/runID_*_p1.fits.fz'%(run) for run in runs ] )
     return l
+
+def list_runIDs_from_subrun( *runs ):
+    l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_*/scn/merged/scn_*.fits'%(run) for run in runs ] )
+    return l
+
+def list_catalogs_skim1( run ):
+    catalogs = glob.glob('/share/storage2/connie/data_analysis/processed02_data/runs/%s/data_[0-9]*_to_[0-9]*/ext/catalog/catalog_data_*.skim1.root'%run)
+    return catalogs
 
 def listFITS_run( *runs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*%s[A-Z]/data_*/scn/merged/scn_*.fits'%run for run in runs ] )
@@ -375,7 +377,7 @@ def getrunIDFromPath( path ):
 def getrunFromPath( path ):
     if type(path) is list: path=path[0]
     #print( '(from %s'%path, )
-    run = re.search(r'runs/(.+)/', path ).groups()[0]
+    run = re.search(r'runs/(.+?)/', path ).groups()[0]
     #print( 'run %s)'%run, )
     return run
 
@@ -2835,7 +2837,7 @@ class SpectrumWindow(Gtk.Window):
         runsLabel.set_label('runs')
         
         listRuns = Gtk.VBox()
-        for run in listAll_runs()[::-1]:
+        for run in list_subruns()[::-1]:
             runbutton = Gtk.ToggleButton()
             runbutton.set_label( run )
             runbutton.connect( 'toggled', self.ontogglebuttonruns, run )
@@ -2851,7 +2853,7 @@ class SpectrumWindow(Gtk.Window):
         selectionLabel = Gtk.Label()
         selectionLabel.set_label( 'selection' )
         self.selectionEntry = Gtk.Entry()
-        self.selectionEntry.set_text( 'ohdu==2 && E0<50e3' )
+        self.selectionEntry.set_text( 'ohdu==2 && E0<30e3 && E0>500' )
         
         expressionLabel = Gtk.Label()
         expressionLabel.set_label( 'expr' )
@@ -2866,7 +2868,7 @@ class SpectrumWindow(Gtk.Window):
         fitFunctionLabel = Gtk.Label()
         fitFunctionLabel.set_label( 'fit function' )
         self.fitFunctionEntry = Gtk.Entry()
-        self.fitFunctionEntry.set_text( 'lambda x, a, b: np.log( a/x**3 + b/x + 1 )' )
+        self.fitFunctionEntry.set_text( 'lambda x, a, b: np.log( a/x + 1 ) + b' )
         
         self.image = Gtk.Image()
         
@@ -2913,12 +2915,16 @@ class SpectrumWindow(Gtk.Window):
         self.show_all()
 
     def ontogglebuttonruns( self, button, run ):
-        firstRunID = listFITS_run( run )[0]
-        catalog = getAssociatedCatalog( firstRunID )[0]
+        catalogs = list_catalogs_skim1( run )
+        if catalogs == []:
+            print 'no runIDs for run', run
+            button.set_active(False)
+            return
         if button.get_active() == True:
-            self.paths.append( catalog )
+            self.paths.append( catalogs[0] )
         else:
-            self.paths.remove( catalog )
+            self.paths.remove( catalogs[0] )
+        print 'paths', self.paths
         self.pathslabel.set_label( '\n'.join( [ '[%d] %s'%(i,path) for i, path in enumerate(self.paths) ] ) )
         self.show_all()
     
@@ -2934,9 +2940,11 @@ class SpectrumWindow(Gtk.Window):
         data = []
         nRunIDs = []
         for path in self.paths:
+            print 'reading catalog', path
             datum = root_numpy.root2array( path, treename='hitSumm', branches=self.expressionEntry.get_text(), selection=self.selectionEntry.get_text() )
+            print 'len', len(datum)
             data.append( datum )
-            nRunIDs.append( len( listFITS_run( getrunFromPath(path) ) ) )
+            nRunIDs.append( len( list_runIDs_from_subrun( getrunFromPath(path) ) ) )
             if binMin is None: binMin = np.min(datum)
             else: binMin = min(binMin, np.min( datum ) )
             if binMax is None: binMax = np.max(datum)
@@ -2947,19 +2955,24 @@ class SpectrumWindow(Gtk.Window):
             bins = np.arange( binMin, binMax, float(self.binSizeEntry.get_text()) )
             
         for i, (datum, path, nRunID) in enumerate( zip( data, self.paths, nRunIDs ) ):
-            hist, _ = np.histogram( datum, bins=bins )
+            hist = np.histogram( datum, bins=bins )[0]
             hist = hist.astype(float)/nRunID
+            one_count = 1./nRunID
             x = .5*(bins[:-1]+bins[1:])
             median = np.median( hist )
             funcstr = self.fitFunctionEntry.get_text()
             varnames = map( lambda s:s.strip(), funcstr.split(':')[0].split(',')[1:] )
-            func = eval( funcstr )
-            p = scipy.optimize.curve_fit( func, x[hist>1], np.log( hist[hist>1] ) )[0]
-            y = np.exp( func( x, *p ) )
-            label = '%s [%d] '%(getrunFromPath(path),nRunID) + ' '.join( [ '%s:%.2g'%(v,pp) for v,pp in zip(varnames, p) ] )
+            try:
+                func = eval( funcstr )
+                p = scipy.optimize.curve_fit( func, x[hist>one_count], np.log( hist[hist>one_count] ) )[0]
+                print 'p', p
+                y = np.exp( func( x, *p ) )
+                label = '%s [%d] '%(getrunFromPath(path),nRunID) + ' '.join( [ '%s:%.2g'%(v,pp) for v,pp in zip(varnames, p) ] )
+                ax_main.plot( x, y, color='C%d'%i, linestyle='--' )
+                ax_ratio.step( x, hist/y, where='mid', color='C%d'%i )
+            except:
+                label = '%s [%d] '%(getrunFromPath(path),nRunID) + 'fit failed'
             ax_main.step( x, hist, label=label, where='mid', color='C%d'%i )
-            ax_main.plot( x, y, color='C%d'%i, linestyle='--' )
-            ax_ratio.step( x, hist/y, where='mid', color='C%d'%i )
         ax_main.set_yscale( 'log' )
         ax_ratio.set_xlabel( self.expressionEntry.get_text() )
         ax_ratio.set_yscale( 'log' )
