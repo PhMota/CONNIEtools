@@ -2845,6 +2845,7 @@ class SpectrumWindow(Gtk.Window):
 
         scrolledwindow = Gtk.ScrolledWindow()
         scrolledwindow.add_with_viewport( listRuns )
+        scrolledwindow.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         
         runIDPanel = Gtk.VBox()
         runIDPanel.pack_start( runsLabel, False, False, 1 )
@@ -3046,6 +3047,7 @@ class ImageWindow(Gtk.Window):
     def build_foot(self):
         self.pathsLabel = Gtk.Label()
         self.pathsLabel.set_label( 'None' )
+        self.pathsLabel.set_selectable(True)
         self.plotButton = Gtk.Button()
         self.plotButton.set_label('Plot')
         self.plotButton.connect( 'clicked', self.on_plotButton_click )
@@ -3394,34 +3396,40 @@ class ImageWindow(Gtk.Window):
     
 class MonitorWindow(Gtk.Window):
     
-    def __del__(self, widget, msg ):
+    def __del__(self, widget=None, msg=None ):
         self.destroy()
         Gtk.main_quit(widget)
         print 'safely quitting...'
         self.quit = True
-        os.remove( self.tempPath )
+        #os.remove( self.tempPath )
         #self.remove_darkCurrentTable_lock()
+        #self.remove_lock( self.darkCurrentRawTable )
+        #self.remove_lock( self.readoutNoiseRawTable )
         return True
         
     def __init__(self):
-        GObject.threads_init()
+        #GObject.threads_init()
         self.id = time.time()
         print 'id', self.id
-        self.tempPath = '/home/mota/public/gui/monitor_image_%s.png'%self.id
+        self.darkCurrentRawImage = '/home/mota/public/gui/darkCurrentRawImage_%s.png'%self.id
         self.darkCurrentRawTable = '/home/mota/public/gui/darkCurrentRawTable.csv'
+        self.readoutNoiseRawImage = '/home/mota/public/gui/readoutNoiseRawImage_%s.png'%self.id
         self.readoutNoiseRawTable = '/home/mota/public/gui/readoutNoiseRawTable.csv'
-        Gtk.Window.__init__( self, title="Image Viewer [session%s]"%self.id )
+        Gtk.Window.__init__( self, title="Monitor Viewer [session%s]"%self.id )
         self.connect( 'delete-event', self.__del__ )
+        self.maximize()
         self.set_border_width(3)
         self.add( self.build_window() )
         
         self.update = True
-        self.plot_darkCurrentTable()
+        self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
+        self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
         self.show_all()
         self.quit = False
         def loop():
             while 1:
-                self.update_darkCurrentTable()
+                self.update_table(tabletype='darkCurrent')
+                self.update_table(tabletype='readoutNoise')
                 if self.quit: return
         self.start_thread( loop )
 
@@ -3458,41 +3466,84 @@ class MonitorWindow(Gtk.Window):
         return subbox
     
     def build_body(self):
-        self.imageCanvas = Gtk.Image()
-        return self.imageCanvas
+        self.darkCurrentImageCanvas = Gtk.Image()
+        self.readoutNoiseImageCanvas = Gtk.Image()
+        vbox = Gtk.VBox()
+        scroll = Gtk.ScrolledWindow()
+        scroll.add_with_viewport(vbox)
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        vbox.pack_start(self.darkCurrentImageCanvas, True, True, 0)
+        vbox.pack_start(self.readoutNoiseImageCanvas, True, True, 0)
+        return scroll
     
-    def remove_darkCurrentTable_lock(self):
-        os.remove( self.darkCurrentRawTable + '%s.lock'%self.id )
-        print 'lock removed'
+    def remove_lock(self, path ):
+        os.remove( path + '%s.lock'%self.id )
+        #print 'lock removed'
         
-    def remove_readnoiseNoiseTable_lock(self):
-        os.remove( self.readoutNoiseRawTable + '%s.lock'%self.id )
+    def create_lock(self, path):
+        open( path + '%s.lock'%self.id, 'w' )
 
-    def create_darkCurrentTable_lock(self):
-        open( self.darkCurrentRawTable + '%s.lock'%self.id, 'w' )
-
-    def create_readnoiseNoiseTable_lock(self):
-        open( self.readoutNoiseRawTable + '%s.lock'%self.id, 'w' )
-    
-    def is_darkCurrentTable_locked(self):
-        if len(glob.glob(self.darkCurrentRawTable + '*.lock')) == 0: return False
-        print 'locked', self.darkCurrentRawTable
+    def is_locked(self, path ):
+        if len(glob.glob( path + '*.lock')) == 0: return False
+        #print 'locked', path
         return True
 
-    def is_readoutNoise_locked(self):
-        if len(glob.glob(self.readoutNoiseRawTable + '*.lock')) == 0: return False
-        return True
-    
     def start_thread(self, callback):
         self.thread = threading.Thread(target=callback)
         self.thread.start()
         
-    def update_darkCurrentTable(self):
-        self.plot_darkCurrentTable()
-        if self.is_darkCurrentTable_locked(): return
-        self.create_darkCurrentTable_lock()
-        if os.path.exists( self.darkCurrentRawTable ):
-            data = np.genfromtxt( self.darkCurrentRawTable, names=True )
+    #def update_darkCurrentTable(self):
+        #self.plot_darkCurrentTable( self.darkCurrentRawTable, self.darkCurrentRawImage )
+        #if self.is_locked( self.darkCurrentRawTable ): return
+        #self.create_lock( self.darkCurrentRawTable )
+        #if os.path.exists( self.darkCurrentRawTable ):
+            #data = np.genfromtxt( self.darkCurrentRawTable, names=True )
+            #min_runID = data['runID'].min()
+            #max_runID = data['runID'].max()
+            #data = data.tolist()
+            ##print 'read data', data
+        #else:
+            #runID = int(getrunIDFromPath(sorted(list_all_runIDs())[::-1][0]))
+            #data = self.make_entry(runID)
+            #min_runID = data[0][0]
+            #max_runID = min_runID
+            ##print 'min,max', min_runID, max_runID
+        
+        #runIDs = zip(*data)[0]
+        #for runIDpath in sorted(list_all_runIDs())[::-1]:
+            #runID = int(getrunIDFromPath(runIDpath))
+            #if runID > max_runID or runID < min_runID:
+                #data.extend( self.make_entry(runID) )
+                #break
+            #elif not runID in runIDs:
+                #data.extend( self.make_entry(runID) )
+                #break
+        
+        #np.savetxt( self.darkCurrentRawTable, data, header='#runID ohdu darkCurrent', fmt='%d %d %.6f' )
+        #self.remove_lock( self.darkCurrentRawTable )
+        #self.plot_darkCurrentTable( self.darkCurrentRawTable, self.darkCurrentRawImage )
+
+    def update_table(self, tabletype = 'darkCurrent' ):
+        '''
+        computes an entry for the type specified, reads the previous table and appends to it. During its execution the table file is locked to avoid other instances of the code to modify the file
+        '''
+        if tabletype == 'darkCurrent':
+            tablepath = self.darkCurrentRawTable
+            imagepath = self.darkCurrentRawImage
+        elif tabletype == 'readoutNoise':
+            tablepath = self.readoutNoiseRawTable
+            imagepath = self.readoutNoiseRawImage
+        else:
+            print 'tabletype unpredicted', table
+            return
+        self.plot_table( tablepath, imagepath, tabletype )
+        if self.is_locked( tablepath ): 
+            print '!!!', tablepath, 'is locked; will check again at next iteraction'
+            return
+        self.create_lock( tablepath )
+        print 'updating', tabletype,
+        if os.path.exists( tablepath ):
+            data = np.genfromtxt( tablepath, names=True )
             min_runID = data['runID'].min()
             max_runID = data['runID'].max()
             data = data.tolist()
@@ -3507,32 +3558,55 @@ class MonitorWindow(Gtk.Window):
         runIDs = zip(*data)[0]
         for runIDpath in sorted(list_all_runIDs())[::-1]:
             runID = int(getrunIDFromPath(runIDpath))
-            if runID > max_runID or runID < min_runID:
-                data.extend( self.make_entry(runID) )
-                break
-            elif not runID in runIDs:
-                data.extend( self.make_entry(runID) )
+            if runID > max_runID or runID < min_runID or not runID in runIDs:
+                print 'runID', runID, 'computing...',
+                data.extend( self.make_entry(runID, tabletype) )
                 break
         
-        np.savetxt( self.darkCurrentRawTable, data, header='#runID ohdu darkCurrent', fmt='%d %d %.6f' )
-        self.remove_darkCurrentTable_lock()
-        self.plot_darkCurrentTable()
+        np.savetxt( tablepath, data, header='#runID ohdu %s'%tabletype, fmt='%d %d %.6f' )
+        print 'removing lock',
+        self.remove_lock( tablepath )
+        print 'generating plot',
+        self.plot_table( tablepath, imagepath, tabletype )
     
-    def make_entry( self, runID ):
+    def make_entry( self, runID, tabletype='darkCurrent' ):
         entry = []
         for ohdu in self.list_ohdus(runID):
-            entry.append( [runID, ohdu, self.compute_darkCurrent(runID, ohdu)] )
+            if tabletype=='darkCurrent':
+                value = self.compute_darkCurrent(runID, ohdu)
+            elif tabletype=='readoutNoise':
+                value = self.compute_readoutNoise(runID, ohdu)
+            else:
+                print 'table type unpredicted', tabletype
+                exit(0)
+            entry.append( [runID, ohdu, value] )
         return entry
     
     def list_ohdus(self, runID):
+        '''
+        list ohdus present in a raw image associated with the runID
+        '''
         ohdus = hitSumm.list_ohdus(runID)
         return ohdus
         
     def compute_darkCurrent( self, runID, ohdu ):
+        '''
+        opens a raw image of the associated runID and ohdu and returns the dark current based on the mean of the diffrence between the medians of the active and overscan area for each line
+        '''
         return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).darkCurrentEstimate()
+
+    def compute_readoutNoise( self, runID, ohdu ):
+        '''
+        opens a raw image of the associated runID and ohdu and returns the readout noise based on the mean of the mad of each line of the overscan area
+        '''
+        return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).readoutNoiseEstimate()
     
-    def plot_darkCurrentTable( self ):
-        data = np.genfromtxt( self.darkCurrentRawTable, names=True )
+    def plot_table( self, tablepath, figpath, tabletype='darkCurrent' ):
+        '''
+        generate image and associate it with the proper imageCanvas object. The range is set by to rangeEntry
+        '''
+        if not os.path.exists(tablepath): return
+        data = np.genfromtxt( tablepath, names=True )
         
         ohdus = [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
         runIDRange_str = self.runIDRangeEntry.get_text()
@@ -3556,7 +3630,7 @@ class MonitorWindow(Gtk.Window):
         if runIDMax > data['runID'].max(): 
             runIDMax = data['runID'].max()
             self.update = True
-        print 'range', runIDMin, runIDMax
+        #print 'range', runIDMin, runIDMax
         if not self.update: return
     
         if runIDMin > data['runID'].min() and runIDMax < data['runID'].max(): 
@@ -3568,7 +3642,7 @@ class MonitorWindow(Gtk.Window):
         w, h = fig.get_size_inches()
         fig.set_size_inches((2*w,h))
         m = int(np.ceil(np.sqrt(len(ohdus))))
-        print 'number of plots', m
+        #print 'number of plots', m
         if m==0: return
         n = int(np.ceil(float(len(ohdus))/m))
         
@@ -3583,12 +3657,12 @@ class MonitorWindow(Gtk.Window):
         for i, ohdus_range in enumerate(ohdus_ranges):
             for ohdu in ohdus_range:
                 ohduMask = np.all( [runIDMask, data['ohdu']==ohdu], axis=0 )
-                grid[i].plot( data['runID'][ohduMask], data['darkCurrent'][ohduMask], '.', ms=3., label = '%d'%ohdu )
+                grid[i].plot( data['runID'][ohduMask], data[tabletype][ohduMask], '.', ms=3., label = '%d'%ohdu )
 
-            print 'placement', .1+float(m-i)*8./m
+            #print 'placement', .1+float(m-i)*8./m
             #grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., .1+(m-i)*8./m ), loc='upper left' )
             grid[i].grid(True)
-            grid[i].set_ylabel('dark current')
+            grid[i].set_ylabel(tabletype)
 
         grid[-1].set_xlabel('runID')
         plt.setp(grid[-1].get_xticklabels(), visible=True)
@@ -3596,11 +3670,43 @@ class MonitorWindow(Gtk.Window):
             box = grid[i].get_position()
             grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., .9*box.y1+.1 ), loc='upper left' )
 
-        fig.savefig( self.tempPath )
+        fig.savefig( figpath )
         plt.close()
         def finished():
-            self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
+            if tabletype == 'darkCurrent':
+                self.darkCurrentImageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( figpath ) )
+            elif tabletype == 'readoutNoise':
+                self.readoutNoiseImageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( figpath ) )
+            else:
+                print 'table type not expected', tabletype
+                return
         GLib.idle_add( finished )
+
+
+def computeEqs( X, labels ):
+    cov = np.cov( X )
+    eigenW, eigenV = np.linalg.eigh(cov)
+    newAxes = np.dot( eigenV, X )
+    #print len(newAxes), len(newAxes[0])
+    axesOrdered = np.argsort(np.abs(eigenW))
+    #print axesOrdered
+    #print eigenW[0], eigenW[axesOrdered[0]]
+    #print eigenW[-1], eigenW[axesOrdered[-1]]
+    #print np.abs(eigenW).min(), np.abs(eigenW).max()
+    
+    coefs = []
+    variables = []
+    stds = []
+    for n in range(len(X)):
+        axis = axesOrdered[n]
+        c = cov[:,axis]/cov[:,axis].max()
+        args = np.argsort(c)
+        coefs.append( [ c[arg] for arg in args if c[arg] > 1e-3 ] )
+        variables.append( [ labels[arg] for arg in args if c[arg] > 1e-3 ] )
+        stds.append( eigenW[axis] )
+        #eq = [ '%+.6f*%s'%(cov[i,axis]/cov[:,axis].max(), key) for i, key in enumerate(newVars.keys()) if cov[i,axis]/cov[:,axis].max() > 1e-6 ]
+        #print 'eq%s'%n, eq, eigenW[n]
+    return coefs, variables, stds
     
 class Callable:
     @staticmethod
@@ -3623,13 +3729,14 @@ class Callable:
         '''
         find the relation between the parameters of a convoluted poisson-normal distribution and the unbinned estimates by producing random distributions and then computing the principal component analysis to look for correlated variables
         '''
+    
         # elections in eV
         eV_e = 3.745#eV/e
 
         #generate observations
-        samples = 5
+        samples = 6
         min_gain = 500
-        max_gain = 25000
+        max_gain = 2500
         gain_adu_e_list = (max_gain - min_gain) * np.random.random_sample( samples ) + min_gain
         min_lambda = .01
         max_lambda = 2.
@@ -3669,7 +3776,7 @@ class Callable:
                     poisson_norm_rvs = random_pdf_continuous( frozen_pdf, Emin_adu, Emax_adu, N )
                     
                     #sample multiple times the same rvs
-                    for i in range(100):
+                    for i in range(20):
                         sub_norm_rvs = np.random.choice(norm_rvs, int(1e4))
                         sub_poisson_norm_rvs = np.random.choice(poisson_norm_rvs, int(1e4))
                         
@@ -3686,11 +3793,14 @@ class Callable:
                             entry.append( sub_poisson_norm_tiles[n] )
                         #print 'len entry', len(entry)
                         table.append(entry)
+                    print 'len', len(table)
 
         #append observations in file
         if os.path.exists('darkCurrentTraining.csv'):
-            oldtable = np.genfromtxt('darkCurrentTraining.csv')
+            oldtable = np.genfromtxt('darkCurrentTraining.csv', names=True)
+            print oldtable.dtype.names
             print len(oldtable), len(oldtable[0])
+            oldtable = np.array( [ oldtable[name] for name in oldtable.dtype.names ] ).T
             extended = np.concatenate((oldtable,table), axis=0)
             print len(extended), len(extended[0])
             np.savetxt( 'darkCurrentTraining.csv', extended, header=' '.join(header) )
@@ -3700,39 +3810,47 @@ class Callable:
     
     @staticmethod
     def dcAnalysis():
-        if 'g' in kwargs: adu_e = float(kwargs['g'])
-        else: adu_e = 2000
-        if 'sigma' in kwargs: sigma_e = float(kwargs['sigma'])
-        else: sigma_e = 1.8
-        if 'lambda' in kwargs: mu = float(kwargs['lambda'])
-        else: mu = .2
+        print 'read table'
+        table = np.genfromtxt('darkCurrentTraining.csv', names=True )
 
-        sigma_adu = sigma_e*adu_e
+        print len(table)
+        print table.dtype.names
+        print table['lambda']
         
-        frozen_pdf = lambda E, s=sigma_adu, mu=mu, g=adu_e: poisson_gaussian_pdf(E, scale=s, mu=mu, g=g )
-        #rvs
-        norm_rvs = scipy.stats.norm.rvs(scale=sigma_adu, size=N)
-        Emin_adu, Emax_adu = 1.5*norm_rvs.min(), 3*norm_rvs.max()
-        E_adu = np.linspace( Emin_adu, Emax_adu, 100)
-        dE_adu = E_adu[1]-E_adu[0]
-        poisson_norm_rvs = random_pdf_continuous( frozen_pdf, Emin_adu, Emax_adu, N )
-
-        print tiles(norm_rvs,p=1), np.median(norm_rvs)
-        print tiles(norm_rvs,p=2), quartiles(norm_rvs)
-        print tiles(norm_rvs,p=4)
-        print tiles(poisson_norm_rvs,p=4)
+        newVars = {
+            'log(gain_adu_e)': lambda x: np.log(x['gain_adu_e']),
+            'log(lambda)': lambda x: np.log(x['lambda']),
+            #'var': lambda x: x['m2'] - x['mean']**2,
+            #'var_0': lambda x: x['m2_0'] - x['mean_0']**2,
+            'log(Dvar)': lambda x: np.log( np.abs( (x['m2'] - x['mean']**2) - (x['m2_0'] - x['mean_0']**2) )),
+            'log(Dmean)': lambda x: np.log( np.abs( x['mean'] - x['mean_0'] )),
+            }
+        newtable = np.array( [ func(table) for key, func in newVars.items() ] )
+        
+        eqs = computeEqs( newtable, newVars.keys() )
+        for coefs, variables, std in zip(*eqs):
+            print ''.join( [ '%+.4f*%s'%(coefs[i], variables[i]) for i in range(len(coefs)) ] ), std
         return
-        #pdf
-        norm = scipy.stats.norm.pdf(E_adu, scale=sigma_adu)*N
-        poisson_norm = frozen_pdf( E_adu )*N
+    
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        getColumn = lambda s: newtable[ newVars.keys().index(s) ]
+        #ax.scatter( 2.18e-4*getColumn('Dmean') + 2e-6*getColumn('gain_adu_e'), getColumn('Dvar') )
+        #ax.scatter( getColumn('log(Dvar)') + .69*getColumn('log(Dmean)'), .34*getColumn('log(lambda)') )#.515*getColumn('log(gain_adu_e)') )
+        ax.scatter( 2*getColumn('log(Dvar)') - 3*getColumn('log(Dmean)'), getColumn('log(gain_adu_e)') )#.515*getColumn('log(gain_adu_e)') )
+        fig.savefig('dc_analysis.pdf')
+        return
+    
+    
+        for entry in table:
+            #first estimate with mu=<E> overscan
+            DeltaMean = entry['mean'] - entry['mean_0'] #ADU
+            DeltaVar = entry['m2'] - entry['mean']**2 - (entry['m2_0'] - entry['mean_0']**2) #ADU**2
+            l = DeltaMean**2/DeltaVar
+            g = DeltaVar**2/DeltaMean**3 # ADU**4/ADU**3 = ADU
+            print '1st estimate', entry['lambda'], entry['gain_adu_e'], l, g #ADU/ADU
         
-        ##first estimate with mu=<E> overscan
-        #DeltaMean = np.mean(poisson_norm_rvs) - np.mean(norm_rvs) #ADU
-        #DeltaVar = np.var(poisson_norm_rvs) - np.var(norm_rvs) #ADU**2
-        #l = DeltaMean**2/DeltaVar
-        #g = DeltaVar**2/DeltaMean**3 # ADU**4/ADU**3 = ADU
-        #print '1st estimate', l, g, np.sqrt(np.var(norm_rvs))/g #ADU/ADU
-
+        
         ##first estimate with mu=<E> overscan, robust
         #DeltaMean = np.median(poisson_norm_rvs) - np.median(norm_rvs) #ADU
         #DeltaVar = mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 #ADU**2
@@ -4487,7 +4605,7 @@ class hitSumm:
 
     @staticmethod
     def _getOSIImage_adu( runID, ohdu ):
-        print 'runID', runID, 'ohdu', ohdu,
+        #print 'runID', runID, 'ohdu', ohdu,
         rawFiles = get_osi_path( int(runID) )
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = np.concatenate( [ ohdus(astropy.io.fits.open(rawFile)) for rawFile in rawFiles[::-1] ], axis=0 )
@@ -4495,7 +4613,7 @@ class hitSumm:
 
     @staticmethod
     def _getMBSImage_adu( runID, ohdu ):
-        print 'runID', runID, 'ohdu', ohdu,
+        #print 'runID', runID, 'ohdu', ohdu,
         rawFiles = get_mbs_path( int(runID) )
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = np.concatenate( [ ohdus(astropy.io.fits.open(rawFile)) for rawFile in rawFiles[::-1] ], axis=0 )
@@ -4509,7 +4627,7 @@ class hitSumm:
 
     @staticmethod
     def _getRawImage_adu( runID, ohdu ):
-        print 'runID', runID, 'ohdu', ohdu,
+        #print 'runID', runID, 'ohdu', ohdu,
         rawFiles = get_raw_path( int(runID) )
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = np.concatenate( [ ohdus(astropy.io.fits.open(rawFile)) for rawFile in rawFiles[::-1] ], axis=0 )
@@ -4518,7 +4636,7 @@ class hitSumm:
     def getRawImage_adu( self, runID=None, save = False, ohdu=None ):
         if ohdu is None: ohdu = self.config.ohdu
         if runID is None: runID = self.config.runID
-        print 'runID', runID, 'ohdu', ohdu,
+        #print 'runID', runID, 'ohdu', ohdu,
         path = self.config.outPath + self.raw_id + str(runID) + self.image_ext
         if os.path.exists( path ):
             return readImage( path )
@@ -4527,7 +4645,7 @@ class hitSumm:
     
     @staticmethod
     def _getSCNImage_adu( runID, ohdu ):
-        print 'runID', runID, 'ohdu', ohdu,
+        #print 'runID', runID, 'ohdu', ohdu,
         scnFile = get_scn_path( int(runID) )[0]
         ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
         image = ohdus(astropy.io.fits.open(scnFile))
@@ -4536,7 +4654,7 @@ class hitSumm:
     def getSCNImage_adu( self, runID=None, ohdu=None ):
         if runID is None: runID = self.config.runID
         if ohdu is None: ohdu = self.config.ohdu
-        print 'runID', runID, 'ohdu', ohdu,
+        #print 'runID', runID, 'ohdu', ohdu,
         path = self.config.outPath + self.scn_id + str(runID) + self.image_ext
         if os.path.exists( path ):
             return readImage( path )
@@ -5004,9 +5122,9 @@ def iqr( data, scale=1.34897 ):
 
 def mad( data, axis = None, scale=1.4826 ):
     if axis == 0:
-        median = np.median( data, axis = axis )[None,:]
+        median = np.median( data, axis = 0 )[None,:]
     elif axis == 1:
-        median = np.median( data, axis = axis )[:,None]
+        median = np.median( data, axis = 1 )[:,None]
     else:
         median = np.median( data )
     return scale * np.median( np.abs( data - median ), axis = axis )
@@ -5048,6 +5166,9 @@ class ImageBase(ArrayExtension):
     def h_medians( self ): return self.median( axis = 1 )
     def h2_medians( self ): return np.median( self.image[:,self.width/2:], axis = 1 )
     def v_medians( self ): return self.median( axis = 0 )
+
+    def h_mads( self ): return self.mad( axis = 1 )
+    def h2_mads( self ): return mad( self.image[:,self.width/2:], axis = 1 )
     
     def biasImage( self ):
         return np.median( self.image, axis=1 )[:,None] + np.median( self.image, axis=0 )[None,:]
@@ -5668,7 +5789,7 @@ class ActiveImage(ImageBase):
         ImageBase.__init__(self,image)
         self.width = self.image.shape[1]
         
-        if self.image.shape[0] in [4220, 1055]:
+        if self.image.shape[0] in [4220, 1055, 3165]:
             self.overscanHeight = 90
         elif self.image.shape[0] == 900:
             self.overscanHeight = 70
@@ -5711,6 +5832,11 @@ class SideImage(ImageBase):
     def overscan( self ):
         return OverScanImage( self.image[self.os] )
 
+    def readoutNoiseMAD( self ):
+        image = self.overscan().image - self.overscan().v_medians()[None:]
+        std = np.mean( mad( image, axis=1 ) )
+        return std
+    
     def darkCurrentMedian( self ):
         var = np.mean( self.active().h2_medians() - self.overscan().h_medians() )
         if var < 0: return 0
@@ -5795,10 +5921,11 @@ class FullImage(ImageBase):
         return self
     
     def darkCurrentEstimate( self ):
-        #print 'darkCurrent', np.sqrt( np.median( self.image[:, self.width-4*self.overscanWidth:self.width-self.overscanWidth] ) - np.median( self.image[self.overscan] ) )
-        #return np.sqrt( np.mean( np.median( self.image[:, self.width-4*self.overscanWidth:self.width-self.overscanWidth], axis=1 ) - np.median( self.image[self.overscan], axis=1 ) ) )
         return self.left().darkCurrentMedian()
 
+    def readoutNoiseEstimate( self ):
+        return self.left().readoutNoiseMAD()
+    
     def darkCurrentEstimate2( self, medianVoid = None, sigmaVoid=None, sigmaBase = None ):
         def eq( l, mu, sigma, sigma2 ):
             return l**4 + l**3 + 2*mu*l**2 + mu**2 + sigma**2 - sigma2**2
