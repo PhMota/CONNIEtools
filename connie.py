@@ -2854,7 +2854,7 @@ class SpectrumWindow(Gtk.Window):
         selectionLabel = Gtk.Label()
         selectionLabel.set_label( 'selection' )
         self.selectionEntry = Gtk.Entry()
-        self.selectionEntry.set_text( 'ohdu==2 && E0<30e3 && E0>500' )
+        self.selectionEntry.set_text( 'ohdu==3 && E0<22e3 && E0>700' )
         
         expressionLabel = Gtk.Label()
         expressionLabel.set_label( 'expr' )
@@ -2869,7 +2869,7 @@ class SpectrumWindow(Gtk.Window):
         fitFunctionLabel = Gtk.Label()
         fitFunctionLabel.set_label( 'fit function' )
         self.fitFunctionEntry = Gtk.Entry()
-        self.fitFunctionEntry.set_text( 'lambda x, a, b: np.log( a/x + 1 ) + b' )
+        self.fitFunctionEntry.set_text( 'lambda x, a, b, c: np.log( a/(x**c) + b )' )
         
         self.image = Gtk.Image()
         
@@ -2970,13 +2970,24 @@ class SpectrumWindow(Gtk.Window):
                 y = np.exp( func( x, *p ) )
                 label = '%s [%d] '%(getrunFromPath(path),nRunID) + ' '.join( [ '%s:%.2g'%(v,pp) for v,pp in zip(varnames, p) ] )
                 ax_main.plot( x, y, color='C%d'%i, linestyle='--' )
-                ax_ratio.step( x, hist/y, where='mid', color='C%d'%i )
+                dy = hist-y
+                dy[dy<0] = 0
+                ax_ratio.step( x, dy, where='mid', color='C%d'%i )
+                #try:
+                    #peakFunc = lambda x, a, b, c, d, e: b*scipy.stats.norm.pdf(x,loc=abs(a)*1.74+c,scale=15*d) + b*scipy.stats.norm.pdf(x,loc=abs(a)*8.048+c,scale=15*d)+ b*scipy.stats.norm.pdf(x,loc=abs(a)*8.905+c,scale=15*d) + e
+                    #pg0 = [1700.,10,10,10]
+                    #pg = scipy.optimize.curve_fit( peakFunc, x[hist>one_count], hist[hist>one_count]/y, p0=pg0 )[0]
+                    #print 'pg', pg
+                    #y = peakFunc(x,*pg)
+                    #ax_ratio.plot( x[y>0], y[y>0], color='C%d'%i, linestyle=':' )
+                #except:
+                    #pass
             except:
                 label = '%s [%d] '%(getrunFromPath(path),nRunID) + 'fit failed'
             ax_main.step( x, hist, label=label, where='mid', color='C%d'%i )
         ax_main.set_yscale( 'log' )
         ax_ratio.set_xlabel( self.expressionEntry.get_text() )
-        ax_ratio.set_yscale( 'log' )
+        #ax_ratio.set_yscale( 'log' )
         ax_main.legend( fancybox=True, framealpha=0 )
         fig.savefig( self.tempPath )
         plt.close()
@@ -3050,9 +3061,10 @@ class ImageWindow(Gtk.Window):
         self.pathsLabel.set_selectable(True)
         self.plotButton = Gtk.Button()
         self.plotButton.set_label('Plot')
+        #self.plotButton.modify_fg( Gtk.StateType.NORMAL, Gtk.Gdk.color_parse("blue") )
         self.plotButton.connect( 'clicked', self.on_plotButton_click )
         subbox = Gtk.VBox()
-        subbox.pack_end(self.plotButton, False, False, 0 )
+        subbox.pack_end( self.plotButton, False, False, 0 )
         foot = Gtk.HBox()
         foot.pack_end( subbox, False, False, 1 )
         foot.pack_start( self.pathsLabel, True, True, 1 )
@@ -3334,40 +3346,47 @@ class ImageWindow(Gtk.Window):
         def addStats( label, hist, data ):
             mu = data.median()
             sigma = np.average( (mid(ebins)-mu)**2, weights = hist )**(1./2) if np.sum(hist) > 0  else 0
-            if len(data.shape) == 2: stats.append( '\n%s %s,%s'%(label,data.shape[0],data.shape[1]) )
-            else: stats.append( '\n%s:'%label )
+            if len(data.shape) == 2: stats.append( '%s %s,%s'%(label,data.shape[0],data.shape[1]) )
+            else: stats.append( '%s, %d'%(label,data.size) )
 
             stats.append( 'median %.4g'%mu )
-            stats.append( 'mad %.4g'%data.mad() )
+            stats.append( 'mad %.5g'%data.mad() )
 
         zoom_ax = fig.add_axes([.1+.6*w1,.1+.6*h1,.2,.2], sharex=y_hist)
 
-        activeSection = image.left().active()
+        activeSection = image.left().active().data()
         hist_L = zoom_ax.hist( activeSection.flatten(), bins=ebins, histtype='step', color='b', label='L' )[0]
-        addStats( 'Left AC', hist_L, activeSection )
+        addStats( '#left AC', hist_L, activeSection )
         
         overscanSection = image.left().overscan()
         hist_osL = zoom_ax.hist( overscanSection.flatten(), bins=ebins, histtype='step', color='r', label='oL' )[0]
-        addStats( 'Left OS', hist_osL, overscanSection )
+        addStats( '#left OS', hist_osL, overscanSection )
+
+        vOverscanSection = image.left().active().verticalOverScan()
+        hist_osL = zoom_ax.hist( vOverscanSection.flatten(), bins=ebins, histtype='step', color='m', label='voL' )[0]
+        addStats( '#left vOS', hist_osL, vOverscanSection )
         
         if self.imageType.startswith('raw') or self.imageType == 'osi' or self.imageType == 'mbs':
             rightSection = image.right()
             hist_R = zoom_ax.hist( rightSection.flatten(), bins=ebins, histtype='step', color='g', label='R' )[0]
-            addStats( 'Right', hist_R, rightSection )
+            addStats( '#right', hist_R, rightSection )
         if section == True:
             hist_section = zoom_ax.hist( imageSection.flatten(), bins=ebins, histtype='step', color='c', label='sec' )[0]
-            addStats( 'Section', hist_section, imageSection )
+            addStats( '#section', hist_section, imageSection )
         
         void_image = image.void( thr=15 )
         if void_image is not None:
             hist_void = zoom_ax.hist( void_image.flatten(), bins=ebins, histtype='step', color='y', label='void' )[0]
-            addStats( 'Void', hist_void, void_image )
+            addStats( '#void', hist_void, void_image )
         stats.append( 'dc %.4g'%image.darkCurrentEstimate() )
         
-        if self.imageType == 'scn' or self.imageType == 'scn*' and void_image is not None:
-            stats.append( 'dc2 %.4g'%image.darkCurrentEstimate2() )
-            stats.append( 'dc2* %.4g'%image.darkCurrentEstimate2( sigmaVoid=void_image.mad() ) )
-            stats.append( 'dc2 %.4g'%image.darkCurrentEstimate2( medianVoid=void_image.median(), sigmaVoid=void_image.mad() ) )
+        #if self.imageType == 'scn' or self.imageType == 'scn*' and void_image is not None:
+        g, lamb, s = image.darkCurrentEstimate2()
+        stats.append( 'gain %.4f'%g )
+        stats.append( 'lambda %.4f'%lamb )
+        stats.append( 'sigma %.4f'%s )
+            #stats.append( 'dc2* %.4g'%image.darkCurrentEstimate2( sigmaVoid=void_image.mad() ) )
+            #stats.append( 'dc2 %.4g'%image.darkCurrentEstimate2( medianVoid=void_image.median(), sigmaVoid=void_image.mad() ) )
 
         plt.setp(x_hist.get_xticklabels(), visible=False)
         plt.setp(y_hist.get_yticklabels(), visible=False)
@@ -3380,7 +3399,7 @@ class ImageWindow(Gtk.Window):
         zoom_ax.grid( True )
 
         #fig.subplots_adjust(hspace=0, wspace=0)
-        self.stats.set_text( '\n'.join(stats) + '\n' + '='*len('Statiscs') + '\n' + self.stats.get_text()  )
+        self.stats.set_text( '\n'.join(stats) + '\n' + '='*len('Statiscs') + '\nvoid' + self.stats.get_text()  )
 
         fig.savefig( self.tempPath, bbox_inches='tight' )
         plt.close()
@@ -3450,6 +3469,7 @@ class MonitorWindow(Gtk.Window):
         self.runIDRangeEntry = Gtk.Entry()
         self.runIDRangeEntry.set_text('auto:auto')
         self.runIDRangeEntry.set_width_chars(len('auto:auto'))
+        self.runIDRangeEntry.connect( 'activate', self.on_runIDRangeEntry_activate )
         subbox.pack_start(label, True, True, 1 )
         subbox.pack_start(runIDLabel, False, False, 1 )
         subbox.pack_start(self.runIDRangeEntry, False, False, 1 )
@@ -3523,6 +3543,11 @@ class MonitorWindow(Gtk.Window):
         #self.remove_lock( self.darkCurrentRawTable )
         #self.plot_darkCurrentTable( self.darkCurrentRawTable, self.darkCurrentRawImage )
 
+    def on_runIDRangeEntry_activate( self, entry ):
+        self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
+        self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
+        return
+        
     def update_table(self, tabletype = 'darkCurrent' ):
         '''
         computes an entry for the type specified, reads the previous table and appends to it. During its execution the table file is locked to avoid other instances of the code to modify the file
@@ -3605,6 +3630,7 @@ class MonitorWindow(Gtk.Window):
         '''
         generate image and associate it with the proper imageCanvas object. The range is set by to rangeEntry
         '''
+        
         if not os.path.exists(tablepath): return
         data = np.genfromtxt( tablepath, names=True )
         
@@ -3641,10 +3667,11 @@ class MonitorWindow(Gtk.Window):
         fig = plt.figure()
         w, h = fig.get_size_inches()
         fig.set_size_inches((2*w,h))
-        m = int(np.ceil(np.sqrt(len(ohdus))))
+        #m = int(np.ceil(np.sqrt(len(ohdus))))
+        m = int(np.floor( np.sqrt(float(len(ohdus))) ))
+        n = float(len(ohdus))/m
         #print 'number of plots', m
         if m==0: return
-        n = int(np.ceil(float(len(ohdus))/m))
         
         grid = []
         ohdus_ranges = []
@@ -3652,7 +3679,7 @@ class MonitorWindow(Gtk.Window):
             share = None if grid == [] else grid[0]
             grid.append( fig.add_axes([ .1, .1+(m-i-1)*.8/m, .8, .8/m ], sharex=share, sharey=share ))
             plt.setp(grid[i].get_xticklabels(), visible=False)
-            ohdus_ranges.append( ohdus[ i*n : (i+1)*n ] )
+            ohdus_ranges.append( ohdus[ int(i*n) : int( (i+1)*n ) ] )
 
         for i, ohdus_range in enumerate(ohdus_ranges):
             for ohdu in ohdus_range:
@@ -3668,7 +3695,7 @@ class MonitorWindow(Gtk.Window):
         plt.setp(grid[-1].get_xticklabels(), visible=True)
         for i in range(m):
             box = grid[i].get_position()
-            grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., .9*box.y1+.1 ), loc='upper left' )
+            grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., 1. ), loc='upper left' )
 
         fig.savefig( figpath )
         plt.close()
@@ -3685,28 +3712,45 @@ class MonitorWindow(Gtk.Window):
 
 def computeEqs( X, labels ):
     cov = np.cov( X )
-    eigenW, eigenV = np.linalg.eigh(cov)
-    newAxes = np.dot( eigenV, X )
-    #print len(newAxes), len(newAxes[0])
+    eigenW, eigenV = np.linalg.eigh( cov )
+    observations_in_newAxes = np.dot( eigenV, X )
+    print 'eigenV', eigenV.shape
+    print 'newAxes', Observations_in_newAxes.shape
+    
+   #print len(newAxes), len(newAxes[0])
     axesOrdered = np.argsort(np.abs(eigenW))
     #print axesOrdered
     #print eigenW[0], eigenW[axesOrdered[0]]
     #print eigenW[-1], eigenW[axesOrdered[-1]]
     #print np.abs(eigenW).min(), np.abs(eigenW).max()
-    
+    newAxes = []
+    newObservations = []
+    for n in range(axesOrdered):
+        axis = axesOrdered[n]
+        newAxes = [ eigenV[:,axis] ]
+        #observationsNewAxes = [ obserservation_in_newAxes[] ]
+ 
+ 
     coefs = []
     variables = []
     stds = []
+    eqlabels = []
     for n in range(len(X)):
         axis = axesOrdered[n]
-        c = cov[:,axis]/cov[:,axis].max()
-        args = np.argsort(c)
-        coefs.append( [ c[arg] for arg in args if c[arg] > 1e-3 ] )
-        variables.append( [ labels[arg] for arg in args if c[arg] > 1e-3 ] )
+        eqlabels.append(labels[axis])
+        #c = eigenV[:,axis]/np.abs(eigenV[:,axis]).max()
+        args = np.argsort( eigenV[:,axis] )
+        print 'args', args
+        coefs.append( [ eigenV[arg,axis] for arg in args ] ) # if abs(eigenV[arg,axis]) > 1e-3
+        variables.append( [ labels[arg] for arg in args ] ) # if abs(eigenV[arg,axis]) > 1e-3
         stds.append( eigenW[axis] )
         #eq = [ '%+.6f*%s'%(cov[i,axis]/cov[:,axis].max(), key) for i, key in enumerate(newVars.keys()) if cov[i,axis]/cov[:,axis].max() > 1e-6 ]
         #print 'eq%s'%n, eq, eigenW[n]
-    return coefs, variables, stds
+    print 'coefs', coefs
+    print variables
+    print eqlabels
+    print stds
+    return (coefs, variables, eqlabels, stds), observations_in_newAxes, newAxes, axisDispersions
     
 class Callable:
     @staticmethod
@@ -3810,6 +3854,24 @@ class Callable:
     
     @staticmethod
     def dcAnalysis():
+        
+        table = []
+        a = np.random.random_sample(100)
+        for a_ in a:
+            x = np.random.random_sample(100)
+            y = a*x
+            for x_, y_ in zip(x,y):
+                table.append([np.log(a_), np.log(x_), np.log(y_)])
+        table = np.array(table).T
+        print table.shape
+        eqs = computeEqs( table, ['loga','logx','logy'] )
+        for coefs, variables, eqlabel, std in zip(*eqs):
+            #print ''.join( [ '%+.4f*%s'%(coefs[i], variables[i]) for i in range(len(coefs)) ] ), std
+            print ''.join( [ '%+.4f*%s'%(coefs[i], variables[i]) for i in range(len(coefs)) ] ), '= %+.4f*%s'%(std,eqlabel)
+        return
+        
+        
+        
         print 'read table'
         table = np.genfromtxt('darkCurrentTraining.csv', names=True )
 
@@ -5143,7 +5205,9 @@ class ArrayExtension:
 
     def mean(self, axis=None): return np.mean( self.array, axis=axis )
 
-    def median(self, axis=None): return np.median( self.array, axis=axis )
+    def median_half(self, axis=None): return np.median( self.array[self.shape[0]/2:,:], axis = axis )
+
+    def mad_half(self, axis=None): return mad( self.array[self.shape[0]/2:,:], axis=axis )
 
     def std(self, axis=None): return np.std( self.array, axis=axis )
 
@@ -5774,7 +5838,7 @@ class DataImage(ImageBase):
         
     def void( self, thr=15 ):
         clusters = scipy.ndimage.label( self.image >= 4*thr, structure=[[0,1,0],[1,1,1],[0,1,0]] )[0]
-        print 'void shape', clusters.shape
+        print 'clusters shape', clusters.shape
         distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
         #print distance_from_thr.shape
         x, y = np.unravel_index( np.argmax( distance_from_thr ), self.shape )
@@ -5804,7 +5868,7 @@ class ActiveImage(ImageBase):
         return DataImage( self.image[self.dataSection] )
 
     def verticalOverScan( self ):
-        return VerticalOverScanImage( self.image[self.vos] )
+        return ImageBase( self.image[self.vos] )
 
     def median2( self, axis=1 ):
         return np.median( self.image[:,-self.width/2:], axis=axis )
@@ -5905,12 +5969,15 @@ class FullImage(ImageBase):
     
     def overscan( self ):
         return self.left().overscan()
+    
+    def verticalOverScan(self):
+        return self.left().active().verticalOverScan()
 
     def data( self ):
-        return self.active().data()
+        return self.left().active().data()
     
     def void( self, thr=15 ):
-        return self.data().void(thr)
+        return self.left().active().data().void(thr)
 
     def part(self, i):
         return Image( self.image[i*1055:(i+1)*1055,:] )
@@ -5927,14 +5994,15 @@ class FullImage(ImageBase):
         return self.left().readoutNoiseMAD()
     
     def darkCurrentEstimate2( self, medianVoid = None, sigmaVoid=None, sigmaBase = None ):
-        def eq( l, mu, sigma, sigma2 ):
-            return l**4 + l**3 + 2*mu*l**2 + mu**2 + sigma**2 - sigma2**2
-        def deq( l, mu, sigma, sigma2 ):
-            return 4*l**3 + 3*l**2 + 4*mu*l
-        if sigmaVoid is None: sigmaVoid = self.data().mad()
-        if medianVoid is None: medianVoid = self.data().median()
-        if sigmaBase is None: sigmaBase = self.overscan().mad()
-        return scipy.optimize.newton( eq, 1., fprime=deq, args=( medianVoid, sigmaBase, sigmaVoid ) )
+        #if sigmaVoid is None: sigmaVoid = self.data().mad_half()
+        #if medianVoid is None: medianVoid = self.data().median_half()
+        #if sigmaBase is None: sigmaBase = self.overscan().mad()
+        med = self.data().median_half() - self.overscan().median()
+        Var = self.data().mad_half()**2 - self.overscan().mad()**2
+        lamb = med**2/Var #no unit
+        gain = Var**2/med**3 #ADU
+        sigma = self.overscan().mad()/gain #no unit
+        return gain, lamb, sigma
     
 
 class Plot:
