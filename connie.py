@@ -16,17 +16,23 @@ import scipy.optimize
 
 from collections import OrderedDict
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 #matplotlib.use('qt4agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib import patches, colors
 from mpl_toolkits.axes_grid1 import make_axes_locatable, ImageGrid
+#from matplotlib.backends.backend_gtk3agg import (FigureCanvasGTK3Agg as FigureCanvas)
+from matplotlib.backends.backend_gtk3cairo import (FigureCanvasGTK3Cairo as FigureCanvas)
+from matplotlib.backends.backend_gtk3 import (NavigationToolbar2GTK3 as NavigationToolbar)
+from matplotlib.figure import Figure
+import matplotlib.ticker as ticker        
 
 from functools import partial
 
 import glob
 import os
+import shutil
 import sys
 import re
 import copy
@@ -40,7 +46,7 @@ import traceback
 import json
 
 import gi
-gi.require_version('Gtk', '2.0')
+gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GdkPixbuf, GObject, GLib
 import threading
 
@@ -270,16 +276,84 @@ def str_with_err(value, error):
 folder = '/share/storage2/connie/data_analysis/processed02_data/runs/029*/data_*/scn/merged/*'
 folder2 = '/share/storage2/connie/data_analysis/processed02_data/runs/009*/data_*/scn/merged/*'
 
+class DataPath:
+    connie_folder = '/share/storage2/connie/'
+    run_pattern = r'/runs/([0-9]+?)/'
+    runID_pattern = r'/runID_([0-9]+?)_([0-9]+?)_.*_p([0-9]).fits.fz'
+    
+    
+    @classmethod
+    def parse_run(cls, run):
+        if run is None: return '*'
+        if type(run) is int: return '%03d'%run
+        return run
+    
+    @classmethod
+    def run_folder(cls, run):
+        return cls.connie_folder+'data/runs/%s/'%( cls.parse_run(run) )
+    
+    @classmethod
+    def parse_runID(cls, runID):
+        if runID is None: return '*'
+        if type(runID) is int: return '%05d'%runID
+        return runID
+    
+    @classmethod
+    def raw_pattern( cls, run, runID, part ): 
+        return cls.run_folder(run)+'runID_%s_%s_*_p%s.fits.fz'%( cls.parse_run(run), cls.parse_runID(runID), part )
+    
+    @classmethod
+    def runPath(cls, run=None):
+        if run is None: return sorted( glob.glob( cls.run_folder('*') ) )
+        if type(run) is int: return glob.glob( cls.run_folder(run) )
+        return map( cls.runPaths, run )
+    
+    @classmethod
+    def run(cls, path=None, runID=None):
+        if path is None and runID is None: return cls.run(cls.runPath())
+        if type(path) is str: return int( re.search( cls.run_pattern, path ).groups()[0] )
+        if type(path) is list: return map( cls.run, path )
+        if type(runID) is str: return int( re.search( cls.runID_pattern, runID ).groups()[0] )
+        if type(runID) is int: return cls.run( path=cls.runIDPath(runID=runID)[0] )
+        if type(runID) is list: return map( run, cls.runIDPath(runID) )
+        if type(runID) is tuple: return sorted(lits(set(cls.run(list(runID)))))
+
+    @classmethod
+    def runIDPath(cls, runID=None, run=None, part='*'):
+        if runID is None and run is None:  return sorted( glob.glob( cls.raw_pattern('*','*',part) ) )
+        if type(runID) is int: return sorted( glob.glob( cls.raw_pattern('*',runID,part) ) )
+        if type(runID) is list: return map( cls.runIDPath, runID )
+        if type(run) is int: return sorted( glob.glob( cls.raw_pattern(run,'*',part) ) )
+        if type(run) is list: return map( lambda run: cls.runIDPath(run=run), run )
+    
+    @classmethod
+    def runID(cls, path=None, run=None, part='*'):
+        if path is None and run is None: return cls.runID(cls.runIDPath(part='1'))
+        if type(path) is str: return int( re.search( cls.runID_pattern, path ).groups()[1] )
+        if type(path) is list: return map( cls.runID, path )
+        if type(run) is int: return cls.runID(path=cls.runIDPath(run=run, part='1'))
+        if type(run) is list: return map( lambda run: cls.runID(run=run), run )
+        if type(run) is tuple: return [ item for line in cls.runID(run=list(run)) for item in line ]
+        
+    @staticmethod
+    def test():
+        print DataPath.parse_run(None)
+        print DataPath.run()
+        paths = DataPath.runPath()
+        print paths
+        #print DataPath.run( DataPath.runPath( DataPath.run(paths)[-1] ) )
+        print DataPath.runID(run=[42,43])
+        print DataPath.runID(run=(42,43))
+
+#DataPath.test()
+#exit(0)
+
 def listFITS( *patterns ):
     '''
     list all files that match the list of patterns given
     '''
     return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
 
-def list_runs():
-    l = glob.glob( '/share/storage2/connie/data/runs/*/' )
-    runs = [ re.search(r'runs/(.+)/', i ).groups()[0] for i in l ]
-    return sorted(runs)
 
 #/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/runs/*/
 def list_subruns( run='all' ):
@@ -324,14 +398,16 @@ def get_raw_path( *runIDs ):
     return l
 
 def listrunID_run( *runs ):
-    l = listFITS_run( runs )
+    l = list_runIDs( runs )
+    
     #print( '\n'.join(l) )
     return map( getrunIDFromPath, l )
 
-def listrunID_run( *runs ):
-    l = listFITS_run( runs )
-    #print( '\n'.join(l) )
-    return map( getrunIDFromPath, l )
+def getrunIDBounds_from_run( run ):
+    runIDs = map( int, listrunID_run( run ) )
+    if len(runIDs) == 0: return None
+    #print runIDs, run
+    return (min(runIDs), max(runIDs))
 
 def get_scn_path( *runIDs ):
     l = listFITS( *[ '/share/storage2/connie/data_analysis/processed02_data/runs/*/data_*/scn/merged/scn_*runID_*_%05d_*.fits'%runID for runID in runIDs ] )
@@ -373,6 +449,12 @@ def listremovedFITS_runID( *runIDs, **kwargs ):
 
 def getrunIDFromPath( path ):
     return re.search(r'runID_[0-9]+_([0-9]+)', os.path.basename( path )).groups()[0]
+
+def getrunFromRunID( runID ):
+    return getrunFromPath( get_raw_path(runID) )
+
+def getsubrunFromRunID( runID ):
+    return getrunFromPath( get_scn_path(runID) )
 
 def getrunFromPath( path ):
     if type(path) is list: path=path[0]
@@ -2814,9 +2896,9 @@ class utils:
     
 class SpectrumWindow(Gtk.Window):
 
-    def __del__(self):
-        os.remove(self.tempPath)
-        Gtk.Window.__del__(self)
+    #def __del__(self):
+        #os.remove(self.tempPath)
+        #Gtk.Window.__del__(self)
         
     def __init__(self):
         self.id = time.time()
@@ -2831,7 +2913,7 @@ class SpectrumWindow(Gtk.Window):
 
         drawspectrumbutton = Gtk.Button(use_underline=True)
         drawspectrumbutton.set_label('_spectrum')
-        drawspectrumbutton.connect( 'clicked', self.onspectrumclick )
+        drawspectrumbutton.connect( 'clicked', self.on_spectrum_click )
         
         runsLabel = Gtk.Label()
         runsLabel.set_label('runs')
@@ -2871,7 +2953,12 @@ class SpectrumWindow(Gtk.Window):
         self.fitFunctionEntry = Gtk.Entry()
         self.fitFunctionEntry.set_text( 'lambda x, a, b, c: np.log( a/(x**c) + b )' )
         
-        self.image = Gtk.Image()
+        self.imageBox = Gtk.VBox()
+        #self.image = Gtk.Image()
+        #self.imageBox.pack_start(self.image, True,True,0)
+        canvas, toolbar = self.build_figure()
+        self.imageBox.pack_start(canvas, True, True, 0)
+        #self.imageBox.pack_start(toolbar, False, False, 0)
         
         firstLine = Gtk.HBox()
         firstLine.pack_start(selectionLabel, False, False, 1)
@@ -2892,10 +2979,19 @@ class SpectrumWindow(Gtk.Window):
         optionsPanel.pack_start(firstLine, True, True, 1)
         optionsPanel.pack_start(secondLine, True, True, 1)
         optionsPanel.pack_start(thirdLine, True, True, 1)
-
+        
+        self.outputPanel = Gtk.Label()
+        self.outputPanel.set_label('outputPanel')
+        self.outputPanel.set_justify(Gtk.Justification.LEFT)
+        box = Gtk.HBox()
+        box.pack_start(self.outputPanel, False, False, 0)
+ 
         imagePanel = Gtk.VBox()
-        imagePanel.pack_start( optionsPanel, False, False, 1 )
-        imagePanel.pack_start( self.image, True, True, 1 )
+        scroll = Gtk.ScrolledWindow()
+        scroll.add_with_viewport(self.imageBox)
+        imagePanel.pack_start( optionsPanel, False, False, 0 )
+        imagePanel.pack_start( box, False, True, 0 )
+        imagePanel.pack_start( scroll, True, True, 0 )
         
         body = Gtk.HBox()
         body.pack_start( runIDPanel, False, False, 0 )
@@ -2909,12 +3005,24 @@ class SpectrumWindow(Gtk.Window):
         document.pack_start( body, True, True, 3 )
         document.pack_start( footer, False, False, 3 )
         
+        #self.append_outputPanel('update')
         self.add( document )
         self.maximize()
         self.connect( 'destroy', Gtk.main_quit )
         #self.connect( 'key_press_event', self.onkeypressevent )
         self.show_all()
 
+    #def update_outputPanel(self):
+        #text = []
+        #text.append( 'catalogs:\n' + '\n'.join( self.paths ) )
+        #self.outputPanel.set_label( '\n'.join(text) )
+        #self.show_all()
+        
+    def append_outputPanel(self, text):
+        self.outputPanel.set_text( '%s\n%s'%(self.outputPanel.get_label(), text) )
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        
     def ontogglebuttonruns( self, button, run ):
         catalogs = list_catalogs_skim1( run )
         if catalogs == []:
@@ -2929,33 +3037,58 @@ class SpectrumWindow(Gtk.Window):
         self.pathslabel.set_label( '\n'.join( [ '[%d] %s'%(i,path) for i, path in enumerate(self.paths) ] ) )
         self.show_all()
     
-    def onspectrumclick( self, button ):
-        fig = plt.figure()
-        fig.suptitle( self.selectionEntry.get_text() )
+    def build_figure(self):
+        self.fig = Figure()
+        #self.fig.suptitle( self.selectionEntry.get_text() )
         grid = plt.GridSpec( 4, 1, hspace=0, wspace=0 )
-        ax_main = fig.add_subplot( grid[:-1, 0])
-        ax_ratio = fig.add_subplot( grid[-1,0])
+        self.ax_main = self.fig.add_subplot( grid[:-1, 0])
+        self.ax_ratio = self.fig.add_subplot( grid[-1,0], sharex=self.ax_main)
+        canvas = FigureCanvas(self.fig)
+        
+        #self.imageBox.pack_start( image, True, True, 0 )
+        #toolbar = NavigationToolbar(canvas, self)
+        toolbar = None
+        return canvas, toolbar 
+        #self.imageBox.pack_start(toolbar, False, True, 0)
+
+        
+    def on_spectrum_click( self, button ):
+        self.append_outputPanel('generating spectrum...')
+        #fig = plt.figure()
+        #fig = Figure()
+        if self.selectionEntry.get_text() == '':
+            self.append_outputPanel('Error: selection not specified')
+            return
+        self.fig.suptitle( self.selectionEntry.get_text() )
+        self.ax_main.cla()
+        self.ax_ratio.cla()
+        #grid = plt.GridSpec( 4, 1, hspace=0, wspace=0 )
+        #ax_main = fig.add_subplot( grid[:-1, 0])
+        #ax_ratio = fig.add_subplot( grid[-1,0], sharex=ax_main)
         
         binMin = None
         binMax = None
-        data = []
-        nRunIDs = []
-        for path in self.paths:
-            print 'reading catalog', path
+        bins = None
+        #data = []
+        #nRunIDs = []
+        for i, path in enumerate(self.paths):
+            self.append_outputPanel( 'reading catalog %s'%path )
             datum = root_numpy.root2array( path, treename='hitSumm', branches=self.expressionEntry.get_text(), selection=self.selectionEntry.get_text() )
-            print 'len', len(datum)
-            data.append( datum )
-            nRunIDs.append( len( list_runIDs_from_subrun( getrunFromPath(path) ) ) )
+            self.append_outputPanel( 'read %d events'%len(datum) )
+            #data.append( datum )
+            #nRunIDs.append( len( list_runIDs_from_subrun( getrunFromPath(path) ) ) )
+            nRunID = len( list_runIDs_from_subrun( getrunFromPath(path) ) )
             if binMin is None: binMin = np.min(datum)
             else: binMin = min(binMin, np.min( datum ) )
             if binMax is None: binMax = np.max(datum)
             else: binMax = max(binMax, np.max( datum ) )
-        if self.binSizeEntry.get_text() == 'auto': 
-            bins = np.linspace( binMin, binMax, 100 )
-        else: 
-            bins = np.arange( binMin, binMax, float(self.binSizeEntry.get_text()) )
-            
-        for i, (datum, path, nRunID) in enumerate( zip( data, self.paths, nRunIDs ) ):
+            if bins is None:
+                if self.binSizeEntry.get_text() == 'auto': 
+                    bins = np.linspace( binMin, binMax, 100 )
+                else: 
+                    bins = np.arange( binMin, binMax, float(self.binSizeEntry.get_text()) )
+                self.append_outputPanel( 'bins %f %f %f %d'%(binMin, binMax, bins[1]-bins[0], len(bins)) )
+        #for i, (datum, path, nRunID) in enumerate( zip( data, self.paths, nRunIDs ) ):
             hist = np.histogram( datum, bins=bins )[0]
             hist = hist.astype(float)/nRunID
             one_count = 1./nRunID
@@ -2966,13 +3099,14 @@ class SpectrumWindow(Gtk.Window):
             try:
                 func = eval( funcstr )
                 p = scipy.optimize.curve_fit( func, x[hist>one_count], np.log( hist[hist>one_count] ) )[0]
-                print 'p', p
+                params_str = ' '.join( [ '%s:%.2g'%(v,pp) for v,pp in zip(varnames, p) ] )
+                self.append_outputPanel( 'fit successful with params \n%s'%params_str )
                 y = np.exp( func( x, *p ) )
-                label = '%s [%d] '%(getrunFromPath(path),nRunID) + ' '.join( [ '%s:%.2g'%(v,pp) for v,pp in zip(varnames, p) ] )
-                ax_main.plot( x, y, color='C%d'%i, linestyle='--' )
+                label = '%s [%d] '%(getrunFromPath(path),nRunID) + params_str
+                self.ax_main.plot( x, y, color='C%d'%i, linestyle='--' )
                 dy = hist-y
                 dy[dy<0] = 0
-                ax_ratio.step( x, dy, where='mid', color='C%d'%i )
+                self.ax_ratio.step( x, dy, where='mid', color='C%d'%i )
                 #try:
                     #peakFunc = lambda x, a, b, c, d, e: b*scipy.stats.norm.pdf(x,loc=abs(a)*1.74+c,scale=15*d) + b*scipy.stats.norm.pdf(x,loc=abs(a)*8.048+c,scale=15*d)+ b*scipy.stats.norm.pdf(x,loc=abs(a)*8.905+c,scale=15*d) + e
                     #pg0 = [1700.,10,10,10]
@@ -2984,67 +3118,83 @@ class SpectrumWindow(Gtk.Window):
                     #pass
             except:
                 label = '%s [%d] '%(getrunFromPath(path),nRunID) + 'fit failed'
-            ax_main.step( x, hist, label=label, where='mid', color='C%d'%i )
-        ax_main.set_yscale( 'log' )
-        ax_ratio.set_xlabel( self.expressionEntry.get_text() )
+                self.append_outputPanel( 'fit failed' )
+            self.ax_main.step( x, hist, label=label, where='mid', color='C%d'%i )
+        self.ax_main.set_yscale( 'log' )
+        self.ax_ratio.set_xlabel( self.expressionEntry.get_text() )
         #ax_ratio.set_yscale( 'log' )
-        ax_main.legend( fancybox=True, framealpha=0 )
-        fig.savefig( self.tempPath )
-        plt.close()
-        self.image.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
+        self.ax_main.legend( fancybox=True, framealpha=0 )
+
+        #image = FigureCanvas(fig)
+        #image.set_size_request(400,400)
+        #children = self.imageBox.get_children()
+        #children[-1].destroy()
+        #children[-2].destroy()
+        
+        #self.imageBox.pack_start( image, True, True, 0 )
+        #toolbar = NavigationToolbar(image, self)
+        #self.imageBox.pack_start(toolbar, False, True, 0)
+        self.fig.canvas.draw()
+        #fig.savefig( self.tempPath )
+        #plt.close()
+        self.outputPanel.set_text('plot generated successfully')
+        #self.image.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
         self.show_all()
 
 class ImageWindow(Gtk.Window):
-    def __del__(self):
-        os.remove( self.tempPath )
-        Gtk.Window.__del__(self)
+    #def __del__(self):
+        #os.remove( self.tempPath )
+        #Gtk.Window.__del__(self)
 
     def __init__(self, **kwargs ):
-        GObject.threads_init()
         self.id = time.time()
         print 'id', self.id
         self.tempPath = '/home/mota/public/gui/session_image_%s.png'%self.id
         Gtk.Window.__init__( self, title="Image Viewer [session%s]"%self.id )
+        self.maximize()
+
         self.set_border_width(3)
+        self.image = None
+
         self.add( self.build_window() )
 
+
         self.paths = []
-        self.run = None
-        self.runID = None
+        self.run = -1
+        self.runID_current = -1
+        self.ohdu_current = -1
+        self.imageType_current = -1
+        self.no_file = 'file not found'
         
         if 'run' in kwargs: self.run = int(kwargs['run'])
-        else: self.run = sorted(list_runs())[-1]
+        else: self.run = DataPath.run()[-1]
         if 'runID' in kwargs:
-            self.runID = int(kwargs['runID'])
-            self.run = getrunFromPath( get_raw_path(self.runID) )
-        else: self.runID = None
-        if 'ohdu' in kwargs: self.ohdu = int(kwargs['ohdu'])
-        else: self.ohdu = 2
+            self.set_runID( int(kwargs['runID']) )
+            print 'runID', self.get_runID()
+            print 'self.run', self.run
+        if 'ohdu' in kwargs: self.set_ohdu( int(kwargs['ohdu']) )
+        else: self.set_ohdu(2)
         self.runIDcolumn = None
-        self.imageType = None
         if 'imageType' in kwargs:
-            self.imageType = kwargs['imageType']
+            self.set_imageType( kwargs['imageType'] )
         elif 'imagetype' in kwargs:
-            self.imageType = kwargs['imagetype']
+            self.set_imageType( kwargs['imagetype'] )
         else:
-            self.imageType = 'raw'
+            self.set_imageType( 'raw' )
         
+        print 'run', self.run
         if self.run is not None: self.runButtons[self.run].set_active(True)
-        if self.runID is not None: self.runIDButtons[self.runID].set_active(True)
 
-        self.optionEntry['ohdu'].set_text(str(self.ohdu))
+        #self.optionEntry['ohdu'].set_text(str(self.ohdu))
         self.optionEntry['ohdu'].set_width_chars(2)
-        self.optionEntry['E'].set_text('8*mad')
         self.optionEntry['E'].set_width_chars(8)
 
-        self.imageTypeButtons[self.imageType].set_active(True)
         
-        if 'plot' in kwargs:
-            self.plotButton.clicked()
-            
-        self.maximize()
         self.connect( 'destroy', Gtk.main_quit )
         self.show_all()
+        #if 'plot' in kwargs:
+            #self.plotButton.clicked()
+        #self.set_resizable(False)
     
     def build_window(self):
         body = self.build_body()
@@ -3061,7 +3211,7 @@ class ImageWindow(Gtk.Window):
         self.pathsLabel.set_selectable(True)
         self.plotButton = Gtk.Button()
         self.plotButton.set_label('Plot')
-        #self.plotButton.modify_fg( Gtk.StateType.NORMAL, Gtk.Gdk.color_parse("blue") )
+        #self.plotButton.modify_bg( Gtk.StateType.NORMAL, Gdk.color_parse("blue") )
         self.plotButton.connect( 'clicked', self.on_plotButton_click )
         subbox = Gtk.VBox()
         subbox.pack_end( self.plotButton, False, False, 0 )
@@ -3099,9 +3249,9 @@ class ImageWindow(Gtk.Window):
 
         self.runButtons = {}
         subbox = Gtk.VBox()
-        for run in sorted(list_runs())[::-1]:
+        for run in DataPath.run()[::-1]:
             self.runButtons[run] = Gtk.ToggleButton()
-            self.runButtons[run].set_label( run )
+            self.runButtons[run].set_label( str(run) )
             self.runButtons[run].connect( 'toggled', self.on_runButton_toggle, run )
             subbox.pack_start( self.runButtons[run], False, False, 0 )
         scrolledwindow.add_with_viewport( subbox )
@@ -3128,40 +3278,104 @@ class ImageWindow(Gtk.Window):
 
     def build_runIDButtons( self, run ):
         if len(self.runIDScrolledWindow.get_children()) > 0: self.runIDScrolledWindow.get_children()[0].destroy()
-        runIDs = [ int(getrunIDFromPath(path)) for path in sorted(list_runIDs( run ))[::-1] ]
+        runIDs = DataPath.runID(run=run)
         subbox = Gtk.VBox()
         self.runIDButtons = {}
         for runID in runIDs:
             self.runIDButtons[runID] = Gtk.ToggleButton()
             self.runIDButtons[runID].set_label( str(runID) )
-            self.runIDButtons[runID].connect( 'toggled', self.on_runIDButton_toggle, runID )
-            subbox.pack_start( self.runIDButtons[runID], False, False, 1 )
+            self.runIDButtons[runID].connect( 'clicked', self.on_runIDButton_toggle, runID )
+            subbox.pack_start( self.runIDButtons[runID], False, False, 0 )
         self.runIDScrolledWindow.add_with_viewport(subbox)
         return
     
+    def set_ohdu(self, ohdu ):
+        self.optionEntry['ohdu'].set_text(str(ohdu))
+    
+    def get_ohdu(self):
+        try:
+            return int(self.optionEntry['ohdu'].get_text())
+        except:
+            return None
+        
+    def reset_axes(self):
+        self.fig.clf()
+        self.main_ax.cla()
+        self.x_hist.cla()
+        self.y_hist.cla()
+        self.zoom_ax.cla()
+        
+    def build_figure(self):
+        self.fig = Figure(dpi=100)
+
+        self.canvas = FigureCanvas(self.fig)
+        
+        self.fig.canvas.mpl_connect('draw_event', self.ondraw )
+        toolbar = NavigationToolbar(self.canvas, self)
+        children = toolbar.get_children()
+        for i in range(len(children)-3):
+            children[i].destroy()
+        
+        self.main_ax = None
+        self.x_hist = None
+        self.y_hist = None
+        self.zoom_ax = None
+        return self.canvas, toolbar
+
+    def ondraw(self, event):
+        print 'ondraw'
+        #bbox = self.fig.get_window_extent()
+        #print 'fig', bbox.inverse_transformed(self.fig.transFigure)
+        #main_bbox = self.main_ax.get_window_extent().inverse_transformed(self.fig.transFigure)
+        #y_bbox = self.y_hist.get_window_extent().inverse_transformed(self.fig.transFigure)
+        #x_bbox = self.x_hist.get_window_extent().inverse_transformed(self.fig.transFigure)
+        #zoom_bbox = self.zoom_ax.get_window_extent().inverse_transformed(self.fig.transFigure)
+        
+        #print main_bbox
+        #print y_bbox
+        #print x_bbox
+        #print zoom_bbox
+        #print
+        
+        #self.fig.canvas.draw()
+        pass
+
+
     def build_imagePanel(self):
-        self.imageCanvas = Gtk.Image()
-        scrolledwindowImage = Gtk.ScrolledWindow()
-        scrolledwindowImage.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolledwindowImage.add_with_viewport( self.imageCanvas )
+        #self.imageCanvas = Gtk.Image()
+        canvas, toolbar = self.build_figure()
+        box = Gtk.VBox()
+        box.pack_start(canvas, True, True, 0)
+        box.pack_start(toolbar, False, False, 0)
+        #scrolledwindowImage = Gtk.ScrolledWindow()
+        #scrolledwindowImage.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        #scrolledwindowImage.add_with_viewport( self.imageCanvas )
+        #scrolledwindowImage.add_with_viewport( box )
 
         subbox = Gtk.VBox()
-        title = Gtk.Label()
-        title.set_text('Statistics')
-        subbox.pack_start(title, False, False, 3)
+        #title = Gtk.Label()
+        #title.set_text('Statistics')
+        #subbox.pack_start(title, False, False, 3)
+        
+        self.zoom_fig = Figure()
+        canvas = FigureCanvas( self.zoom_fig )
+        b = Gtk.HBox()
+        b.pack_start(canvas, True, True, 0)
+        subbox.pack_start( b, True, True, 0)
         
         self.stats = Gtk.Label()
         self.stats.set_selectable(True)
-        self.stats.set_text('none')
+        self.stats.set_use_markup(True)
+        #self.stats.set_text()
+        self.stats.set_width_chars(40)
         
         scrolledStat = Gtk.ScrolledWindow()
         scrolledStat.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scrolledStat.add_with_viewport( self.stats )
-
-        subbox.pack_start( scrolledStat, True, True, 0)
+        subbox.pack_end( scrolledStat, True, True, 0)
         
         imagePanel = Gtk.HBox()
-        imagePanel.pack_start( scrolledwindowImage, True, True, 0 )
+        imagePanel.pack_start( box, True, True, 0 )
         imagePanel.pack_end( subbox, False, False, 0 )
         return imagePanel
     
@@ -3190,77 +3404,133 @@ class ImageWindow(Gtk.Window):
                     self.optionEntry['%s%s'%(key,s)].set_text('auto')
                     self.optionEntry['%s%s'%(key,s)].set_width_chars(5)
                     firstLine.pack_start( self.optionEntry['%s%s'%(key,s)], False, False, 0 )
+                    self.optionEntry['%s%s'%(key,s)].connect('activate', self.on_plotButton_click )
             else:
                 self.optionEntry[key] = Gtk.Entry()
                 firstLine.pack_start( self.optionEntry[key], False, False, 3 )
-
-        self.imageTypeOptions = ['raw','raw*','osi','mbs','scn','scn*']
-
-        subbox = Gtk.HBox()
-        firstLine.pack_end( subbox, False, False, 1 )
+                self.optionEntry[key].connect('activate', self.on_plotButton_click )
+        self.optionEntry['E'].set_text('200')
         
-        self.imageTypeButtons = {}
-        for key in self.imageTypeOptions:
-            self.imageTypeButtons[key] = Gtk.ToggleButton()
-            self.imageTypeButtons[key].set_label( key )
-            self.imageTypeButtons[key].connect( 'toggled', self.on_imageTypeButton_toggle, key )
-            subbox.pack_start( self.imageTypeButtons[key], True, True, 0 )
+        self.Console = Gtk.Label()
+        firstLine.pack_start(self.Console, True, True, 0)
+        #self.sideButtons = Gtk.HBox()
+        #firstLine.pack_end( self.sideButtons, False, False, 5 )
+
+        #sideOptions = ['left', 'right']
+        #for key in sideOptions:
+            #button = Gtk.ToggleButton()
+            #button.set_label( key )
+            #self.sideButtons.pack_start( button, True, True, 0 )
+
+        self.imageTypeButtons = Gtk.HBox()
+        firstLine.pack_end( self.imageTypeButtons, False, False, 0 )
+
+        #self.imageTypeOptions = ['raw','raw*','osi','mbs','scn','scn*']
+        imageTypeOptions = ['raw','osi','mbs','scn']
+        for key in imageTypeOptions:
+            button = Gtk.ToggleButton()
+            button.set_label( key )
+            button.connect( 'toggled', self.on_imageTypeButton_toggle, key )
+            self.imageTypeButtons.pack_start( button, True, True, 0 )
         optionsPanel.pack_start(firstLine, False, True, 1)
         return optionsPanel
 
     def on_runEntry_activate( self, entry ):
-        self.run = '%03d'%int(entry.get_text())
+        self.run = int(entry.get_text())
         print 'activaterun', self.run
         self.runButtons[ self.run ].set_active(True)
     
     def on_runIDEntry_activate( self, entry ):
         print 'activaterunID', entry.get_text()
         self.set_runID( int( entry.get_text() ) )
+        self.on_plotButton_click(entry)
+        #self.
     
     def set_runID( self, runID ):
-        self.runID = runID
-        self.run = '%03d'%int( getrunFromPath( get_raw_path(self.runID) ) )
-        self.runButtons[self.run].set_active( True )
-        if not runID in self.runIDButtons.keys(): self.build_runIDButtons( self.run )
-        self.runIDButtons[ runID ].set_active( True )
-        self.runIDEntry.set_text( str(runID) )
-        self.refresh_pathsLabel()
-        return
+        #try:
+            print 'set_runID', runID, type(runID)
+            runID = int(runID)
+            print 'set_runID datapath.run', DataPath.run(runID=runID)
+            self.run = DataPath.run(runID=runID)
+            print 'set_runID run', self.run
+            self.runButtons[self.run].set_active( True )
+            if not runID in self.runIDButtons.keys(): self.build_runIDButtons( self.run )
+            self.runIDButtons[ runID ].set_active( True )
+            self.runIDEntry.set_text( str(runID) )
+            self.refresh_pathsLabel()
+        #except:
+            #return None
+
+    def get_runID( self ):
+        try:
+            return int(self.runIDEntry.get_text())
+        except:
+            return None
+
+    def get_sides( self ):
+        return [ button.get_label() for button in sideButtons.get_children() if button.get_active() ]
     
     def set_imageType( self, imageType ):
-        self.imageType = imageType
-        self.refresh_pathsLabel()
-        return
+        for button in self.imageTypeButtons.get_children():
+            if button.get_label() == imageType:
+                button.set_active(True)
 
+    def get_imageType( self ):
+        for button in self.imageTypeButtons.get_children():
+            if button.get_active() == True:
+                return button.get_label()
+        return None
+    
     def refresh_pathsLabel( self ):
-        self.pathsLabel.set_label( '\n'.join( self.getPath( self.runID, self.imageType ) ) )
-        if self.pathsLabel.get_text() == 'file not found': self.plotButton.set_sensitive(False)
-        else: self.plotButton.set_sensitive(True)
-        
+        runID = self.get_runID()
+        imageType = self.get_imageType()
+        self.plotButton.set_sensitive(False)
+        print 'refresh', runID, imageType
+        if runID is None or imageType is None: 
+            print 'return'
+            return
+        paths = self.getPath()
+        print paths
+        self.pathsLabel.set_label( '\n'.join(paths) )
+        if self.pathsLabel.get_text() != self.no_file: self.plotButton.set_sensitive(True)
+    
+    def get_paths(self):
+        return self.pathsLabel.get_text().split('\n')
+    
     def deactivateSiblings( self, button ):
         for sibling in button.get_parent().get_children():
             if sibling is not button:
-                sibling.set_active(False)
+                try:
+                    sibling.set_active(False)
+                except:
+                    sibling.set_visited(False)
         return
             
     def on_imageTypeButton_toggle( self, button, key ):
         if button.get_active() == True:
             self.deactivateSiblings(button)
-            self.set_imageType( key )
+            self.refresh_pathsLabel()
+            print 'toggle', key
+            self.on_plotButton_click(None)
         
-    def getPath( self, runID, imageType ):
-        self.imageType = imageType
-        if self.imageType == 'raw' or self.imageType == 'raw*':
+    def getPath( self ):
+        runID = self.get_runID()
+        imageType = self.get_imageType()
+        print 'getPath', runID, imageType
+        if runID is None or imageType is None: return [self.no_file]
+        if imageType == 'raw':
             return get_raw_path( int(runID) )
-        elif self.imageType == 'osi':
+        elif imageType == 'osi':
             return get_osi_path( int(runID) )
-        elif self.imageType == 'scn' or self.imageType == 'scn*':
+        elif imageType == 'mbs':
+            return get_mbs_path( int(runID) )
+        elif imageType == 'scn':
             return get_scn_path( int(runID) )
-        return ['file not found']
+        return [self.no_file]
     
     def on_runButton_toggle( self, button, run ):
         print 'toggle run', run, button.get_active()
-        firstRunID = list_runIDs( run )[0]
+        firstRunID = DataPath.runID( run=run )[0]
         if button.get_active() == True:
             self.deactivateSiblings( button )
             self.run = run
@@ -3273,144 +3543,193 @@ class ImageWindow(Gtk.Window):
         if button.get_active() == True:
             self.deactivateSiblings(button)
             self.set_runID( runID )
-        self.show_all()
+            self.on_plotButton_click(None)
     
     def on_plotButton_click( self, button ):
-        thread = threading.Thread( target = lambda: self.plotImage(button) )
-        thread.daemon = True
-        thread.start()
+        self.Console.set_markup('<span color="green">Generating %s image for runID %s ohdu %s...</span>'%(self.get_imageType(), self.get_runID(), self.get_ohdu() ))
+        while Gtk.events_pending(): Gtk.main_iteration()
+        if self.plotImage(button): 
+            self.Console.set_markup('%s <span color="green">Successful!</span>'%(self.Console.get_label()))
+        else:
+            self.Console.set_markup('%s <span color="red">Failed :(</span>'%(self.Console.get_label()))
+        while Gtk.events_pending(): Gtk.main_iteration()
+        #thread = threading.Thread( target = lambda: self.plotImage(button) )
+        #thread.daemon = True
+        #thread.start()
     
+    def parse_option( self, opt ):
+        o = unicode(self.optionEntry[opt].get_text())
+        return int(o) if o.isnumeric() else o
+        
     def plotImage( self, button ):
-        buttonLabel = button.get_label()
+        label = self.plotButton.get_label()
         def running():
-            button.set_label('running...')
-            button.set_sensitive(False)
+            self.plotButton.set_label('running...')
+            self.plotButton.set_sensitive(False)
             #self.imageCanvas.destroy()
         GLib.idle_add( running )
 
-        stats = ['Statistics:']
+        stats = []
         self.ohdu = int( self.optionEntry['ohdu'].get_text() )
         
-        image = FullImage( runID = self.runID, ohdu = self.ohdu, imageType = self.imageType )
-        stats.append( 'type %s'%self.imageType )
-        stats.append( 'ohdu %s'%self.ohdu )
-        stats.append( 'runID %s'%self.runID )
+        if self.image is None or self.get_runID() != self.runID_current or self.get_ohdu() != self.ohdu_current or self.get_imageType() != self.imageType_current:
+            self.image = FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = self.get_imageType() )
+            self.runID_current = self.get_runID()
+            self.ohdu_current = self.get_ohdu()
+            self.imageType_current = self.get_imageType()
         
-        xMin = unicode(self.optionEntry['xMin'].get_text())
-        xMax = unicode(self.optionEntry['xMax'].get_text())
-        yMin = unicode(self.optionEntry['yMin'].get_text())
-        yMax = unicode(self.optionEntry['yMax'].get_text())
+        stats.append( 'shape (%s, %s)'%(self.image.shape[0],self.image.shape[1]) )
+        stats.append( 'runID %s ohdu %s %s'%(self.runID_current, self.ohdu_current, self.imageType_current) )
+        #stats.append( 'runID %s'%self.runID_current )
         
-        xMin = int(xMin) if xMin.isnumeric() else xMin
-        xMax = int(xMax) if xMax.isnumeric() else xMax
-        yMin = int(yMin) if yMin.isnumeric() else yMin
-        yMax = int(yMax) if yMax.isnumeric() else yMax
+        xMin = self.parse_option('xMin')
+        xMax = self.parse_option('xMax')
+        yMin = self.parse_option('yMin')
+        yMax = self.parse_option('yMax')
         
         textEval = lambda var: None if var == 'auto' else eval(str(var),{},{'xMin':xMin,'xMax':xMax,'yMin':yMin,'yMax':yMax})
-        mask = np.s_[ textEval(yMin):textEval(yMax), textEval(xMin):textEval(xMax) ]
-        imageSection = image(mask)
+        self.xRange = [ textEval(xMin), textEval(xMax) ]
+        self.yRange = [ textEval(yMin), textEval(yMax) ]
         
+        xMin = textEval(xMin)
+        xMax = textEval(xMax)
+        yMin = textEval(yMin)
+        yMax = textEval(yMax)
+
+        if xMin is None: xMin = 0
+        if yMin is None: yMin = 0
+        if xMax is None: xMax = self.image.shape[1]
+        if yMax is None: yMax = self.image.shape[0]
+        print 'area', xMin, xMax, yMin, yMax
+        if xMin>=xMax: xMin, xMax = None, None
+        if yMin>=yMax: yMin, yMax = None, None
+            
+        mask = np.s_[ yMin:yMax, xMin:xMax ]
+        self.imageSection = self.image.left()(mask)
+        self.imageSection.image = self.imageSection.image[::-1,:]
+        print self.imageSection.shape
+        if self.main_ax is not None:
+            self.reset_axes()
+        
+        shape = self.imageSection.shape
+
+        self.main_ax = self.fig.add_subplot(111)
+        divider = make_axes_locatable(self.main_ax)
+        self.x_hist = divider.append_axes('top', size=1.2, pad=.1, sharex=self.main_ax)
+        self.y_hist = divider.append_axes('right', size=1.2, pad=.1, sharey=self.main_ax)
+        self.zoom_ax = self.zoom_fig.add_subplot(111)
+
+        plt.setp(self.x_hist.get_xticklabels(), visible=False)
+        plt.setp(self.y_hist.get_yticklabels(), visible=False)
+
         section = False
         if xMin != 'auto' or xMax != 'auto' or yMin != 'auto' or yMax != 'auto':
             section = True
         
-        w = imageSection.shape[1]
-        h = imageSection.shape[0]
-        
-        w0, h0 = plt.figaspect(1.)
-        ratio = float(h0)/w0
-        print 'ratio', ratio
-        fig = plt.figure(figsize=(2*h0, 2*h0))
-        w1 = float(w)/max(w,h)
-        h1 = float(h)/max(w,h)
-        main_ax = fig.add_axes([.1,.1, .6*w1,.6*h1])
-
-        median = imageSection.median()
-        mad = imageSection.mad()
+        median = self.imageSection.median()
+        mad = self.imageSection.mad()
         mid = lambda _: .5*(_[1:]+_[:-1])
         diff = lambda _: _[1:]-_[:-1]
         
-        eRange = eval(self.optionEntry['E'].get_text(),{},{'mad':mad})
+        #eRange = eval(self.optionEntry['E'].get_text(),{},{'mad':mad})
+        eRange = float(str(self.optionEntry['E'].get_text()))
         eMin = median - eRange
         eMax = median + eRange
+        #self.eRange = [eMin,eMax]
         ebins = np.linspace( eMin, eMax, 100 )
         if ebins[1]-ebins[0] < 2: ebins = np.arange( eMin, eMax, 2 )
 
-        imageSection.add_image_to_axis( main_ax, eMin, eMax )
-        x_hist = fig.add_axes([.1,.1+.6*h1,.6*w1,.2], sharex=main_ax)
-        imageSection.add_projection_to_axis( x_hist, axis=0, bins=ebins, align='horizontal')
-
-        y_hist = fig.add_axes([.1+.6*w1,.1,.2,.6*h1], sharey=main_ax)
-        imageSection.add_projection_to_axis( y_hist, axis=1, bins=ebins, align='vertical')
-
+        self.imageSection.add_image_to_axis( self.main_ax, eMin, eMax )
+        self.imageSection.add_projection_to_axis( self.y_hist, axis=1, bins=ebins, align='vertical')
+        self.imageSection.add_projection_to_axis( self.x_hist, axis=0, bins=ebins, align='horizontal')
+        
+        stats.append('<b>%10s %10s %10s %10s</b>'%('section', 'shape', 'median', 'MAD'))
         def addStats( label, hist, data ):
             mu = data.median()
             sigma = np.average( (mid(ebins)-mu)**2, weights = hist )**(1./2) if np.sum(hist) > 0  else 0
-            if len(data.shape) == 2: stats.append( '%s %s,%s'%(label,data.shape[0],data.shape[1]) )
-            else: stats.append( '%s, %d'%(label,data.size) )
+            #if len(data.shape) == 2: stats.append( '%s %s,%s'%(label,data.shape[0],data.shape[1]) )
+            #else: stats.append( '%s, %d'%(label,data.size) )
 
-            stats.append( 'median %.4g'%mu )
-            stats.append( 'mad %.5g'%data.mad() )
+            #stats.append( 'median %.4g'%mu )
+            #stats.append( 'mad %.5g'%data.mad() )
+            stats.append( '%s\t%5s,%5s %10s %10s'%(label, data.shape[0] if len(data.shape)==2 else data.size, data.shape[1] if len(data.shape)==2 else '', '%.5g'%mu, '%.5g'%data.mad() ) )
 
-        zoom_ax = fig.add_axes([.1+.6*w1,.1+.6*h1,.2,.2], sharex=y_hist)
-
-        activeSection = image.left().active().data()
-        hist_L = zoom_ax.hist( activeSection.flatten(), bins=ebins, histtype='step', color='b', label='L' )[0]
-        addStats( '#left AC', hist_L, activeSection )
+        activeSection = self.image.left().active().data()
+        hist_L = self.zoom_ax.hist( activeSection.flatten(), bins=ebins, histtype='step', color='b', label='L' )[0]
+        addStats( '<span color="blue"><b>left AC</b></span>', hist_L, activeSection )
         
-        overscanSection = image.left().overscan()
-        hist_osL = zoom_ax.hist( overscanSection.flatten(), bins=ebins, histtype='step', color='r', label='oL' )[0]
-        addStats( '#left OS', hist_osL, overscanSection )
+        overscanSection = self.image.left().overscan()
+        hist_osL = self.zoom_ax.hist( overscanSection.flatten(), bins=ebins, histtype='step', color='r', label='oL' )[0]
+        addStats( '<span color="red"><b>left OS</b></span>', hist_osL, overscanSection )
 
-        vOverscanSection = image.left().active().verticalOverScan()
-        hist_osL = zoom_ax.hist( vOverscanSection.flatten(), bins=ebins, histtype='step', color='m', label='voL' )[0]
-        addStats( '#left vOS', hist_osL, vOverscanSection )
+        vOverscanSection = self.image.left().active().verticalOverScan()
+        hist_osL = self.zoom_ax.hist( vOverscanSection.flatten(), bins=ebins, histtype='step', color='m', label='voL' )[0]
+        addStats( '<span color="magenta"><b>left vOS</b></span>', hist_osL, vOverscanSection )
         
-        if self.imageType.startswith('raw') or self.imageType == 'osi' or self.imageType == 'mbs':
-            rightSection = image.right()
-            hist_R = zoom_ax.hist( rightSection.flatten(), bins=ebins, histtype='step', color='g', label='R' )[0]
-            addStats( '#right', hist_R, rightSection )
+        imageType = self.get_imageType()
+        if imageType in ['raw', 'osi', 'mbs']:
+            rightSection = self.image.right()
+            hist_R = self.zoom_ax.hist( rightSection.flatten(), bins=ebins, histtype='step', color='g', label='R' )[0]
+            addStats( '<span color="green"><b>right</b></span>', hist_R, rightSection )
         if section == True:
-            hist_section = zoom_ax.hist( imageSection.flatten(), bins=ebins, histtype='step', color='c', label='sec' )[0]
-            addStats( '#section', hist_section, imageSection )
+            hist_section = self.zoom_ax.hist( self.imageSection.flatten(), bins=ebins, histtype='step', color='c', label='sec' )[0]
+            addStats( '<span color="darkcyan"><b>section</b></span>', hist_section, self.imageSection )
         
-        void_image = image.void( thr=15 )
+        void_image = self.image.void( thr=15 )
         if void_image is not None:
-            hist_void = zoom_ax.hist( void_image.flatten(), bins=ebins, histtype='step', color='y', label='void' )[0]
-            addStats( '#void', hist_void, void_image )
-        stats.append( 'dc %.4g'%image.darkCurrentEstimate() )
+            hist_void = self.zoom_ax.hist( void_image.flatten(), bins=ebins, histtype='step', color='y', label='void' )[0]
+            addStats( '<span color="yellow"><b>void</b></span>', hist_void, void_image )
+        stats.append( 'E-E0=%.4g'%self.image.darkCurrentEstimate() )
         
-        #if self.imageType == 'scn' or self.imageType == 'scn*' and void_image is not None:
-        g, lamb, s = image.darkCurrentEstimate2()
-        stats.append( 'gain %.4f'%g )
-        stats.append( 'lambda %.4f'%lamb )
-        stats.append( 'sigma %.4f'%s )
-            #stats.append( 'dc2* %.4g'%image.darkCurrentEstimate2( sigmaVoid=void_image.mad() ) )
-            #stats.append( 'dc2 %.4g'%image.darkCurrentEstimate2( medianVoid=void_image.median(), sigmaVoid=void_image.mad() ) )
+        self.stats.set_markup( '\n'.join(stats) + '\n\n' + self.stats.get_label()  )
 
-        plt.setp(x_hist.get_xticklabels(), visible=False)
-        plt.setp(y_hist.get_yticklabels(), visible=False)
-        zoom_ax.yaxis.tick_right()
-        zoom_ax.xaxis.tick_top()
-        zoom_ax.legend( fancybox=True, framealpha=0 )
-        zoom_ax.set_yscale('log')
-        a, b = zoom_ax.get_ylim()
-        zoom_ax.set_ylim((.1, b))
-        zoom_ax.grid( True )
+        self.y_hist.yaxis.tick_right()
+        self.x_hist.xaxis.tick_top()
+        self.y_hist.yaxis.set_label_position('right')
+        self.x_hist.xaxis.set_label_position('top')
+        #self.zoom_ax.yaxis.tick_right()
+        #self.zoom_ax.xaxis.tick_top()
+        #self.zoom_ax.legend( fancybox=True, framealpha=0 )
+        self.zoom_ax.set_yscale('log')
+        a, b = self.zoom_ax.get_ylim()
+        self.zoom_ax.set_ylim((.1, b))
+        self.zoom_ax.grid( True )
+        self.zoom_ax.yaxis.set_label_position('right')
+        self.zoom_ax.xaxis.set_label_position('top')
+        self.zoom_ax.set_xlabel('E[adu]')
+        self.zoom_ax.set_ylabel('counts')
+        self.zoom_fig.subplots_adjust()
 
-        #fig.subplots_adjust(hspace=0, wspace=0)
-        self.stats.set_text( '\n'.join(stats) + '\n' + '='*len('Statiscs') + '\nvoid' + self.stats.get_text()  )
+        if yMin is None: yMin = 0
+        print xMin, xMax, yMin, yMax
+        self.main_ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%(x+yMin)))
+        self.main_ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%(x+xMin)))
 
-        fig.savefig( self.tempPath, bbox_inches='tight' )
-        plt.close()
+
+        #print self.main_ax.get_xticks()
+        #print self.main_ax.get_xticklabels()
+        #self.main_ax.set_xticklabels( map( int, np.array(self.main_ax.get_xticks())+xMin) )
+        #self.main_ax.set_yticklabels( map( i, np.array(self.main_ax.get_yticks())+yMin ) )
+        #self.main_ax.set_yaxis.set_ticks()
+        self.y_hist.grid( True )
+        self.x_hist.grid( True )
+        self.y_hist.set_adjustable('datalim')
+        self.main_ax.set_frame_on(False)
+        self.y_hist.set_frame_on(False)
+        self.x_hist.set_frame_on(False)
+
+        self.fig.canvas.draw()
+        self.zoom_fig.canvas.draw()
         
-        def finished():
-            button.set_label(buttonLabel)
-            button.set_sensitive(True)
-        GLib.idle_add( finished )
-        self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.tempPath ) )
-        self.show_all()
-        print 'image shown'
+        self.plotButton.set_label(label)
+        self.plotButton.set_sensitive(True)
+        self.plotButton.show()
+            #def finished():
+            #self.plotButton.set_label(label)
+            #self.plotButton.set_sensitive(True)
+        #GLib.idle_add( finished )
+        print 'image ready'
+        return True
         
     
 class MonitorWindow(Gtk.Window):
@@ -3427,13 +3746,27 @@ class MonitorWindow(Gtk.Window):
         return True
         
     def __init__(self):
-        #GObject.threads_init()
         self.id = time.time()
         print 'id', self.id
-        self.darkCurrentRawImage = '/home/mota/public/gui/darkCurrentRawImage_%s.png'%self.id
-        self.darkCurrentRawTable = '/home/mota/public/gui/darkCurrentRawTable.csv'
-        self.readoutNoiseRawImage = '/home/mota/public/gui/readoutNoiseRawImage_%s.png'%self.id
-        self.readoutNoiseRawTable = '/home/mota/public/gui/readoutNoiseRawTable.csv'
+        self.quantities = ['darkCurrent', 'readoutNoise','diffMADSqr']
+        
+        self.global_runIDMax = None
+        self.global_runIDMin = None
+        self.runRanges = None
+        
+        self.imagePaths = {}
+        self.tablePaths = {}
+        self.lockTimers = {}
+        self.has_remove_lock_button = {}
+        for quantity in self.quantities:
+            self.imagePaths[quantity] = '/home/mota/public/gui/%sRawImage_%s.png'%(quantity,self.id)
+            self.tablePaths[quantity] = '/home/mota/public/gui/%sRawTable.csv'%(quantity)
+            self.lockTimers[quantity] = None
+            self.has_remove_lock_button[quantity] = False
+        #self.darkCurrentRawImage = '/home/mota/public/gui/darkCurrentRawImage_%s.png'%self.id
+        #self.darkCurrentRawTable = '/home/mota/public/gui/darkCurrentRawTable.csv'
+        #self.readoutNoiseRawImage = '/home/mota/public/gui/readoutNoiseRawImage_%s.png'%self.id
+        #self.readoutNoiseRawTable = '/home/mota/public/gui/readoutNoiseRawTable.csv'
         Gtk.Window.__init__( self, title="Monitor Viewer [session%s]"%self.id )
         self.connect( 'delete-event', self.__del__ )
         self.maximize()
@@ -3441,15 +3774,19 @@ class MonitorWindow(Gtk.Window):
         self.add( self.build_window() )
         
         self.update = True
-        self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
-        self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
+        for quantity in self.quantities:
+            self.plot_table( quantity )
+        #self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
+        #self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
         self.show_all()
         self.quit = False
         def loop():
             while 1:
-                self.update_table(tabletype='darkCurrent')
-                self.update_table(tabletype='readoutNoise')
-                if self.quit: return
+                for quantity in self.quantities:
+                    if self.quit: return
+                    self.update_table( quantity )
+                #self.update_table(tabletype='darkCurrent')
+                #self.update_table(tabletype='readoutNoise')
         self.start_thread( loop )
 
     def build_window(self):
@@ -3486,125 +3823,179 @@ class MonitorWindow(Gtk.Window):
         return subbox
     
     def build_body(self):
-        self.darkCurrentImageCanvas = Gtk.Image()
-        self.readoutNoiseImageCanvas = Gtk.Image()
         vbox = Gtk.VBox()
         scroll = Gtk.ScrolledWindow()
         scroll.add_with_viewport(vbox)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        vbox.pack_start(self.darkCurrentImageCanvas, True, True, 0)
-        vbox.pack_start(self.readoutNoiseImageCanvas, True, True, 0)
+
+        self.labels = {}
+        self.imageCanvases = {}
+        self.subHeader = {}
+        for quantity in self.quantities:
+            box = Gtk.VBox()
+            vbox.pack_start( box, True, True, 0)
+
+            self.labels[quantity] = Gtk.Label()
+            self.subHeader[quantity] = Gtk.HBox()
+            self.resetLabel(quantity)
+            self.subHeader[quantity].pack_start(self.labels[quantity], False, False, 0)
+            self.imageCanvases[quantity] = Gtk.Image()
+            box.pack_start(self.subHeader[quantity], False, False, 0)
+            box.pack_start(self.imageCanvases[quantity], False, False, 0)
+
+        #box = Gtk.VBox()
+        #vbox.pack_start( box, True, True, 0)
+
+        #self.darkCurrentLabel = Gtk.Label()
+        #self.darkCurrentLabel.set_label('darkCurrent')
+        #self.darkCurrentImageCanvas = Gtk.Image()
+        #box.pack_start(self.darkCurrentLabel, False, False, 0)
+        #box.pack_start(self.darkCurrentImageCanvas, False, False, 0)
+
+        #box = Gtk.VBox()
+        #vbox.pack_start( box, True, True, 0)
+        
+        #self.readoutNoiseLabel = Gtk.Label()
+        #self.readoutNoiseLabel.set_label('readoutNoise')
+        #self.readoutNoiseImageCanvas = Gtk.Image()
+        #box.pack_start(self.readoutNoiseLabel, False, False, 0)
+        #box.pack_start(self.readoutNoiseImageCanvas, False, False, 0)
+        
         return scroll
     
-    def remove_lock(self, path ):
-        os.remove( path + '%s.lock'%self.id )
-        #print 'lock removed'
+    def updateLabel(self, quantity, text ):
+        def _():
+            self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' %s'%text )
+        GLib.idle_add(_)
+        ##else:
+            ##self.labels[quantity].set_markup( self.labels[quantity].get_label() + '<span> %s</span>'%text )
+        #while Gtk.events_pending():
+            #Gtk.main_iteration()
+    def resetLabel(self, quantity ):
+        def _():
+            self.labels[quantity].set_markup( '<span color="blue">%s</span>'%quantity )
+        GLib.idle_add(_)
+
+    def remove_lock(self, quantity ):
+        os.remove( '%s%s.lock'%(self.tablePaths[quantity],self.id) )
+
+    def remove_all_locks(self, quantity ):
+        locks =  glob.glob('%s*.lock'%(self.tablePaths[quantity]) )
+        for lock in locks:
+            os.remove( lock )
         
-    def create_lock(self, path):
-        open( path + '%s.lock'%self.id, 'w' )
+    def create_lock(self, quantity):
+        open( '%s%s.lock'%(self.tablePaths[quantity],self.id), 'w' )
 
-    def is_locked(self, path ):
-        if len(glob.glob( path + '*.lock')) == 0: return False
-        #print 'locked', path
+    def is_locked(self, quantity ):
+        if len(glob.glob( '%s*.lock'%self.tablePaths[quantity] )) == 0: 
+            self.lockTimers[quantity] = None
+            return False
+        if self.lockTimers[quantity] is None:
+            self.lockTimers[quantity] = time.time()
+
+        #print '!!!', quantity, 'is locked; will check again at next iteraction'
+        elapsed_time = time.time() - self.lockTimers[quantity]
+        self.updateLabel(quantity, '<span color="red"><b>is locked for %ds</b> will check again soon</span>'%(int(elapsed_time)) )
+        if elapsed_time > 30 and not self.has_remove_lock_button[quantity]:
+            self.has_remove_lock_button[quantity] = True
+            print 'should create link button'
+            self.create_remove_lock_button( self.labels[quantity], quantity )
+            
         return True
-
+    
     def start_thread(self, callback):
         self.thread = threading.Thread(target=callback)
         self.thread.start()
         
-    #def update_darkCurrentTable(self):
-        #self.plot_darkCurrentTable( self.darkCurrentRawTable, self.darkCurrentRawImage )
-        #if self.is_locked( self.darkCurrentRawTable ): return
-        #self.create_lock( self.darkCurrentRawTable )
-        #if os.path.exists( self.darkCurrentRawTable ):
-            #data = np.genfromtxt( self.darkCurrentRawTable, names=True )
-            #min_runID = data['runID'].min()
-            #max_runID = data['runID'].max()
-            #data = data.tolist()
-            ##print 'read data', data
-        #else:
-            #runID = int(getrunIDFromPath(sorted(list_all_runIDs())[::-1][0]))
-            #data = self.make_entry(runID)
-            #min_runID = data[0][0]
-            #max_runID = min_runID
-            ##print 'min,max', min_runID, max_runID
-        
-        #runIDs = zip(*data)[0]
-        #for runIDpath in sorted(list_all_runIDs())[::-1]:
-            #runID = int(getrunIDFromPath(runIDpath))
-            #if runID > max_runID or runID < min_runID:
-                #data.extend( self.make_entry(runID) )
-                #break
-            #elif not runID in runIDs:
-                #data.extend( self.make_entry(runID) )
-                #break
-        
-        #np.savetxt( self.darkCurrentRawTable, data, header='#runID ohdu darkCurrent', fmt='%d %d %.6f' )
-        #self.remove_lock( self.darkCurrentRawTable )
-        #self.plot_darkCurrentTable( self.darkCurrentRawTable, self.darkCurrentRawImage )
-
     def on_runIDRangeEntry_activate( self, entry ):
-        self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
-        self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
+        for quantity in self.quantities:
+            self.plot_table( quantity )
+        #self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
+        #self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
         return
+    
+    def create_remove_lock_button( self, widget, quantity ):
+        removeLockButton = Gtk.Button()
+        removeLockButton.set_label('manually remove all locks (use with caution)')
+        self.subHeader[quantity].pack_start( removeLockButton, False, False, 0 )
+        print 'link button created'
+        removeLockButton.connect('clicked', self.manually_remove_lock, quantity )
+        removeLockButton.show()
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+
+    def manually_remove_lock(self, button, quantity ):
+        shutil.copy2( self.tablePaths[quantity], '%s_%s.backup'%( self.tablePaths[quantity], time.asctime( time.localtime() )) )
+        self.remove_all_locks( quantity )
+        button.destroy()
+        self.has_remove_lock_button[quantity] = False
+        self.resetLabel(quantity)
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+
         
-    def update_table(self, tabletype = 'darkCurrent' ):
+    def update_table(self, quantity ):
         '''
         computes an entry for the type specified, reads the previous table and appends to it. During its execution the table file is locked to avoid other instances of the code to modify the file
         '''
-        if tabletype == 'darkCurrent':
-            tablepath = self.darkCurrentRawTable
-            imagepath = self.darkCurrentRawImage
-        elif tabletype == 'readoutNoise':
-            tablepath = self.readoutNoiseRawTable
-            imagepath = self.readoutNoiseRawImage
-        else:
-            print 'tabletype unpredicted', table
-            return
-        self.plot_table( tablepath, imagepath, tabletype )
-        if self.is_locked( tablepath ): 
-            print '!!!', tablepath, 'is locked; will check again at next iteraction'
-            return
-        self.create_lock( tablepath )
-        print 'updating', tabletype,
-        if os.path.exists( tablepath ):
-            data = np.genfromtxt( tablepath, names=True )
+        print 'update', quantity
+        if not quantity in self.quantities:
+            print 'quantity', quantity, 'not implemented'
+        #if tabletype == 'darkCurrent':
+            #tablepath = self.darkCurrentRawTable
+            #imagepath = self.darkCurrentRawImage
+        #elif tabletype == 'readoutNoise':
+            #tablepath = self.readoutNoiseRawTable
+            #imagepath = self.readoutNoiseRawImage
+        #else:
+            #print 'tabletype unpredicted', table
+            #return
+        
+        self.resetLabel( quantity )
+        if self.is_locked( quantity ): return
+        self.create_lock( quantity )
+        print 'updating', quantity,
+        if os.path.exists( self.tablePaths[quantity] ):
+            data = np.genfromtxt( self.tablePaths[quantity], names=True )
             min_runID = data['runID'].min()
             max_runID = data['runID'].max()
             data = data.tolist()
-            #print 'read data', data
         else:
             runID = int(getrunIDFromPath(sorted(list_all_runIDs())[::-1][0]))
-            data = self.make_entry(runID)
+            data = self.make_entry(runID,quantity)
             min_runID = data[0][0]
             max_runID = min_runID
-            #print 'min,max', min_runID, max_runID
         
         runIDs = zip(*data)[0]
         for runIDpath in sorted(list_all_runIDs())[::-1]:
             runID = int(getrunIDFromPath(runIDpath))
             if runID > max_runID or runID < min_runID or not runID in runIDs:
+                if self.global_runIDMin is None: self.global_runIDMin = min_runID
+                if self.global_runIDMax is None: self.global_runIDMax = max_runID
+                self.global_runIDMin = min(self.global_runIDMin, runID)
+                self.global_runIDMax = max(self.global_runIDMax, runID)
+                self.updateLabel(quantity, 'updating table (runID <b>%s</b>)...'%runID)
                 print 'runID', runID, 'computing...',
-                data.extend( self.make_entry(runID, tabletype) )
+                data.extend( self.make_entry(runID, quantity ) )
                 break
         
-        np.savetxt( tablepath, data, header='#runID ohdu %s'%tabletype, fmt='%d %d %.6f' )
+        np.savetxt( self.tablePaths[quantity], data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
         print 'removing lock',
-        self.remove_lock( tablepath )
-        print 'generating plot',
-        self.plot_table( tablepath, imagepath, tabletype )
+        self.updateLabel(quantity,'done')
+
+        self.remove_lock( quantity )
+        self.plot_table( quantity )
     
-    def make_entry( self, runID, tabletype='darkCurrent' ):
+    def make_entry( self, runID, quantity ):
         entry = []
         for ohdu in self.list_ohdus(runID):
-            if tabletype=='darkCurrent':
-                value = self.compute_darkCurrent(runID, ohdu)
-            elif tabletype=='readoutNoise':
-                value = self.compute_readoutNoise(runID, ohdu)
-            else:
-                print 'table type unpredicted', tabletype
+            if self.quit: 
+                self.remove_lock(quantity)
                 exit(0)
+            value = self.compute(runID, ohdu, quantity)
             entry.append( [runID, ohdu, value] )
+            self.updateLabel(quantity, str(ohdu))
         return entry
     
     def list_ohdus(self, runID):
@@ -3614,25 +4005,34 @@ class MonitorWindow(Gtk.Window):
         ohdus = hitSumm.list_ohdus(runID)
         return ohdus
         
-    def compute_darkCurrent( self, runID, ohdu ):
+    def compute( self, runID, ohdu, quantity ):
         '''
         opens a raw image of the associated runID and ohdu and returns the dark current based on the mean of the diffrence between the medians of the active and overscan area for each line
         '''
-        return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).darkCurrentEstimate()
+        if quantity == 'darkCurrent':
+            return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).darkCurrentEstimate()
+        elif quantity == 'readoutNoise':
+            return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).readoutNoiseEstimate()
+        elif quantity == 'diffMADSqr':
+            return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).diffMAD()
+        else:
+            print 'unpredicted quantity', quantity
+            exit(1)
 
-    def compute_readoutNoise( self, runID, ohdu ):
-        '''
-        opens a raw image of the associated runID and ohdu and returns the readout noise based on the mean of the mad of each line of the overscan area
-        '''
-        return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).readoutNoiseEstimate()
+    #def compute_readoutNoise( self, runID, ohdu ):
+        #'''
+        #opens a raw image of the associated runID and ohdu and returns the readout noise based on the mean of the mad of each line of the overscan area
+        #'''
+        #return FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).readoutNoiseEstimate()
     
-    def plot_table( self, tablepath, figpath, tabletype='darkCurrent' ):
+    def plot_table( self, quantity ):
         '''
         generate image and associate it with the proper imageCanvas object. The range is set by to rangeEntry
         '''
+        self.updateLabel(quantity, 'generating plot...' )
         
-        if not os.path.exists(tablepath): return
-        data = np.genfromtxt( tablepath, names=True )
+        if not os.path.exists( self.tablePaths[quantity] ): return
+        data = np.genfromtxt(  self.tablePaths[quantity], names=True )
         
         ohdus = [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
         runIDRange_str = self.runIDRangeEntry.get_text()
@@ -3645,10 +4045,10 @@ class MonitorWindow(Gtk.Window):
         runIDMax = utils.try_convertion(runIDMax_str, int)
         
         if runIDMin is None: 
-            runIDMin = data['runID'].min()
+            runIDMin = min( self.global_runIDMin, data['runID'].min() )
             self.update = True
         if runIDMax is None: 
-            runIDMax = data['runID'].max()
+            runIDMax = max( self.global_runIDMax, data['runID'].max() )
             self.update = True
         if runIDMin < data['runID'].min(): 
             runIDMin = data['runID'].min()
@@ -3656,21 +4056,24 @@ class MonitorWindow(Gtk.Window):
         if runIDMax > data['runID'].max(): 
             runIDMax = data['runID'].max()
             self.update = True
-        #print 'range', runIDMin, runIDMax
+
         if not self.update: return
-    
+            
         if runIDMin > data['runID'].min() and runIDMax < data['runID'].max(): 
             self.update = False
 
         runIDMask = np.all( [ data['runID'] >= runIDMin, data['runID'] <= runIDMax], axis=0 )
         
+        runs = range( int(getrunFromRunID(runIDMin)), int(getrunFromRunID(runIDMax))+1 )
+        #print runs
+        runBoxes = [ { 'run':run, 'range': (lambda x: [min(x), max(x)])(DataPath.runID(run=run)) } for run in runs ]
+        #print runBoxes
+        
         fig = plt.figure()
         w, h = fig.get_size_inches()
         fig.set_size_inches((2*w,h))
-        #m = int(np.ceil(np.sqrt(len(ohdus))))
         m = int(np.floor( np.sqrt(float(len(ohdus))) ))
         n = float(len(ohdus))/m
-        #print 'number of plots', m
         if m==0: return
         
         grid = []
@@ -3681,32 +4084,50 @@ class MonitorWindow(Gtk.Window):
             plt.setp(grid[i].get_xticklabels(), visible=False)
             ohdus_ranges.append( ohdus[ int(i*n) : int( (i+1)*n ) ] )
 
+        ycum = []
         for i, ohdus_range in enumerate(ohdus_ranges):
             for ohdu in ohdus_range:
+                for runBox in runBoxes[::-2][::-1]:
+                    grid[i].axvspan( runBox['range'][0], runBox['range'][1], alpha=.1, color='blue' )
                 ohduMask = np.all( [runIDMask, data['ohdu']==ohdu], axis=0 )
-                grid[i].plot( data['runID'][ohduMask], data[tabletype][ohduMask], '.', ms=3., label = '%d'%ohdu )
+                y = data[quantity][ohduMask]
+                ycum.extend(y)
+                grid[i].plot( data['runID'][ohduMask], y, '.', ms=3., label = '%d'%ohdu )
+                
 
-            #print 'placement', .1+float(m-i)*8./m
-            #grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., .1+(m-i)*8./m ), loc='upper left' )
-            grid[i].grid(True)
-            grid[i].set_ylabel(tabletype)
+        ax = grid[0].twiny()
+        ax.set_xlim(grid[0].get_xlim())
+        ax.set_xticks( map( lambda runBox: .5*(runBox['range'][0] + runBox['range'][1]), runBoxes ) )
+        ax.set_xticklabels( map( lambda runBox: runBox['run'], runBoxes ) )
 
+        mean = np.mean(ycum)
+        std = mad(ycum)
         grid[-1].set_xlabel('runID')
         plt.setp(grid[-1].get_xticklabels(), visible=True)
         for i in range(m):
-            box = grid[i].get_position()
+            #box = grid[i].get_position()
+            grid[i].grid(True)
+            if quantity == 'darkCurrent':
+                grid[i].set_ylabel(r'm-m$_{os}$')
+            elif quantity == 'readoutNoise':
+                grid[i].set_ylabel(r'MAD$_{os}$')
+            elif quantity == 'diffMADSqr':
+                grid[i].set_ylabel(r'MAD$^2$-MAD$_{os}^2$')
             grid[i].legend( fancybox=True, framealpha=0, bbox_to_anchor=( 1., 1. ), loc='upper left' )
+            grid[i].set_ylim((mean-10*std, mean+10*std))
 
-        fig.savefig( figpath )
+        fig.savefig( self.imagePaths[quantity] )
         plt.close()
+        self.updateLabel(quantity, '<span color="green">done</span>' )
         def finished():
-            if tabletype == 'darkCurrent':
-                self.darkCurrentImageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( figpath ) )
-            elif tabletype == 'readoutNoise':
-                self.readoutNoiseImageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( figpath ) )
-            else:
-                print 'table type not expected', tabletype
-                return
+            #if tabletype == 'darkCurrent':
+                #self.darkCurrentImageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( figpath ) )
+            #elif tabletype == 'readoutNoise':
+                #self.readoutNoiseImageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( figpath ) )
+            #else:
+                #print 'table type not expected', tabletype
+                #return
+            self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
         GLib.idle_add( finished )
 
 
@@ -5270,30 +5691,36 @@ class ImageBase(ArrayExtension):
         return processImage3(self.image, threshold = thr)
     
     def add_image_to_axis( self, axes, eMin, eMax ):
-        axes.imshow( self.image, vmin = eMin, vmax = eMax )
+        axes.imshow( self.image, vmin = eMin, vmax = eMax, interpolation='none' )
         axes.set_adjustable('box-forced')
         axes.set_xlabel('x[pix]')
         axes.set_ylabel('y[pix]')
 
     def add_projection_to_axis( self, axes, bins, axis, align='horizontal' ):
-        length = self.shape[axis-1]
-        other_length = self.shape[axis]
+        if axis == 1: 
+            image = self.image
+            length = self.shape[0]
+            other_length = self.shape[1]
+        elif axis == 0: 
+            image = self.T
+            length = self.shape[1]
+            other_length = self.shape[0]
         
         x = range(length)
         medians = self.median( axis = axis )
         one_mad = medians + self.mad( axis = axis )
-        if axis == 1: image = self.image
-        elif axis == 0: image = self.T
         if align == 'horizontal':
-            axes.hist2d( np.repeat(x, other_length), image.flatten(), bins=[length, bins], norm = colors.LogNorm() )
-            axes.plot( x, medians )
-            axes.plot( x, one_mad )
+            axes.plot( x, medians, color='r' )
+            axes.plot( x, one_mad, color='m' )
+            axes.hist2d( np.repeat(x, other_length), (2*np.median(image)-image).flatten(), bins=[length,bins], norm = colors.LogNorm() )
             axes.set_ylabel('E[adu]')
+            axes.set_xlabel('x[pix]')
         elif align == 'vertical':
             axes.hist2d( image.flatten(), np.repeat(x, other_length), bins=[bins, length], norm = colors.LogNorm() )
-            axes.plot( medians, x )
-            axes.plot( one_mad, x )
+            axes.plot( medians, x, color='r' )
+            axes.plot( one_mad, x, color='m' )
             axes.set_xlabel('E[adu]')
+            axes.set_ylabel('y[pix]')
         return axes
     
     def printFlat( self, fname ):
@@ -5369,7 +5796,7 @@ class ImageBase(ArrayExtension):
         a, b = zoom_ax.get_ylim()
         zoom_ax.set_ylim((.1, b))
         zoom_ax.grid(True)
-        main_ax.invert_yaxis()
+        #main_ax.invert_yaxis()
         main_ax.set_xlim( (0,image.shape[1]) )
         main_ax.set_ylim( (0,image.shape[0]) )
         fig.savefig( fname )
@@ -5896,6 +6323,11 @@ class SideImage(ImageBase):
     def overscan( self ):
         return OverScanImage( self.image[self.os] )
 
+    def diffMAD( self ):
+        image = self.active().image - self.active().v_medians()[None:]
+        std = np.mean( mad( image, axis=1 ) )
+        return std**2 - self.readoutNoiseMAD()**2
+
     def readoutNoiseMAD( self ):
         image = self.overscan().image - self.overscan().v_medians()[None:]
         std = np.mean( mad( image, axis=1 ) )
@@ -5992,6 +6424,9 @@ class FullImage(ImageBase):
 
     def readoutNoiseEstimate( self ):
         return self.left().readoutNoiseMAD()
+    
+    def diffMAD(self):
+        return self.left().diffMAD()
     
     def darkCurrentEstimate2( self, medianVoid = None, sigmaVoid=None, sigmaBase = None ):
         #if sigmaVoid is None: sigmaVoid = self.data().mad_half()
