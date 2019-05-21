@@ -32,6 +32,7 @@ class ConnieDataPath:
     run_pattern = r'/runs/([0-9]+?)/'
     subrun_pattern = r'/runs/([0-9]+?[A-Z])/'
     runID_pattern = r'runID_([0-9]+?)_([0-9]+?)_.*_p([0-9]).fits.fz'
+    range_pattern = r'/data_([0-9]+?_to_[0-9]+)'
     
     @classmethod
     def parse_run(cls, run):
@@ -60,7 +61,11 @@ class ConnieDataPath:
 
     @classmethod
     def processed_pattern( cls, run, runID, part, image ): 
-        return cls.run_folder_processed(run)+'data_*_/%s/images/%s_*_runID_%s_%s_*_p%s.fits.fz'%( image, image, cls.parse_run(run), cls.parse_runID(runID), part )
+        return cls.run_folder_processed(run)+'data_[0-9]*_to_[0-9]*/%s/images/%s_*_runID_%s_%s_*_p%s.fits'%( image, image, cls.parse_run(run), cls.parse_runID(runID), part )
+    
+    @classmethod
+    def catalog_pattern( cls, subrun, skim=False ):
+        return cls.run_folder_processed(subrun)+'data_[0-9]*_to_[0-9]*/ext/catalog/catalog_data_[0-9]*_to_*[0-9][0-9]%s.root'%( '.skim1' if skim else '')
     
     @classmethod
     def runPath(cls, run=None, runID=None):
@@ -99,8 +104,8 @@ class ConnieDataPath:
         if type(run) is tuple: return [ item for line in cls.runID(run=list(run)) for item in line ]
         raise Exception( 'type not supported: %s'%( ' '.join([ '%s:%s'%(var, type(val)) for var, val in locals().items() ]) ) )
     
-    @staticmethod
-    def runIDPathPorcessed( cls, runID=None, run=None, part='*', image='*' ):
+    @classmethod
+    def runIDPathProcessed( cls, runID=None, run=None, part='*', image='*' ):
         if runID is None and run is None:  return sorted( glob.glob( cls.processed_pattern( '*', '*', part, image) ) )
         if type(runID) is int: return sorted( glob.glob( cls.processed_pattern( '*', runID, part, image ) ) )
         if type(runID) is list: return map( lambda r: cls.runIDPathProcessed( r, run, part, image ), runID )
@@ -130,12 +135,29 @@ class ConnieDataPath:
         if path is None and runID is None: return cls.subrun(cls.subrunPath())
         if type(path) is str: return re.search( cls.subrun_pattern, path ).groups()[0]
         if type(path) is list: return map( cls.subrun, path )
-        if type(runID) is str: return int( re.search( cls.runID_pattern, runID ).groups()[0] )
-        if type(runID) is int: return cls.run( path=cls.runIDPath(runID=runID)[0] )
-        if type(runID) is list: return map( cls.run, cls.runIDPath(runID) )
-        if type(runID) is tuple: return sorted(list(set(cls.run(runID=list(runID)))))
+        if type(runID) is str: return int( re.search( cls.subrunID_pattern, runID ).groups()[0] )
+        if type(runID) is int: return cls.subrun( path=cls.runIDPathProcessed(runID=runID)[0] )
+        if type(runID) is list: return map( cls.run, cls.runIDPathProcessed(runID) )
+        if type(runID) is tuple: return sorted(list(set(cls.subrun(runID=list(runID)))))
         raise Exception('type not supported path=%s runID=%s'%(type(path), type(runID)) )
-        
+    
+    @classmethod
+    def range_( cls, path=None, gain=False ):
+        if type(path) is list: #map( lambda path, gain=gain: cls.range_(path,gain), path )
+            return cls.range_( path[0], gain )
+        if type(path) is str: 
+            return re.search( cls.range_pattern, path ).groups()[0]
+    
+    @classmethod
+    def catalogPath( cls, subrun=None, skim=False, gain=False ):
+        if gain:
+            if type(subrun) is str: 
+                return glob.glob( '/share/storage2/connie/nu_processing/scripts/ProcCat/*cut_scn_osi_raw_gain_catalog_data_%s.root'%(cls.range_(cls.catalogPath(subrun,skim,False))) )[0]
+        else:
+            if type(subrun) is str: 
+                return glob.glob( cls.catalog_pattern( subrun, skim ) )
+        raise Exception('type not supported path=%s runID=%s'%(type(path), type(runID)) )
+    
     @staticmethod
     def test():
         print DataPath.parse_run(None)
@@ -147,4 +169,14 @@ class ConnieDataPath:
         print DataPath.runID(run=(42,43))
  
 if __name__ == '__main__':
-    print 'tests not implemented'
+    #print '\n'.join( ConnieDataPath.runIDPathProcessed(5000) )
+    #print ConnieDataPath.subrun( runID=5000 )
+    print ConnieDataPath.range_(ConnieDataPath.catalogPath('035A'))
+    print '028A', ConnieDataPath.catalogPath('028A')
+    print 'range_ 029A', ConnieDataPath.range_(ConnieDataPath.catalogPath('029A'))
+    for on in ['029G','029H','029I','029J','031A','031B']:
+        print on, ConnieDataPath.catalogPath(on, gain=True, skim=True)
+    print
+    for off in ['009','029C', '029D', '029E', '029F']:
+        print off, ConnieDataPath.catalogPath(off, gain=True, skim=True)
+    

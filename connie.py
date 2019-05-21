@@ -3149,42 +3149,61 @@ def computeEqs( X, labels ):
     eigenW, eigenV = np.linalg.eigh( cov )
     observations_in_newAxes = np.dot( eigenV, X )
     print 'eigenV', eigenV.shape
-    print 'newAxes', Observations_in_newAxes.shape
+    print 'newAxes', observations_in_newAxes.shape
     
-   #print len(newAxes), len(newAxes[0])
+    #print len(newAxes), len(newAxes[0])
     axesOrdered = np.argsort(np.abs(eigenW))
     #print axesOrdered
     #print eigenW[0], eigenW[axesOrdered[0]]
     #print eigenW[-1], eigenW[axesOrdered[-1]]
     #print np.abs(eigenW).min(), np.abs(eigenW).max()
-    newAxes = []
-    newObservations = []
-    for n in range(axesOrdered):
-        axis = axesOrdered[n]
-        newAxes = [ eigenV[:,axis] ]
+    #newAxes = []
+    #newObservations = []
+    #for n in range(axesOrdered):
+        #axis = axesOrdered[n]
+        #newAxes = [ eigenV[:,axis] ]
         #observationsNewAxes = [ obserservation_in_newAxes[] ]
- 
  
     coefs = []
     variables = []
     stds = []
     eqlabels = []
+    reordered_observations = []
     for n in range(len(X)):
         axis = axesOrdered[n]
+        reordered_observations.append( observations_in_newAxes[axis] )
         eqlabels.append(labels[axis])
         #c = eigenV[:,axis]/np.abs(eigenV[:,axis]).max()
-        args = np.argsort( eigenV[:,axis] )
+        args = np.argsort( eigenV[:,axis] )[::-1]
+        eigenV[:,axis] /= eigenV[args[-1],axis]
         print 'args', args
         coefs.append( [ eigenV[arg,axis] for arg in args ] ) # if abs(eigenV[arg,axis]) > 1e-3
         variables.append( [ labels[arg] for arg in args ] ) # if abs(eigenV[arg,axis]) > 1e-3
         stds.append( eigenW[axis] )
-        #eq = [ '%+.6f*%s'%(cov[i,axis]/cov[:,axis].max(), key) for i, key in enumerate(newVars.keys()) if cov[i,axis]/cov[:,axis].max() > 1e-6 ]
-        #print 'eq%s'%n, eq, eigenW[n]
     print 'coefs', coefs
     print variables
     print eqlabels
     print stds
-    return (coefs, variables, eqlabels, stds), observations_in_newAxes, newAxes, axisDispersions
+
+    fig = plt.figure()
+    w, h = fig.get_size_inches()
+    fig.set_size_inches(4*w,4*h)
+    grid = plt.GridSpec(cov.shape[0], cov.shape[1])
+    for i in range(cov.shape[0]):
+        for j in range(cov.shape[1]):
+            if i>j:
+                ax = fig.add_subplot( grid[i,j] )
+                ax.scatter( X[i], X[j], s=1. )
+                ax.set_xlabel( labels[i] )
+                ax.set_ylabel( labels[j] )
+            elif i<j:
+                ax = fig.add_subplot( grid[i,j] )
+                ax.scatter( reordered_observations[i], reordered_observations[j], s=1. )
+                ax.set_xlabel( ''.join( [ '%+.2f*%s'%(coefs[i][k], variables[i][k]) for k in range(len(coefs[i])) ] ) )
+                ax.set_ylabel( ''.join( [ '%+.2f*%s'%(coefs[j][k], variables[j][k]) for k in range(len(coefs[j])) ] ) )
+    fig.savefig('computeEqs.png')
+
+    return (coefs, variables, eqlabels, stds)#, observations_in_newAxes, newAxes, axisDispersions
     
 class Callable:
     @staticmethod
@@ -3290,15 +3309,18 @@ class Callable:
     def dcAnalysis():
         
         table = []
-        a = np.random.random_sample(100)
-        for a_ in a:
-            x = np.random.random_sample(100)
-            y = a*x
-            for x_, y_ in zip(x,y):
-                table.append([np.log(a_), np.log(x_), np.log(y_)])
+        a = np.random.random_sample(1000)*10
+        x = np.random.random_sample(1000)*10
+        for a_,x_ in zip(a,x):
+            eps = 2*(np.random.random_sample(1)[0]-.5)/10.
+            y = a_*x_ + eps
+            table.append( [a_, x_, y, y-x_*a_] )
+            #for x_, y_ in zip(x,y):
+                #table.append([a_, x_, y_,a_*x_])
         table = np.array(table).T
+        print table
         print table.shape
-        eqs = computeEqs( table, ['loga','logx','logy'] )
+        eqs = computeEqs( table, ['a','x','y','(y-a*x)'] )
         for coefs, variables, eqlabel, std in zip(*eqs):
             #print ''.join( [ '%+.4f*%s'%(coefs[i], variables[i]) for i in range(len(coefs)) ] ), std
             print ''.join( [ '%+.4f*%s'%(coefs[i], variables[i]) for i in range(len(coefs)) ] ), '= %+.4f*%s'%(std,eqlabel)
@@ -3346,283 +3368,61 @@ class Callable:
             g = DeltaVar**2/DeltaMean**3 # ADU**4/ADU**3 = ADU
             print '1st estimate', entry['lambda'], entry['gain_adu_e'], l, g #ADU/ADU
         
-        
-        ##first estimate with mu=<E> overscan, robust
-        #DeltaMean = np.median(poisson_norm_rvs) - np.median(norm_rvs) #ADU
-        #DeltaVar = mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 #ADU**2
-        #l = DeltaMean**2/DeltaVar
-        #g = DeltaVar**2/DeltaMean**3 # ADU**4/ADU**3 = ADU
-        #print '1st estimate', l, g, mad(norm_rvs)/g #ADU/ADU
-        
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111)
-        ##linear regression
-        #dVar = []
-        #dE = []
-        #lamb = []
-        #for i in range(10):
-            #d0 = np.random.choice(norm_rvs, int(1e4), replace=False)
-            #d1 = np.random.choice(poisson_norm_rvs, int(1e4), replace=False)
-            #_dVar = np.var(d1) - np.var(d0)
-            #_dE = np.mean(d1) - np.mean(d0)
-            #dVar.append( _dVar )
-            #dE.append( _dE )
-            #lamb.append( _dE**2/_dVar )
+    @staticmethod
+    def paperTable():
+        count = {}
+        reactor_subruns = {'on': ['029G','029H','029I','029J','031A','031B'], 'off': ['009','029C', '029D', '029E', '029F']}
+        selections = {'3-7keV': 'flag==0 && E2/gainCu>3 && E2/gainCu<7', '250-350keV': 'flag==0 && E2/gainCu>250 && E2/gainCu<350'}
+        for reactor, subruns in reactor_subruns.items():
+            for range_, selection in selections.items():
+                fullcount = []
+                for subrun in subruns:
+                    count = []
+                    path = ConniePaths.catalogPath( subrun, gain=True, skim=True )
+                    print subrun, path
+                    data = root_numpy.root2array( path, treename = 'hitSumm', branches = ['runID','E1','gainCu','ohdu'], selection=selection )
+                    runIDs = np.unique( data['runID'] )
+                    ohdus = np.unique( data['ohdu'] )
+                    for runID in runIDs:
+                        for ohdu in ohdus:
+                            mask = np.all( [ data['runID'] == runID, data['ohdu'] == ohdu ], axis=0 )
+                            count.append( [runID, ohdu, len(data[mask])] )
+                            fullcount.append( [runID, ohdu, len(data[mask])] )
+                    np.savetxt( 'count_%s_%s_%s.csv'%(reactor, range_, subrun), count, header='runID ohdu count', fmt='%s', delimiter=' ' )
+                    print 'done', reactor, range_, subrun
+                np.savetxt( 'count_%s_%s.csv'%(reactor, range_), count, header='runID ohdu count', fmt='%s', delimiter=' ' )
+                print 'done', reactor, range_
+
+    @staticmethod
+    def plotPaper():
+        reactors = ['on','off']
+        ranges = ['3-7keV', '250-350keV']
+        for range_ in ranges:
+            fig = plt.figure()
+            w, h = fig.get_size_inches()
+            fig.set_size_inches((w,h*.75))
+            ax = fig.add_subplot(111)
+            for reactor in reactors:
+                data = np.genfromtxt('count_%s_%s.csv'%(reactor, range_), names=True )
+                if range_ == '250-350keV':
+                    data = data[ data['count']>600 ]
+                hist, bins = np.histogram( data['count'], bins=np.arange(data['count'].min(), data['count'].max(), 2 if range_ == '3-7keV' else 15) )
+                bins = .5*(bins[1:]+bins[:-1])
+                color = 'blue' if reactor == 'on' else 'red'
+                ax.step(bins, hist.astype(float)/np.sum(hist), where='mid', color=color)
+                mean, std = scipy.stats.norm.fit(data['count'])
+                ax.plot( bins, (bins[1]-bins[0])*scipy.stats.norm.pdf(bins, loc=mean, scale=std), color=color, label='Reactor %s\n$\mu=%.3g$\n$\sigma=%.3g$'%(reactor.upper(),mean,std) )
+                np.savetxt( 'hist_%s_%s.csv'%(reactor,range_), [bins,hist], header='bin hist', fmt='%s', delimiter=' ' )
+                print 'save', 'hist_%s_%s.csv'%(reactor,range_)
+            ax.minorticks_on()
+            ax.set_xlabel('count/image', x=1, ha='right')
+            ax.set_ylabel('count', y=1, ha='right')
+            fig.set_tight_layout(True)
+            ax.legend( fancybox=True, framealpha=0 )
+            fig.savefig( 'hist_%s.pdf'%(range_) )
+            print 'save', 'hist_%s.pdf'%(range_)
+        print 'done'
             
-        #args = np.argsort(dVar)
-        #dVar = np.array(dVar)[args]
-        #dE = np.array(dE)[args]
-        #lamb = np.array(lamb)[args]
-
-        #_lambda = scipy.linalg.lstsq( (dVar)[:,None], dE**2 )[0]
-        #_g = scipy.linalg.lstsq( (dE**3)[:,None], dVar**2 )[0]
-        #ax.scatter( dVar, dE**2, c='r', label='lambda', s=1. )
-        #ax.scatter( dVar, lamb*dE**2, c='b', label='lambda', s=1. )
-        #ax.plot( dVar, mu*dVar, c='r' )
-        #ax.plot( dVar, _lambda*dVar, ':', c='r' )
-
-        #print 'lstsq', _lambda, _g
-
-        ##linear regression
-        #dVar = []
-        #dE = []
-        #for i in range(10):
-            #d0 = np.random.choice(norm_rvs, int(1e4), replace=False)
-            #d1 = np.random.choice(poisson_norm_rvs, int(1e4), replace=False)
-            #_dVar = iqr(d1)**2 - iqr(d0)**2
-            #_dE = np.median(d1) - np.median(d0)
-            #dVar.append( _dVar )
-            #dE.append( _dE )
-        #args = np.argsort(dVar)
-        #dVar = np.array(dVar)[args]
-        #dE = np.array(dE)[args]
-        #_lambda = scipy.linalg.lstsq( dVar[:,None], dE**2 )[0]
-        #_g = scipy.linalg.lstsq( (dE**3)[:,None], dVar**2 )[0]
-        ##ax.scatter( dVar, np.array(dE)**2, c='b', label='lambda', s=1. )
-        ##ax.plot( dVar, mu*dVar, c='b' )
-        ##ax.plot( dVar, _lambda*dVar, ':', c='b' )
-        ##ax.scatter( dE**3, dVar**2, c='r', label='g', s=1. )
-        ##ax.plot( dE**3, adu_e*dE**3, c='r' )
-        ##ax.plot( dE**3, _g*dE**3, ':', c='r' )
-        
-        #ax.legend(fancybox=False, framealpha=0)
-        #fig.savefig('linregress.pdf')
-        #plt.close()
-        #print 'lstsq_mad', _lambda, _g
-
-        ##second estimate
-        #mean = np.mean(poisson_norm_rvs)
-        #Var = np.var(poisson_norm_rvs)
-        #DeltaVar = Var - np.var(norm_rvs) #ADU**2
-        #m3 = np.mean( (poisson_norm_rvs - mean )**3 )
-        #def eqs( x ):
-            #l = x[0]
-            #g = x[1]
-            #return [
-                #g**2*l**3 - DeltaVar,
-                #g*l*(l+1) + l**2 - (m3/DeltaVar/3 + mean )
-                #]
-        
-        #l, g = scipy.optimize.least_squares( eqs, x0=[1,1], loss='cauchy', bounds=([0, 0], [np.inf,np.inf]) )['x']
-        #print '2nd estimate', l, g, np.sqrt(np.var(norm_rvs))/g
-        
-        ##second estimate
-        #mean = np.median(poisson_norm_rvs)
-        #Var = mad(poisson_norm_rvs)**2
-        #DeltaVar = Var - mad(norm_rvs)**2 #ADU**2
-        #m3 = np.mean( (poisson_norm_rvs - mean )**3 )
-        #def eqs( x ):
-            #l = x[0]
-            #g = x[1]
-            #return [
-                #g**2*l**3 - DeltaVar,
-                #g*l*(l+1) + l**2 - (m3/DeltaVar/3 + mean )
-                #]
-        
-        #l, g = scipy.optimize.least_squares( eqs, x0=[1.,2000.], loss='cauchy', bounds=([0, 0], [np.inf,np.inf]) )['x']
-        #print '2nd estimate', l, g, mad(norm_rvs)/g
-
-        ##second estimate robust
-        #q4 = quartiles(poisson_norm_rvs)
-        #QS = ((q4[2]-q4[1])-(q4[1]-q4[0]))/(q4[2]-q4[0])
-        #rm3 = m3/(Var)**(3./2)
-        #print 'ratio', rm3, QS, rm3/QS
-        
-        #return
-        ##extras
-        #qnorm4 = quartiles(norm_rvs)
-        #print 'norm quartiles', qnorm4, (qnorm4[2]-qnorm4[0]), ((qnorm4[2]-qnorm4[1])-(qnorm4[1]-qnorm4[0]))/(qnorm4[2]-qnorm4[0])
-        #q4 = quartiles(poisson_norm_rvs)
-        #print 'pnorm quartiles', q4, q4[2]-q4[0], ((q4[2]-q4[1])-(q4[1]-q4[0]))/(q4[2]-q4[0])
-        #print (q4[2]-q4[0])/(qnorm4[2]-qnorm4[0])
-        #mad0 = mad(norm_rvs)
-        #print 'glambda', mu*adu_e, mu**2*adu_e
-        #return
-        #def summation( f, n_0=0, N=None, tol=1e-4 ):
-            #n=n_0
-            #s_ = 0.
-            #while 1:
-                #f_ = float(f(n))
-                #if f_ == 0.: return 0
-                #s_ += f_
-                ##if N is not None: 
-                    ##if n>=N: return s_
-                #if abs(f_) < tol*float(s_): 
-                    #print 'iteractions', n
-                    #return s_
-                #n+=1
-            #return
-        
-        #def medianEq( g, lamb, mu, sigma, tol=1e-4 ):
-            #if abs(lamb) < tol:
-                #print 'zero'
-                #return scipy.special.erf( mu/(np.sqrt(2)*sigma) )
-            #def term(n):
-                #t = scipy.stats.poisson.pmf(n,abs(lamb))*scipy.special.erf( (mu - n*abs(g)*abs(lamb))/(np.sqrt(2)*sigma) )
-                #print 'term', n, lamb, t, mu, g, sigma, scipy.special.erf( (mu - n*abs(g)*abs(lamb))/(np.sqrt(2)*sigma) ), scipy.stats.poisson.pmf(n,abs(lamb))
-                #return t
-            #return summation( term , n_0=0 )
-
-        
-        #def eqQuartiles( x, mean, q4, std ):
-            #return [
-                #medianEq( x[0], x[1], q4[0] - mean, std ) + .25,
-                #medianEq( x[0], x[1], q4[1] - mean, std ),
-                #medianEq( x[0], x[1], q4[2] - mean, std ) - .25,
-                #]
-
-        #x0 = np.array([2000.,.1])
-        ##print 'lsq quartiles', scipy.optimize.least_squares( eqQuartiles, x0, loss='cauchy', bounds=([0, 0,-np.inf], [np.inf,np.inf,np.inf]), args=(0, q4, mad0) )['x']
-        #print 'lsq quartiles', scipy.optimize.least_squares( eqQuartiles, x0, loss='cauchy', bounds=([0, 0.01], [np.inf,np.inf]), args=(0, q4, float(mad0) ) )['x']
-
-        #def compute( d1, d0 ):
-            #DeltaMean = np.median(d1) - np.median(d0)
-            #DeltaVar = mad(d1)**2 - mad(d0)**2
-            #l = DeltaMean**2/DeltaVar
-            #g = DeltaVar**2/DeltaMean**3
-            #s = mad(d0)
-            #return l, g, s
-
-        #def compute2( d1, d0 ):
-            #m1 = np.median(d1) 
-            #m0 = np.median(d0)
-            #M1 = mad(d1) 
-            #M0 = mad(d0)
-            #return m1,M1,m0,M0
-        
-        #m0, m1, M0, M1 = [], [], [], []
-        #for i in range(1000):
-            #d0 = np.random.choice(norm_rvs, int(5e2), replace=False)
-            #d1 = np.random.choice(poisson_norm_rvs, int(5e2), replace=False)
-            #res = compute2(d1,d0)
-            #m1.append(res[0])
-            #M1.append(res[1])
-            #m0.append(res[2])
-            #M0.append(res[3])
-        #m0 = np.mean(m0)
-        #m1 = np.mean(m1)
-        #M0 = np.mean(M0)
-        #M1 = np.mean(M1)
-        #l = (m1-m0)**2/(M1**2-M0**2)
-        #g = (M1**2-M0**2)**2/abs(m1-m0)**3
-        #s = M0
-        #print 'values', l, g, s/g
-        #l0 = m1**2/(M1**2-M0**2)
-        #g0 = (M1**2-M0**2)**2/m1**3
-        
-        ##return
-        #median0 = np.median(norm_rvs)
-        #mad0 = mad(norm_rvs,scale=1.)
-        #median1 = np.median(poisson_norm_rvs)
-        #mad1 = mad(poisson_norm_rvs,scale=1.)
-
-        #def eqQuartiles( x, q4, std ):
-            #return [
-                #medianEq( x[0], x[1], q4[0] - x[2], std ) + .25,
-                #medianEq( x[0], x[1], q4[1] - x[2], std ),
-                #medianEq( x[0], x[1], q4[2] - x[2], std ) - .25,
-                #]
-
-        #x0 = np.array([2000.,1.,0.])
-        #print scipy.optimize.least_squares( eqQuartiles, x0, loss='cauchy', bounds=([0, 0,-np.inf], [np.inf,np.inf,np.inf]), args=(q4, mad0) )['x']
-        
-        #return
-        #def eqMed( x, m0, m1, std0 ):
-            #return medianEq( x[0], x[1], median1 - median0, mad0 )
-        #x0 = np.array([2000.,1.])
-        #print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0, 0], [np.inf,np.inf]), args=(m0, m1, mad0) )['x']
-        ##x0 = np.array([2000.,1.])
-        ##print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0, 0], [np.inf,np.inf]), args=(0, m1, mad0) )
-
-        ##def eqMed( x, l, m0, m1, std0 ):
-            ##return medianEq( x[0], l, median1 - median0, mad0 )
-        ##x0 = np.array([2000.])
-        ##print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0], [np.inf]), args=(l, m0, m1, mad0) )
-
-        #def medianEq2( g, lamb, mu, sigma ):
-            #a = abs(g)*abs(lamb)/(np.sqrt(2)*sigma)
-            #b = mu/(np.sqrt(2)*sigma)
-            #N = int(np.floor(b/a))
-            #s0 = summation( lambda n: scipy.stats.poisson.pmf(n,abs(lamb))*scipy.special.erf( b - n*a ), n_0=0, N=N )
-            #s1 = summation( lambda n: scipy.stats.poisson.pmf(n,abs(lamb))*scipy.special.erf( b - n*a ), n_0=N )
-            #return s0+s1
-
-        #def eqMed( x, m0, m1, std0 ):
-            #return medianEq2( x[0], x[1], median1 - median0, mad0 )
-        #x0 = np.array([2000.,1.])
-        #print scipy.optimize.least_squares( eqMed, x0, loss='cauchy', bounds=([0, 0], [np.inf,np.inf]), args=(m0, m1, mad0) )['x']
-        
-        #return
-        #def eqs( x ):
-            #return np.array( [ 
-                #medianEq( x[0], x[1], median1-median0, mad0 ), 
-                #medianEq( x[0], x[1], mad1+median1-median0, mad0 ) - medianEq( x[0], x[1], mad1 - (median1-median0), mad0 ) - .5
-                #] )
-        
-        #x0 = np.array([ 2000., .5 ])
-        #print 'fitting with mad'
-        #print scipy.optimize.least_squares( eqs, x0, xtol=1e-10, loss='cauchy', bounds=([0, 0], [np.inf,1.]), x_scale=[1./x0[0],1./x0[1]], diff_step=.1, verbose=0 )
-        #print 'done'
-
-        ##iqr1 = iqr(poisson_norm_rvs,scale=1.)
-        ##mad0 = iqr(norm_rvs,scale=1.)
-        #def eqs2( x ):
-            #return np.array( [ 
-                #medianEq( x[0], x[1], median1-median0, mad0 ),
-                ##medianEq( x[0], x[1], x[2]-median0, mad0 )+.5,
-                ##medianEq( x[0], x[1], x[3]-median0, mad0 )-.5,
-                ##medianEq( x[0], x[1], iqr1+median1-median0, mad0 )-.5,
-                #medianEq( x[0], x[1], mad1+median1-median0, mad0 )-.5,
-                ##medianEq( x[0], x[1], mad1+median1-median0, mad0 ) - medianEq( x[0], x[1], mad1 - (median1-median0), mad0 ) - .5
-                ##x[3] - x[2] - iqr1
-                #] )
-
-        ##x0 = np.array([ g1, lamb1 ])
-        #x0 = np.array([ 2000., .5 ])
-        #print 'fitting iqr complete'
-        #print scipy.optimize.least_squares( eqs, x0 )
-        #print 'done'
-        
-        ##print 'solve', mu**4 + mu**3 + 2*x0*mu**2 + x0**2, mu**3 + sigma**2, mad(poisson_norm_rvs)**2
-        ##print 'lambda', ( mad(poisson_norm_rvs)**2 - mad(norm_rvs)**2 )**(1./3)
-        ##print 'sigma', sigma, mu, np.sqrt(mu), sigma**2, mu/sigma, mu/sigma**2, np.sqrt( sigma**2 + mu )#, sigma - mu
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111)
-        #bins = ax.hist( norm_rvs, bins=E_adu, label='norm rvs', histtype='step' )[1]
-        #poisson_norm_hist = ax.hist( poisson_norm_rvs, bins=E_adu, label='poisson_norm rvs', histtype='step' )[0]
-        
-        ##p = scipy.optimize.curve_fit( lambda x, l, scale=mad(norm_rvs): poisson_gaussian_pdf(x, loc=-l**2, scale=scale, mu=l ), x[:-1], poisson_norm_hist/N, p0=[.1] )[0]
-        ##print 'mu_p', p
-        
-        #ax.plot( E_adu, norm*dE_adu, label='norm pdf' )
-        #ax.plot( E_adu, poisson_norm*dE_adu, label='poisson_norm pdf' )
-        #ylim = list(ax.get_ylim())
-        #ylim[0] = 1.
-        #ax.set_ylim( ylim )
-        #ax.legend( fancybox=True, framealpha=0 )
-        #ax.set_yscale('log')
-        #fig.savefig('dc_analysis.pdf')
-        #plt.close()
 
     @staticmethod
     def plotSpectrumSimulated( c ):
@@ -3672,107 +3472,6 @@ class Callable:
 
         RunIDImages.printSpectrum( [images031, images043], eMin=eMin, eMax=eMax, binWidth=binWidth, fname=lambda ohdu: 'spectrum4_031_043_ohdu%s.pdf'%ohdu )
 
-        
-    @staticmethod
-    def plotBaselineGainNoise():
-        ohdus = [2,3,7,10]
-        gains = { ohdu:[] for ohdu in ohdus }
-        medianL = { ohdu:[] for ohdu in ohdus }
-        medianR = { ohdu:[] for ohdu in ohdus }
-        meanL = { ohdu:[] for ohdu in ohdus }
-        meanR = { ohdu:[] for ohdu in ohdus }
-        stdL = { ohdu:[] for ohdu in ohdus }
-        stdR = { ohdu:[] for ohdu in ohdus }
-        madL = { ohdu:[] for ohdu in ohdus }
-        madR = { ohdu:[] for ohdu in ohdus }
-        madLa = { ohdu:[] for ohdu in ohdus }
-        medianLa = { ohdu:[] for ohdu in ohdus }
-        
-        x = []
-        for runID in range(3615, 4200):
-            for ohdu in ohdus:
-                gain = hitSumm._readGain(runID,ohdu)
-                if gain is None: continue
-                gains[ohdu].append( gain )
-                res = hitSumm._readBaselineNoise(runID, ohdu)
-                meanL[ohdu].append(res[0][0])
-                meanR[ohdu].append(res[1][0])
-                stdL[ohdu].append(res[0][1])
-                stdR[ohdu].append(res[1][1])
-                medianL[ohdu].append(res[0][2])
-                medianR[ohdu].append(res[1][2])
-                madL[ohdu].append(res[0][3])
-                madR[ohdu].append(res[1][3])
-                
-                madLa[ohdu].append(res[2][3])
-                medianLa[ohdu].append(res[2][2])
-                
-            if gain is None: continue
-            x.append(runID)
-            plots11 = [ lambda ax: ax.scatter(x, np.array(medianL[2]), marker='_', label='medianL'),
-                        lambda ax: ax.scatter(x, np.array(medianR[2]), marker='_', label='medianR'),
-                        #lambda ax: ax.scatter(x, np.array(meanL[2]), marker='|', label='meanL'),
-                        #lambda ax: ax.scatter(x, np.array(meanR[2]), marker='|', label='meanR'), 
-                        lambda ax: ax.scatter(x, np.array(medianLa[2]), marker='x', label='medianLa'),
-                        lambda ax: ax.scatter(x, np.array(madLa[2]), marker='|', label='madLa'),
-                        lambda ax: ax.scatter(x, np.array(gains[2]), marker='o', label='gain'), ]
-            
-            plots21 = [ lambda ax: ax.scatter(x, np.array(stdL[2]), marker='_', label='stdL'),
-                        lambda ax: ax.scatter(x, np.array(stdR[2]), marker='_', label='stdR'),
-                        lambda ax: ax.scatter(x, np.array(madL[2]), marker='|', label='madL'),
-                        lambda ax: ax.scatter(x, np.array(madR[2]), marker='|', label='madR'),]
-                        #lambda ax: ax.scatter(x, np.array(madLa[2]), marker='x', label='madLa'), ]
-
-            plots12 = [ lambda ax: ax.scatter(x, np.array(medianL[7]), marker='_', label='medianL'),
-                        lambda ax: ax.scatter(x, np.array(medianR[7]), marker='_', label='medianR'),
-                        #lambda ax: ax.scatter(x, np.array(meanL[7]), marker='|', label='meanL'),
-                        #lambda ax: ax.scatter(x, np.array(meanR[7]), marker='|', label='meanR'),
-                        lambda ax: ax.scatter(x, np.array(medianLa[7]), marker='x', label='medianLa'),
-                        lambda ax: ax.scatter(x, np.array(madLa[7]), marker='|', label='madLa'),
-                        lambda ax: ax.scatter(x, np.array(gains[7]), marker='o', label='gain'), ]
-            
-            plots22 = [ lambda ax: ax.scatter(x, np.array(stdL[7]), marker='_', label='stdL'),
-                        lambda ax: ax.scatter(x, np.array(stdR[7]), marker='_', label='stdR'),
-                        lambda ax: ax.scatter(x, np.array(madL[7]), marker='|', label='madL'),
-                        lambda ax: ax.scatter(x, np.array(madR[7]), marker='|', label='madR'),]
-                        #lambda ax: ax.scatter(x, np.array(madLa[7]), marker='x', label='madLa'), ]
-
-            plots13 = [ lambda ax: ax.scatter(x, np.array(medianL[10]), marker='_', label='medianL'),
-                        lambda ax: ax.scatter(x, np.array(medianR[10]), marker='_', label='medianR'),
-                        #lambda ax: ax.scatter(x, np.array(meanL[10]), marker='|', label='meanL'),
-                        #lambda ax: ax.scatter(x, np.array(meanR[10]), marker='|', label='meanR'),
-                        lambda ax: ax.scatter(x, np.array(medianLa[10]), marker='x', label='medianLa'),
-                        lambda ax: ax.scatter(x, np.array(madLa[10]), marker='|', label='madLa'),
-                        lambda ax: ax.scatter(x, np.array(gains[10]), marker='o', label='gain'), ]
-
-            
-            plots23 = [ lambda ax: ax.scatter(x, np.array(stdL[10]), marker='_', label='stdL'),
-                        lambda ax: ax.scatter(x, np.array(stdR[10]), marker='_', label='stdR'),
-                        lambda ax: ax.scatter(x, np.array(madL[10]), marker='|', label='madL'),
-                        lambda ax: ax.scatter(x, np.array(madR[10]), marker='|', label='madR'),]
-
-            plots14 = [ lambda ax: ax.scatter(x, np.array(medianL[3]), marker='_', label='medianL'),
-                        lambda ax: ax.scatter(x, np.array(medianR[3]), marker='_', label='medianR'),
-                        #lambda ax: ax.scatter(x, np.array(meanL[3]), marker='|', label='meanL'),
-                        #lambda ax: ax.scatter(x, np.array(meanR[3]), marker='|', label='meanR'),
-                        lambda ax: ax.scatter(x, np.array(medianLa[3]), marker='x', label='medianLa'),
-                        lambda ax: ax.scatter(x, np.array(madLa[3]), marker='|', label='madLa'),
-                        lambda ax: ax.scatter(x, np.array(gains[3]), marker='o', label='gain'), ]
-
-            
-            plots24 = [ lambda ax: ax.scatter(x, np.array(stdL[3]), marker='_', label='stdL'),
-                        lambda ax: ax.scatter(x, np.array(stdR[3]), marker='_', label='stdR'),
-                        lambda ax: ax.scatter(x, np.array(madL[3]), marker='|', label='madL'),
-                        lambda ax: ax.scatter(x, np.array(madR[3]), marker='|', label='madR'),]
-
-            generatePlots( 'gainCorrelation.pdf',
-                settings = [ xlabel('runIDs'), legend, grid ],
-                plots=[ [ plots11, plots12, plots13, plots14], 
-                        [ plots21, plots22, plots23, plots24] ]
-                )
-
-        exit(0)
-            
     @staticmethod
     def plotSpectrumRaw( c ):
         config = Config(c)
@@ -4614,9 +4313,9 @@ class Plot:
         plt.close()
 
 if __name__ == "__main__":
-    print( term.bold('Dark Current Analysis Tool for the CONNIE colaboration') )
+    print( term.bold('Tools for the CONNIE colaboration') )
     print( term.bold('by Philipe Mota (philipe.mota@gmail.com)') )
-    print( term.bold('repository https://github.com/PhMota/CONNIEtools/blob/master/fits_reader4.py') )
+    print( term.bold('repository https://github.com/PhMota/CONNIEtools') )
     if len(sys.argv) == 1:
         help_()
         exit(0)

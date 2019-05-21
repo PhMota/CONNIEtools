@@ -144,9 +144,10 @@ class MonitorViewer(Gtk.Window):
             vbox.pack_start( box, True, True, 0)
 
             self.labels[quantity] = Gtk.Label()
+            self.labels[quantity].set_justify(Gtk.Justification.LEFT)
             self.subHeader[quantity] = Gtk.HBox()
             self.resetLabel(quantity)
-            self.subHeader[quantity].pack_start(self.labels[quantity], False, False, 0)
+            self.subHeader[quantity].pack_start(self.labels[quantity], True, True, 0)
             self.imageCanvases[quantity] = Gtk.Image()
             box.pack_start(self.subHeader[quantity], False, False, 0)
             box.pack_start(self.imageCanvases[quantity], False, False, 0)
@@ -256,6 +257,9 @@ class MonitorViewer(Gtk.Window):
         runIDs_done = list(set(runIDs_done))
         self.resetLabel(quantity)
         if len(runIDs_done) == len(all_runIDs_reversed):
+            self.resetLabel(quantity)
+            self.remove_lock(quantity)
+            self.updateLabel(quantity, 'waiting for new data')
             return
             
         print 'updating', quantity,
@@ -273,10 +277,8 @@ class MonitorViewer(Gtk.Window):
         np.savetxt( self.tablePaths[quantity], data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
         print 'removing lock',
         self.remove_lock( quantity )
-        
         self.resetLabel(quantity)
         self.updateLabel(quantity,'concluded <b>%s</b> (%ds)'%(runID, time.time()-startTime) )
-
         self.plot_table( quantity )
     
     def make_entry( self, runID, quantity ):
