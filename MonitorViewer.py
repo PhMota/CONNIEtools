@@ -55,9 +55,9 @@ class Logger(object):
         self.terminal.write(message)
         log_message = '%s/%s[%s]: %s'%(self.session, self.key, time.strftime("%Y%b%d,%H:%M:%S"), message)
         f = open( self.log_file, 'a+' )
-        f.write(message)
+        f.write(log_message)
         f.close()
-        os.chmod( self.log_file, 0o666 )
+        #os.chmod( self.log_file, 0o666 )
         return
 
 class MonitorViewer(Gtk.Window):
@@ -74,6 +74,8 @@ class MonitorViewer(Gtk.Window):
         return True
         
     def __init__(self):
+        os.umask(0)
+
         self.id = '.' + os.environ['HOME'].split('/')[-1]
         self.id += str(int(time.time())%1000000)
         
@@ -241,7 +243,7 @@ class MonitorViewer(Gtk.Window):
     def create_lock(self, quantity):
         lock_file = '%s%s.lock'%(self.tablePaths[quantity],self.id)
         open( lock_file, 'w' )
-        os.chmod( lock_file, 0o666 )
+        #os.chmod( lock_file, 0o666 )
         return
 
     def is_locked(self, quantity ):
@@ -365,8 +367,8 @@ class MonitorViewer(Gtk.Window):
                 data.extend( self.make_entry(runID, quantity ) )
                 break
         
-        np.savetxt( self.tablePaths[quantity], data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
-        os.chmod( self.tablePaths[quantity], 0o666 )
+        with open( self.tablePaths[quantity], 'wb' ) as f:
+            np.savetxt( f, data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
         self.remove_lock( quantity )
         self.resetLabel(quantity)
         self.updateLabel(quantity,'concluded <b>%s</b> (%ds)'%(runID, time.time()-startTime) )
