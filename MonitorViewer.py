@@ -435,8 +435,8 @@ class MonitorViewer(Gtk.Window):
             self.global_runIDMax = runIDMax
             self.update = True
         
-        if runIDMin < 0: runIDMin = data['runID'].max() + runIDMin
         if runIDMax < 0: runIDMax = data['runID'].max() + runIDMax
+        if runIDMin < 0: runIDMin = runIDMax + runIDMin
 
         if runIDMin > runIDMax:
             print 'wrong zoom', quantity, runIDMin, runIDMax
