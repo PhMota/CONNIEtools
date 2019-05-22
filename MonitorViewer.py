@@ -15,6 +15,7 @@ import glob
 import os
 import shutil
 import time
+import re
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -64,6 +65,8 @@ class MonitorViewer(Gtk.Window):
         self.has_remove_lock_button = {}
         self.percentage_done = {}
         self.plotting = {}
+        self.wait = {}
+        self.thread = {}
         for quantity in self.quantities:
             self.imagePaths[quantity] = '/home/mota/public/gui/%sRawImage%s.png'%(quantity,self.id)
             self.tablePaths[quantity] = '/home/mota/public/gui/%sRawTable.csv'%(quantity)
@@ -71,6 +74,8 @@ class MonitorViewer(Gtk.Window):
             self.has_remove_lock_button[quantity] = False
             self.percentage_done[quantity] = None
             self.plotting[quantity] = False
+            self.wait[quantity] = 0
+            self.thread[quantity] = None
 
         Gtk.Window.__init__( self, title="Monitor Viewer [session%s]"%self.id )
         self.connect( 'delete-event', self.__del__ )
@@ -84,14 +89,31 @@ class MonitorViewer(Gtk.Window):
 
         self.show_all()
         self.quit = False
-        def loop():
-            while 1:
-                for quantity in self.quantities:
-                    if self.quit: return
-                    self.update_table( quantity )
+        #def loop():
+            #for quantity in self.quantities:
+                #if self.quit: return
+                #self.update_table( quantity )
+            #return True
+        #GLib.idle_add(loop)
+        #self.start_thread( loop )
+        for quantity in self.quantities:
+            self.start_thread( lambda: self.computation_loop(quantity), quantity )
 
-        self.start_thread( loop )
-
+    def computation_loop( self, quantity ):
+        while 1:
+            print 'start', quantity, 'in thread'
+            if self.wait[quantity] > 0:
+                print 'sleeping', quantity, self.wait[quantity]
+                for i in range(self.wait[quantity]):
+                    time.sleep(1)
+                    if self.should_quit():
+                        exit(0)
+                self.wait[quantity] = 0
+            self.update_table( quantity )
+            if self.should_quit():
+                exit(0)
+        return True
+        
     def build_window(self):
         vbox = Gtk.VBox()
         header = self.build_header()
@@ -155,60 +177,72 @@ class MonitorViewer(Gtk.Window):
         return scroll
     
     def updateLabel(self, quantity, text ):
-        def _():
-            self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' %s'%text )
-        GLib.idle_add(_)
+        #print 'previous label', r'%s'%self.labels[quantity].get_label()
+        def callback(): 
+            self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' ' + text )
+            return False
+        GLib.idle_add(callback)
+        
+        #print 'new label', r'%s'%self.labels[quantity].get_label()
+        #def _():
+        #GLib.idle_add(_)
         ##else:
             ##self.labels[quantity].set_markup( self.labels[quantity].get_label() + '<span> %s</span>'%text )
         #while Gtk.events_pending():
             #Gtk.main_iteration()
+    def should_quit(self):
+        return self.quit
     
     def resetLabel(self, quantity ):
-        percentage = self.percentage_done[quantity]
-        if percentage is None:
-            self.labels[quantity].set_markup( '<span color="blue">%s</span>'%(quantity) )
-            return
-        self.labels[quantity].set_markup( '<span color="blue">%s(%d%%)</span>'%(quantity, int(self.percentage_done[quantity]) ) )
-        return
+        def callback():
+            percentage = self.percentage_done[quantity]
+            if percentage is None:
+                self.labels[quantity].set_markup( '<span color="blue">%s</span>'%(quantity) )
+                return
+            self.labels[quantity].set_markup( '<span color="blue">%s(%d%%)</span>'%(quantity, int(self.percentage_done[quantity]) ) )
+            return False
+        GLib.idle_add( callback )
 
     def remove_lock(self, quantity ):
         os.remove( '%s%s.lock'%(self.tablePaths[quantity],self.id) )
+        print 'removing lock', quantity
 
     def remove_all_locks(self, quantity ):
         locks =  glob.glob('%s*.lock'%(self.tablePaths[quantity]) )
         for lock in locks:
             os.remove( lock )
+        print 'all locks removed'
         
     def create_lock(self, quantity):
         open( '%s%s.lock'%(self.tablePaths[quantity],self.id), 'w' )
 
     def is_locked(self, quantity ):
-        if len(glob.glob( '%s*.lock'%self.tablePaths[quantity] )) == 0: 
+        lock_files = glob.glob( '%s*.lock'%self.tablePaths[quantity] )
+        if len(lock_files) == 0: 
             self.lockTimers[quantity] = None
             return False
         if self.lockTimers[quantity] is None:
             self.lockTimers[quantity] = time.time()
 
-        #print '!!!', quantity, 'is locked; will check again at next iteraction'
+        pattern = '%s.(.*?)[0-9]*.lock'%self.tablePaths[quantity]
+        lock_users = map( lambda lock_file: re.search( pattern, lock_file ).groups()[0], lock_files )
         elapsed_time = time.time() - self.lockTimers[quantity]
         self.resetLabel( quantity )
-        self.updateLabel(quantity, '<span color="red"><b>is locked for %ds</b> will check again soon</span>'%(int(elapsed_time)) )
+        self.updateLabel(quantity, '<span color="red"><b>is locked by %s for %ds</b> will check again soon</span>'%( ','.join(lock_users), int(elapsed_time)) )
+
         if elapsed_time > 60 and not self.has_remove_lock_button[quantity]:
             self.has_remove_lock_button[quantity] = True
             print 'should create remove lock button'
             self.create_remove_lock_button( quantity )
-            
         return True
     
-    def start_thread(self, callback):
-        self.thread = threading.Thread(target=callback)
-        self.thread.start()
+    def start_thread(self, callback, quantity):
+        self.thread[quantity] = threading.Thread(target=callback)
+        self.thread[quantity].start()
         
     def on_runIDRangeEntry_activate( self, entry ):
         for quantity in self.quantities:
             self.plot_table( quantity )
-        #self.plot_table( self.darkCurrentRawTable, self.darkCurrentRawImage, tabletype='darkCurrent' )
-        #self.plot_table( self.readoutNoiseRawTable, self.readoutNoiseRawImage, tabletype='readoutNoise' )
         return
     
     def on_omitOutliersButton_clicked( self, button ):
@@ -217,31 +251,32 @@ class MonitorViewer(Gtk.Window):
         return
     
     def create_remove_lock_button( self, quantity ):
-        removeLockButton = Gtk.Button()
-        removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
-        self.subHeader[quantity].pack_start( removeLockButton, False, False, 0 )
-        print 'link button created'
-        removeLockButton.connect('clicked', self.manually_remove_lock, quantity )
-        removeLockButton.show()
-        while Gtk.events_pending():
-            Gtk.main_iteration()
+        def callback():
+            removeLockButton = Gtk.Button()
+            removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
+            self.subHeader[quantity].pack_start( removeLockButton, False, False, 0 )
+            print 'link button created'
+            removeLockButton.connect('clicked', self.manually_remove_lock, quantity )
+            removeLockButton.show()
+            return False
+        GLib.idle_add( callback )
 
     def manually_remove_lock(self, button, quantity ):
         shutil.copy2( self.tablePaths[quantity], '%s_%s.backup'%( self.tablePaths[quantity], time.asctime( time.localtime() )) )
         self.remove_all_locks( quantity )
-        button.destroy()
         self.has_remove_lock_button[quantity] = False
         self.resetLabel(quantity)
-        while Gtk.events_pending():
-            Gtk.main_iteration()
-
+        GLib.idle_add( button.destroy )
         
     def update_table(self, quantity ):
         '''
         computes an entry for the type specified, reads the previous table and appends to it. During its execution the table file is locked to avoid other instances of the code to modify the file
         '''
         
-        if self.is_locked( quantity ): return
+        if self.is_locked( quantity ): 
+            print 'set wait to 5', quantity
+            self.wait[quantity] = 5
+            return False
         startTime = time.time()
         self.create_lock( quantity )
         
@@ -257,35 +292,36 @@ class MonitorViewer(Gtk.Window):
         runIDs_done = list(set(runIDs_done))
         self.resetLabel(quantity)
         if len(runIDs_done) == len(all_runIDs_reversed):
+            print quantity, 'all done'
             self.resetLabel(quantity)
             self.remove_lock(quantity)
-            self.updateLabel(quantity, 'waiting for new data')
-            return
+            self.updateLabel(quantity, 'all done; sleeping for a minute')
+            self.wait[quantity] = 60
+            return False
             
-        print 'updating', quantity,
-
         #print len(runIDs_done), len(all_runIDs_reversed)
         self.percentage_done[quantity] = (100*len(runIDs_done))/len(all_runIDs_reversed)
         for runID in all_runIDs_reversed:
             if runID not in runIDs_done:
                 self.resetLabel( quantity )
                 self.updateLabel(quantity, 'calculating runID <b>%s</b>'%runID)
-                print 'runID', runID, 'computing...',
+
                 data.extend( self.make_entry(runID, quantity ) )
                 break
         
         np.savetxt( self.tablePaths[quantity], data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
-        print 'removing lock',
         self.remove_lock( quantity )
         self.resetLabel(quantity)
         self.updateLabel(quantity,'concluded <b>%s</b> (%ds)'%(runID, time.time()-startTime) )
         self.plot_table( quantity )
+        return False
     
     def make_entry( self, runID, quantity ):
         entry = []
         for ohdu in self.ohdus:
-            if self.quit: 
+            if self.should_quit():
                 self.remove_lock(quantity)
+                print 'should quit now from', quantity
                 exit(0)
             value = self.compute(runID, ohdu, quantity)
             entry.append( [runID, ohdu, value] )
@@ -315,8 +351,9 @@ class MonitorViewer(Gtk.Window):
             #return
         self.plotting[quantity] = True
         startTime = time.time()
-        previousLabel = self.labels[quantity].get_label()#.split('!')[0]
-        self.updateLabel(quantity, 'generating plot' )
+        
+        #previousLabel = self.labels[quantity].get_label()#.split('!')[0]
+        #self.updateLabel(quantity, 'generating plot' )
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
         
@@ -341,7 +378,6 @@ class MonitorViewer(Gtk.Window):
             runIDMax = max( self.global_runIDMax, data['runID'].max() )
             self.global_runIDMax = runIDMax
             self.update = True
-        print 'zoom', quantity, runIDMin, runIDMax
         
         if runIDMin < 0: runIDMin = data['runID'].max() + runIDMin
         if runIDMax < 0: runIDMax = data['runID'].max() + runIDMax
@@ -349,12 +385,7 @@ class MonitorViewer(Gtk.Window):
         if runIDMin > runIDMax:
             print 'wrong zoom', quantity, runIDMin, runIDMax
             return
-        #print quantity, self.global_runIDMin, self.global_runIDMax
-        #if not self.update: return
-            
-        #if runIDMin > data['runID'].min() and runIDMax < data['runID'].max(): 
-            #self.update = False
-        print 'zoom', quantity, runIDMin, runIDMax        
+
         runIDMask = np.all( [ data['runID'] >= runIDMin, data['runID'] <= runIDMax], axis=0 )
         
         all_runs = ConniePaths.run()
@@ -419,8 +450,12 @@ class MonitorViewer(Gtk.Window):
         self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
         #self.labels[quantity].set_markup( previousLabel + ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
         #self.updateLabel(quantity, '<span color="green">done</span>' )
-        def finished():
+        #def finished():
+            #self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
+        #GLib.idle_add( finished )
+        def callback():
             self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
-        GLib.idle_add( finished )
+            return False
+        GLib.idle_add(callback)
         self.plotting[quantity] = False
  

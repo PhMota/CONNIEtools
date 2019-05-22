@@ -3395,6 +3395,20 @@ class Callable:
 
     @staticmethod
     def plotPaper():
+        def print_value_error( x, dx ):
+            power = np.log10(abs(dx))
+            power_int = int(np.floor(abs(power)))+1
+            print 'power', power, power_int, x, dx
+            if power > 0:
+                power_int -= 1
+                if power_int == 0:
+                    pre_str = '%d\pm%d'%(round(x), round(dx))
+                else:
+                    pre_str = '(%d\pm%d)10^{%d}'%(round(x/10**(power_int)), round(dx/10**(power_int)), power_int)
+            else:
+                pre_str = '%%.%df\pm%%.%df'%(power_int,power_int)%(x,dx)
+            print pre_str
+            return pre_str
         reactors = ['on','off']
         ranges = ['3-7keV', '250-350keV']
         for range_ in ranges:
@@ -3404,19 +3418,26 @@ class Callable:
             ax = fig.add_subplot(111)
             for reactor in reactors:
                 data = np.genfromtxt('count_%s_%s.csv'%(reactor, range_), names=True )
+                X = data['count']
                 if range_ == '250-350keV':
-                    data = data[ data['count']>600 ]
-                hist, bins = np.histogram( data['count'], bins=np.arange(data['count'].min(), data['count'].max(), 2 if range_ == '3-7keV' else 15) )
+                    X = X[ X>600 ]
+                hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 2 if range_ == '3-7keV' else 15) )
                 bins = .5*(bins[1:]+bins[:-1])
                 color = 'blue' if reactor == 'on' else 'red'
                 ax.step(bins, hist.astype(float)/np.sum(hist), where='mid', color=color)
-                mean, std = scipy.stats.norm.fit(data['count'])
-                ax.plot( bins, (bins[1]-bins[0])*scipy.stats.norm.pdf(bins, loc=mean, scale=std), color=color, label='Reactor %s\n$\mu=%.3g$\n$\sigma=%.3g$'%(reactor.upper(),mean,std) )
-                np.savetxt( 'hist_%s_%s.csv'%(reactor,range_), [bins,hist], header='bin hist', fmt='%s', delimiter=' ' )
+                #popt, pcov = scipy.stats.curve_fit( scipy.stats.norm.pdf,  )
+                #perr = np.sqrt(np.diag(pcov))
+                mean, std = scipy.stats.norm.fit(X)
+                N = len(X)
+                mean_err = std/np.sqrt(N)
+                std_err = np.sqrt( np.mean( (X-mean)**4 )/N )/std
+                label = 'Reactor %s\n$\mu=%s$\n$\sigma=%s$'%(reactor.upper(), print_value_error(mean,mean_err), print_value_error(std, std_err))
+                ax.plot( bins, (bins[1]-bins[0])*scipy.stats.norm.pdf(bins, loc=mean, scale=std), color=color, label= label)
+                np.savetxt( 'hist_%s_%s.csv'%(reactor,range_), zip(bins,hist), header='bin hist', fmt='%s', delimiter=' ' )
                 print 'save', 'hist_%s_%s.csv'%(reactor,range_)
             ax.minorticks_on()
-            ax.set_xlabel('count/image', x=1, ha='right')
-            ax.set_ylabel('count', y=1, ha='right')
+            ax.set_xlabel('Event rate', x=1, ha='right')
+            ax.set_ylabel('Frequency', y=1, ha='right')
             fig.set_tight_layout(True)
             ax.legend( fancybox=True, framealpha=0 )
             fig.savefig( 'hist_%s.pdf'%(range_) )
