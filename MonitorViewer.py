@@ -13,6 +13,7 @@ import matplotlib.ticker as ticker
 
 import glob
 import os
+import sys
 import shutil
 import time
 import re
@@ -33,6 +34,31 @@ class utils:
         try: result = t(s)
         except: pass
         return result
+    
+def file_age(filepath):
+    return time.time() - os.path.getmtime(filepath)
+
+def file_age_str(filepath):
+    secs = file_age(filepath)
+    minutes = int(secs)/60
+    hours = minutes/60
+    return '%sh%sm'%(hours,minutes)
+
+class Logger(object):
+    def __init__( self, session, out, key ):
+        self.terminal = out
+        self.log_file = '/home/mota/public/gui/%s.%s'%(session,key)
+        self.key = key
+        self.session = session
+        
+    def write( self, message ):
+        self.terminal.write(message)
+        log_message = '%s/%s[%s]: %s'%(self.session, self.key, time.strftime("%Y%b%d,%H:%M:%S"), message)
+        f = open( self.log_file, 'a+' )
+        f.write(message)
+        f.close()
+        os.chmod( self.log_file, 0o666 )
+        return
 
 class MonitorViewer(Gtk.Window):
     
@@ -52,12 +78,19 @@ class MonitorViewer(Gtk.Window):
         self.id += str(int(time.time())%1000000)
         
         print 'id', self.id
+        sys.stdout = Logger( self.id, sys.stdout, 'out')
+        sys.stderr = Logger( self.id, sys.stderr, 'err')
+        
+        self.log_file = '/home/mota/public/gui/%s.log'%self.id
         self.quantities = ['darkCurrent', 'readoutNoise','diffMADSqr']
         
         self.ohdus = range(2,16)
         self.global_runIDMax = None
         self.global_runIDMin = None
         self.runRanges = None
+        
+        self.firstLockMsg = {}
+        self.firstAllDoneMsg = {}
         
         self.imagePaths = {}
         self.tablePaths = {}
@@ -76,12 +109,15 @@ class MonitorViewer(Gtk.Window):
             self.plotting[quantity] = False
             self.wait[quantity] = 0
             self.thread[quantity] = None
+            self.firstAllDoneMsg[quantity] = True
+            self.firstLockMsg[quantity] = True
 
         Gtk.Window.__init__( self, title="Monitor Viewer [session%s]"%self.id )
         self.connect( 'delete-event', self.__del__ )
         self.maximize()
         self.set_border_width(3)
         self.add( self.build_window() )
+        print 'window built successfully'
         
         self.update = True
         for quantity in self.quantities:
@@ -89,21 +125,16 @@ class MonitorViewer(Gtk.Window):
 
         self.show_all()
         self.quit = False
-        #def loop():
-            #for quantity in self.quantities:
-                #if self.quit: return
-                #self.update_table( quantity )
-            #return True
-        #GLib.idle_add(loop)
-        #self.start_thread( loop )
+
         for quantity in self.quantities:
-            self.start_thread( lambda: self.computation_loop(quantity), quantity )
+            time.sleep(.1)
+            self.start_thread( lambda quantity=quantity: self.computation_loop(quantity), quantity )
 
     def computation_loop( self, quantity ):
+        print 'start', quantity, 'in thread loop'
         while 1:
-            print 'start', quantity, 'in thread'
             if self.wait[quantity] > 0:
-                print 'sleeping', quantity, self.wait[quantity]
+                #print 'sleeping', quantity, self.wait[quantity]
                 for i in range(self.wait[quantity]):
                     time.sleep(1)
                     if self.should_quit():
@@ -148,6 +179,7 @@ class MonitorViewer(Gtk.Window):
             toggleButton.set_label( '%2s'%(ohdu) )
             toggleButton.set_active(True)
             if ohdu in [11,12,15]: toggleButton.set_active(False)
+            toggleButton.connect('clicked', self.on_ohduButton_clicked )
             self.ohdusBox.pack_start( toggleButton, False, False, 0 )
 
         return subbox
@@ -175,21 +207,13 @@ class MonitorViewer(Gtk.Window):
             box.pack_start(self.imageCanvases[quantity], False, False, 0)
 
         return scroll
-    
+        
     def updateLabel(self, quantity, text ):
-        #print 'previous label', r'%s'%self.labels[quantity].get_label()
         def callback(): 
             self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' ' + text )
             return False
         GLib.idle_add(callback)
-        
-        #print 'new label', r'%s'%self.labels[quantity].get_label()
-        #def _():
-        #GLib.idle_add(_)
-        ##else:
-            ##self.labels[quantity].set_markup( self.labels[quantity].get_label() + '<span> %s</span>'%text )
-        #while Gtk.events_pending():
-            #Gtk.main_iteration()
+
     def should_quit(self):
         return self.quit
     
@@ -205,34 +229,45 @@ class MonitorViewer(Gtk.Window):
 
     def remove_lock(self, quantity ):
         os.remove( '%s%s.lock'%(self.tablePaths[quantity],self.id) )
-        print 'removing lock', quantity
+        #print 'removing lock', quantity
 
     def remove_all_locks(self, quantity ):
         locks =  glob.glob('%s*.lock'%(self.tablePaths[quantity]) )
         for lock in locks:
             os.remove( lock )
-        print 'all locks removed'
+        print 'all locks removed', quantity, ', '.join(locks)
+        self.firstLockMsg[quantity] = True
         
     def create_lock(self, quantity):
-        open( '%s%s.lock'%(self.tablePaths[quantity],self.id), 'w' )
+        lock_file = '%s%s.lock'%(self.tablePaths[quantity],self.id)
+        open( lock_file, 'w' )
+        os.chmod( lock_file, 0o666 )
+        return
 
     def is_locked(self, quantity ):
         lock_files = glob.glob( '%s*.lock'%self.tablePaths[quantity] )
         if len(lock_files) == 0: 
             self.lockTimers[quantity] = None
+            self.firstLockMsg[quantity] = True
             return False
         if self.lockTimers[quantity] is None:
             self.lockTimers[quantity] = time.time()
-
+        
+        if self.firstLockMsg[quantity]:
+            print 'found locks', quantity, ', '.join(lock_files)
+            self.firstLockMsg[quantity] = False
         pattern = '%s.(.*?)[0-9]*.lock'%self.tablePaths[quantity]
         lock_users = map( lambda lock_file: re.search( pattern, lock_file ).groups()[0], lock_files )
-        elapsed_time = time.time() - self.lockTimers[quantity]
+        elapsed_time = min(map( file_age, lock_files ))
+        minutes = int(elapsed_time)/60
+        hours = minutes/60
+        string = '%sm'%minutes if hours == 0 else '%sh%sm'%(hours, minutes)
         self.resetLabel( quantity )
-        self.updateLabel(quantity, '<span color="red"><b>is locked by %s for %ds</b> will check again soon</span>'%( ','.join(lock_users), int(elapsed_time)) )
+        self.updateLabel(quantity, '<span color="red"><b>is locked by %s for %s</b> will check again soon</span>'%( ','.join(lock_users), string ) )
 
-        if elapsed_time > 60 and not self.has_remove_lock_button[quantity]:
+        if elapsed_time > 5*60 and not self.has_remove_lock_button[quantity]:
             self.has_remove_lock_button[quantity] = True
-            print 'should create remove lock button'
+            print 'should create remove lock button', quantity
             self.create_remove_lock_button( quantity )
         return True
     
@@ -241,27 +276,46 @@ class MonitorViewer(Gtk.Window):
         self.thread[quantity].start()
         
     def on_runIDRangeEntry_activate( self, entry ):
+        print 'runIDRange activated', entry.get_text()
         for quantity in self.quantities:
             self.plot_table( quantity )
         return
     
-    def on_omitOutliersButton_clicked( self, button ):
+    def on_ohduButton_clicked( self, button ):
+        print 'ohdu toggled', button.get_label(), button.get_active()
+        button.set_sensitive(False)
+        while Gtk.events_pending():
+            Gtk.main_iteration()
         for quantity in self.quantities:
             self.plot_table( quantity )
+        button.set_sensitive(True)
+        #while Gtk.events_pending():
+            #Gtk.main_iteration()
+        return
+        
+    def on_omitOutliersButton_clicked( self, button ):
+        print 'omitOutliers toggled', button.get_active()
+        button.set_sensitive(False)
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        for quantity in self.quantities:
+            self.plot_table( quantity )
+        button.set_sensitive(True)
         return
     
     def create_remove_lock_button( self, quantity ):
         def callback():
+            print 'removeLock created', quantity
             removeLockButton = Gtk.Button()
             removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
             self.subHeader[quantity].pack_start( removeLockButton, False, False, 0 )
-            print 'link button created'
             removeLockButton.connect('clicked', self.manually_remove_lock, quantity )
             removeLockButton.show()
             return False
         GLib.idle_add( callback )
 
     def manually_remove_lock(self, button, quantity ):
+        print 'removeLock clicked', quantity
         shutil.copy2( self.tablePaths[quantity], '%s_%s.backup'%( self.tablePaths[quantity], time.asctime( time.localtime() )) )
         self.remove_all_locks( quantity )
         self.has_remove_lock_button[quantity] = False
@@ -274,7 +328,6 @@ class MonitorViewer(Gtk.Window):
         '''
         
         if self.is_locked( quantity ): 
-            print 'set wait to 5', quantity
             self.wait[quantity] = 5
             return False
         startTime = time.time()
@@ -292,28 +345,33 @@ class MonitorViewer(Gtk.Window):
         runIDs_done = list(set(runIDs_done))
         self.resetLabel(quantity)
         if len(runIDs_done) == len(all_runIDs_reversed):
-            print quantity, 'all done'
+            if self.firstAllDoneMsg[quantity]:
+                print quantity, 'all done'
+                self.firstAllDoneMsg[quantity] = False
             self.resetLabel(quantity)
             self.remove_lock(quantity)
             self.updateLabel(quantity, 'all done; sleeping for a minute')
             self.wait[quantity] = 60
             return False
-            
+        
+        self.firstAllDoneMsg[quantity] = False
         #print len(runIDs_done), len(all_runIDs_reversed)
         self.percentage_done[quantity] = (100*len(runIDs_done))/len(all_runIDs_reversed)
         for runID in all_runIDs_reversed:
             if runID not in runIDs_done:
+                print quantity, 'runID', runID
                 self.resetLabel( quantity )
                 self.updateLabel(quantity, 'calculating runID <b>%s</b>'%runID)
-
                 data.extend( self.make_entry(runID, quantity ) )
                 break
         
         np.savetxt( self.tablePaths[quantity], data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
+        os.chmod( self.tablePaths[quantity], 0o666 )
         self.remove_lock( quantity )
         self.resetLabel(quantity)
         self.updateLabel(quantity,'concluded <b>%s</b> (%ds)'%(runID, time.time()-startTime) )
         self.plot_table( quantity )
+        print 'finished', quantity, 'runID', runID
         return False
     
     def make_entry( self, runID, quantity ):
@@ -352,8 +410,6 @@ class MonitorViewer(Gtk.Window):
         self.plotting[quantity] = True
         startTime = time.time()
         
-        #previousLabel = self.labels[quantity].get_label()#.split('!')[0]
-        #self.updateLabel(quantity, 'generating plot' )
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
         
@@ -413,7 +469,7 @@ class MonitorViewer(Gtk.Window):
         for i, ohdus_range in enumerate(ohdus_ranges):
             for ohdu in ohdus_range:
                 for runBox in runBoxes[::-2]:
-                    grid[i].axvspan( runBox['range'][0], runBox['range'][1], alpha=.1, color='blue' )
+                    grid[i].axvspan( runBox['range'][0], runBox['range'][1], alpha=.05, color='blue' )
                 ohduMask = np.all( [runIDMask, data['ohdu']==ohdu], axis=0 )
                 y = data[quantity][ohduMask]
                 ycum.append(y)
@@ -448,11 +504,7 @@ class MonitorViewer(Gtk.Window):
         fig.savefig( self.imagePaths[quantity] )
         plt.close()
         self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
-        #self.labels[quantity].set_markup( previousLabel + ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
-        #self.updateLabel(quantity, '<span color="green">done</span>' )
-        #def finished():
-            #self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
-        #GLib.idle_add( finished )
+
         def callback():
             self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
             return False
