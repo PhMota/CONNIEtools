@@ -29,12 +29,16 @@ def readImage_raw( runID, ohdu ):
     files = ConniePaths.runIDPath( int(runID) )
     return merge_images( files, ohdu )
 
-def readImage_processed( runID, ohdu ):
-    files = ConniePaths.runIDPathProcessed( int(runID) )
+def readImage_MB( runID, ohdu ):
+    files = ConniePaths.masterBiasPath( int(runID) )
+    return merge_images( files, ohdu )
+
+def readImage_processed( runID, ohdu, image='scn' ):
+    files = ConniePaths.runIDPathProcessed( int(runID), image=image )
     return merge_images( files, ohdu)
 
 def merge_images( files, ohdu ):
-    ohdus = lambda fits: [ fit.data for fit in fits if int(fit.header['OHDU']) == ohdu ][0]
+    ohdus = lambda fits: fits[ohdu-1].data
     image = np.concatenate( [ ohdus(astropy.io.fits.open(file)) for file in files[::-1] ], axis=0 )
     return image
 
@@ -142,13 +146,16 @@ class ImageBase(ArrayExtension):
         
         axes.grid( True )
         axes.set_frame_on(False)
-        x = range(length)
+        x = np.arange(length)
         medians = self.median( axis = axis )
         one_MAD = medians + self.MAD( axis = axis )
         if align == 'horizontal':
             axes.plot( x, medians, color='r' )
             axes.plot( x, one_MAD, color='m' )
+            #hist2d, xedges, yedges = np.histogram2d( np.repeat(x, other_length), image.flatten(), bins=[length,bins] )
+            #axes.imshow( hist2d.T, interpolation='none', origin='lower' )
             axes.hist2d( np.repeat(x, other_length), (2*np.median(image)-image).flatten(), bins=[length,bins], norm = colors.LogNorm() )
+            #axes.hist2d( np.repeat(x, other_length), np.abs(-image).flatten(), bins=[length,bins], norm = colors.LogNorm() )
             axes.set_ylabel('E[adu]')
             axes.set_xlabel('x[pix]')
             axes.xaxis.tick_top()
@@ -811,9 +818,10 @@ class SideImage(ImageBase):
         return SideImage( np.concatenate( (self.active().biasImage2Corrected().image, self.overscan().biasImageCorrected().image), axis=1 ) )
 
     def verticalSubtraction(self):
-        return SideImage( self.image - np.median( self.image[-self.overscanHeight:,:], axis=0 )[None,:] )
+        return SideImage( self.image - np.median( self.image[-self.overscanHeight+1:,:], axis=0 )[None,:] )
 
     def horizontalSubtraction(self):
+        #return SideImage( self.image - np.median( self.image[:,-self.overscanWidth:], axis=1 )[:,None] )
         return SideImage( self.image - np.median( self.image[:,-self.overscanWidth:], axis=1 )[:,None] )
 
 class FullImage(ImageBase):
@@ -833,17 +841,26 @@ class FullImage(ImageBase):
                 print 'full shape not predited', self.image.shape, self.imageType
                 exit(1)
                 
-        elif imageType == 'osi':
-            ImageBase.__init__(self, hitSumm._getOSIImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
-            if self.width in [ 8524, 9324]:
-                self.trim = 0
-                self.side =  np.s_[:, :self.width/2]
-            else:
-                print( 'full shape not predited', self.image.shape )
-                exit(1)
+        #elif imageType == 'osi':
+            #ImageBase.__init__(self, hitSumm._getOSIImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            #if self.width in [ 8524, 9324]:
+                #self.trim = 0
+                #self.side =  np.s_[:, :self.width/2]
+            #else:
+                #print( 'full shape not predited', self.image.shape )
+                #exit(1)
                 
-        elif imageType == 'mbs':
-            ImageBase.__init__(self, hitSumm._getMBSImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+        #elif imageType == 'mbs':
+            #ImageBase.__init__(self, hitSumm._getMBSImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            #if self.width in [ 8524, 9324 ]:
+                #self.trim = 0
+                #self.side =  np.s_[:, :self.width/2]
+            #else:
+                #print( 'full shape not predited', self.image.shape )
+                #exit(1)
+
+        elif imageType == 'MB':
+            ImageBase.__init__(self, readImage_MB( runID=runID, ohdu=ohdu )[::-1,:] )
             if self.width in [ 8524, 9324 ]:
                 self.trim = 0
                 self.side =  np.s_[:, :self.width/2]
@@ -853,14 +870,13 @@ class FullImage(ImageBase):
         
         elif imageType.startswith('scn'):
             self.has_right = False
-            ImageBase.__init__(self, hitSumm._getSCNImage_adu( runID=runID, ohdu=ohdu )[::-1,:] )
+            ImageBase.__init__(self, readImage_processed( runID=runID, ohdu=ohdu, image='scn' )[::-1,:] )
             if self.width in [ 4262, 4662 ]:
                 self.trim = 0
                 self.side =  np.s_[:, :self.width]
             else:
                 print( 'full shape not predited', self.image.shape )
                 exit(1)
-
         else:
             print( 'imageType not predited', self.image.shape )
             exit(1)

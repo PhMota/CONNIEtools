@@ -50,14 +50,21 @@ class Logger(object):
         self.log_file = '/home/mota/public/gui/%s.%s'%(session,key)
         self.key = key
         self.session = session
-        
+        self.queue = []
+        self.locked = False
+    
     def write( self, message ):
-        self.terminal.write(message)
+        if self.locked: self.queue.append(message)
+        self.locked = True
         log_message = '%s/%s[%s]: %s'%(self.session, self.key, time.strftime("%Y%b%d,%H:%M:%S"), message)
-        f = open( self.log_file, 'a+' )
+        self.terminal.write(message)
+        self.terminal.flush()
+        f = open( self.log_file, 'a+', 0 )
         f.write(log_message)
         f.close()
-        #os.chmod( self.log_file, 0o666 )
+        self.locked = False
+        if len(self.queue) > 0:
+            self.write( '[queued]%s'%self.queue.pop(0) )
         return
 
 class MonitorViewer(Gtk.Window):
@@ -79,7 +86,7 @@ class MonitorViewer(Gtk.Window):
         self.id = '.' + os.environ['HOME'].split('/')[-1]
         self.id += str(int(time.time())%1000000)
         
-        print 'id', self.id
+        print 'id %s'%self.id
         sys.stdout = Logger( self.id, sys.stdout, 'out')
         sys.stderr = Logger( self.id, sys.stderr, 'err')
         
@@ -122,6 +129,7 @@ class MonitorViewer(Gtk.Window):
         print 'window built successfully'
         
         self.update = True
+        print 'first plottig, number of threads %s'%threading.active_count()
         for quantity in self.quantities:
             self.plot_table( quantity )
 
@@ -129,11 +137,11 @@ class MonitorViewer(Gtk.Window):
         self.quit = False
 
         for quantity in self.quantities:
-            time.sleep(.1)
+            print 'request thread for %s %s'%(quantity, threading.active_count())
             self.start_thread( lambda quantity=quantity: self.computation_loop(quantity), quantity )
 
     def computation_loop( self, quantity ):
-        print 'start', quantity, 'in thread loop'
+        print 'start %s loop in thread %s number of threads %s'%( quantity, threading.currentThread().getName(), threading.active_count() )
         while 1:
             if self.wait[quantity] > 0:
                 #print 'sleeping', quantity, self.wait[quantity]
@@ -237,7 +245,7 @@ class MonitorViewer(Gtk.Window):
         locks =  glob.glob('%s*.lock'%(self.tablePaths[quantity]) )
         for lock in locks:
             os.remove( lock )
-        print 'all locks removed', quantity, ', '.join(locks)
+        print 'all locks removed in thread '+ threading.currentThread().getName() + ' ' + quantity + ' ' + ', '.join(locks)
         self.firstLockMsg[quantity] = True
         
     def create_lock(self, quantity):
@@ -256,7 +264,7 @@ class MonitorViewer(Gtk.Window):
             self.lockTimers[quantity] = time.time()
         
         if self.firstLockMsg[quantity]:
-            print 'found locks', quantity, ', '.join(lock_files)
+            print 'found locks in thread %s %s %s'%(threading.currentThread().getName(), quantity, ', '.join(lock_files))
             self.firstLockMsg[quantity] = False
         pattern = '%s.(.*?)[0-9]*.lock'%self.tablePaths[quantity]
         lock_users = map( lambda lock_file: re.search( pattern, lock_file ).groups()[0], lock_files )
@@ -269,22 +277,22 @@ class MonitorViewer(Gtk.Window):
 
         if elapsed_time > 5*60 and not self.has_remove_lock_button[quantity]:
             self.has_remove_lock_button[quantity] = True
-            print 'should create remove lock button', quantity
+            print 'should create remove lock button in thread %s %s'%( threading.currentThread().getName(), quantity )
             self.create_remove_lock_button( quantity )
         return True
     
     def start_thread(self, callback, quantity):
-        self.thread[quantity] = threading.Thread(target=callback)
+        self.thread[quantity] = threading.Thread(target=callback, name=quantity)
         self.thread[quantity].start()
         
     def on_runIDRangeEntry_activate( self, entry ):
-        print 'runIDRange activated', entry.get_text()
+        print 'runIDRange activated %s'%entry.get_text()
         for quantity in self.quantities:
             self.plot_table( quantity )
         return
     
     def on_ohduButton_clicked( self, button ):
-        print 'ohdu toggled', button.get_label(), button.get_active()
+        print 'ohdu toggled %s %s'%(button.get_label(), button.get_active())
         button.set_sensitive(False)
         while Gtk.events_pending():
             Gtk.main_iteration()
@@ -296,7 +304,7 @@ class MonitorViewer(Gtk.Window):
         return
         
     def on_omitOutliersButton_clicked( self, button ):
-        print 'omitOutliers toggled', button.get_active()
+        print 'omitOutliers toggled %s'%button.get_active()
         button.set_sensitive(False)
         while Gtk.events_pending():
             Gtk.main_iteration()
@@ -307,7 +315,7 @@ class MonitorViewer(Gtk.Window):
     
     def create_remove_lock_button( self, quantity ):
         def callback():
-            print 'removeLock created', quantity
+            print 'removeLock created in thread %s %s'%( threading.currentThread().getName(), quantity )
             removeLockButton = Gtk.Button()
             removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
             self.subHeader[quantity].pack_start( removeLockButton, False, False, 0 )
@@ -317,7 +325,7 @@ class MonitorViewer(Gtk.Window):
         GLib.idle_add( callback )
 
     def manually_remove_lock(self, button, quantity ):
-        print 'removeLock clicked', quantity
+        print 'removeLock clicked in thread %s %s'%( threading.currentThread().getName(), quantity )
         shutil.copy2( self.tablePaths[quantity], '%s_%s.backup'%( self.tablePaths[quantity], time.asctime( time.localtime() )) )
         self.remove_all_locks( quantity )
         self.has_remove_lock_button[quantity] = False
@@ -348,7 +356,7 @@ class MonitorViewer(Gtk.Window):
         self.resetLabel(quantity)
         if len(runIDs_done) == len(all_runIDs_reversed):
             if self.firstAllDoneMsg[quantity]:
-                print quantity, 'all done'
+                print '%s all done in thread %s'%( threading.currentThread().getName(), quantity )
                 self.firstAllDoneMsg[quantity] = False
             self.resetLabel(quantity)
             self.remove_lock(quantity)
@@ -361,7 +369,7 @@ class MonitorViewer(Gtk.Window):
         self.percentage_done[quantity] = (100*len(runIDs_done))/len(all_runIDs_reversed)
         for runID in all_runIDs_reversed:
             if runID not in runIDs_done:
-                print quantity, 'runID', runID
+                print '%s runID %s in thread %s'%(quantity, runID, threading.currentThread().getName() )
                 self.resetLabel( quantity )
                 self.updateLabel(quantity, 'calculating runID <b>%s</b>'%runID)
                 data.extend( self.make_entry(runID, quantity ) )
@@ -373,7 +381,7 @@ class MonitorViewer(Gtk.Window):
         self.resetLabel(quantity)
         self.updateLabel(quantity,'concluded <b>%s</b> (%ds)'%(runID, time.time()-startTime) )
         self.plot_table( quantity )
-        print 'finished', quantity, 'runID', runID
+        print 'finished %s runID %s in thread %s'%( quantity, runID, threading.currentThread().getName() )
         return False
     
     def make_entry( self, runID, quantity ):
@@ -381,7 +389,7 @@ class MonitorViewer(Gtk.Window):
         for ohdu in self.ohdus:
             if self.should_quit():
                 self.remove_lock(quantity)
-                print 'should quit now from', quantity
+                print 'should quit now from thread %s %s'%( threading.currentThread().getName(), quantity )
                 exit(0)
             value = self.compute(runID, ohdu, quantity)
             entry.append( [runID, ohdu, value] )
@@ -437,11 +445,12 @@ class MonitorViewer(Gtk.Window):
             self.global_runIDMax = runIDMax
             self.update = True
         
+
         if runIDMax < 0: runIDMax = data['runID'].max() + runIDMax
         if runIDMin < 0: runIDMin = runIDMax + runIDMin
 
         if runIDMin > runIDMax:
-            print 'wrong zoom', quantity, runIDMin, runIDMax
+            print 'wrong zoom %s %s %s'%( quantity, runIDMin, runIDMax )
             return
 
         runIDMask = np.all( [ data['runID'] >= runIDMin, data['runID'] <= runIDMax], axis=0 )
@@ -471,7 +480,7 @@ class MonitorViewer(Gtk.Window):
         for i, ohdus_range in enumerate(ohdus_ranges):
             for ohdu in ohdus_range:
                 for runBox in runBoxes[::-2]:
-                    grid[i].axvspan( runBox['range'][0], runBox['range'][1], alpha=.05, color='blue' )
+                    grid[i].axvspan( runBox['range'][0], runBox['range'][1], alpha=.02, color='blue' )
                 ohduMask = np.all( [runIDMask, data['ohdu']==ohdu], axis=0 )
                 y = data[quantity][ohduMask]
                 ycum.append(y)

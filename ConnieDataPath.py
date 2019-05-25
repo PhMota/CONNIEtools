@@ -62,6 +62,10 @@ class ConnieDataPath:
     @classmethod
     def processed_pattern( cls, run, runID, part, image ): 
         return cls.run_folder_processed(run)+'data_[0-9]*_to_[0-9]*/%s/images/%s_*_runID_%s_%s_*_p%s.fits'%( image, image, cls.parse_run(run), cls.parse_runID(runID), part )
+
+    @classmethod
+    def masterBias_pattern( cls, run, part ): 
+        return cls.run_folder_processed(run)+'data_[0-9]*_to_[0-9]*/mbs/masterBias_*_p%s.fits'%( part )
     
     @classmethod
     def catalog_pattern( cls, subrun, skim=False ):
@@ -141,6 +145,12 @@ class ConnieDataPath:
         if type(runID) is tuple: return sorted(list(set(cls.subrun(runID=list(runID)))))
         raise Exception('type not supported path=%s runID=%s'%(type(path), type(runID)) )
     
+    @classmethod
+    def masterBiasPath( cls, runID=None, subrun=None, part='*' ):
+        if type(subrun) is str: return glob.glob( cls.masterBias_pattern(subrun,part) )
+        if type(runID) is int: return cls.masterBiasPath( subrun=cls.subrun(runID=runID), part=part )
+        raise Exception('type not supported path=%s runID=%s'%(type(path), type(runID)) )
+        
     @classmethod
     def range_( cls, path=None, gain=False ):
         if type(path) is list: #map( lambda path, gain=gain: cls.range_(path,gain), path )

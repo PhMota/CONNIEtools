@@ -70,6 +70,7 @@ class ImageViewer(Gtk.Window):
 
         self.set_border_width(3)
         self.image = None
+        self.foot = None
 
         self.add( self.build_window() )
 
@@ -80,6 +81,9 @@ class ImageViewer(Gtk.Window):
         self.imageType_current = -1
         self.no_file = 'file not found'
         
+        self.fast_render = False
+        if 'fast_render' in kwargs:
+            self.fast_render = True
         if 'run' in kwargs: self.run = int(kwargs['run'])
         else: self.run = ConniePaths.run()[-1]
         if 'runID' in kwargs:
@@ -105,11 +109,11 @@ class ImageViewer(Gtk.Window):
     
     def build_window(self):
         body = self.build_body()
-        foot = self.build_foot()
+        self.foot = self.build_foot()
         
         window = Gtk.VBox()
         window.pack_start( body, True, True, 3 )
-        window.pack_start( foot, False, False, 3 )
+        window.pack_start( self.foot, False, False, 3 )
         return window
     
     def build_foot(self):
@@ -219,8 +223,8 @@ class ImageViewer(Gtk.Window):
         self.canvas = FigureCanvas(self.fig)
         
         self.fig.canvas.mpl_connect('draw_event', self.ondraw )
-        toolbar = NavigationToolbar(self.canvas, self)
-        children = toolbar.get_children()
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        children = self.toolbar.get_children()
         for i in range(len(children)-3):
             children[i].destroy()
         
@@ -228,11 +232,24 @@ class ImageViewer(Gtk.Window):
         self.x_hist = None
         self.y_hist = None
         self.zoom_ax = None
-        return self.canvas, toolbar
+        #self.motion_notify_event = self.fig.canvas.callbacks['motion_notify_event']
+        #self.fig.canvas.mpl_connect( 'motion_notify_event', self.on_mouse_move )
+        return self.canvas, self.toolbar
 
     def ondraw(self, event):
         pass
 
+    #def on_mouse_move( self, event ):
+        #w, h = self.fig.canvas.get_width_height()
+        #print float(event.x)/w, float(event.y)/h
+        #if event.y/h > .9:
+            #self.foot.set_visible(True)
+        #else:
+            #self.foot.set_visible(False)
+            #self.foot.show()
+        #self.toolbar.mouse_move(event)
+        ##return
+    
     def build_imagePanel(self):
         #self.imageCanvas = Gtk.Image()
         canvas, toolbar = self.build_figure()
@@ -327,18 +344,20 @@ class ImageViewer(Gtk.Window):
         self.imageTypeButtons = Gtk.HBox()
         firstLine.pack_end( self.imageTypeButtons, False, False, 0 )
         #self.imageTypeOptions = ['raw','raw*','osi','mbs','scn','scn*']
-        imageTypeOptions = ['raw','osi','mbs','scn']
+        #imageTypeOptions = ['raw','osi','mbs','scn']
+        imageTypeOptions = ['raw','osi','MB','mbs','scn']
         for key in imageTypeOptions:
             button = Gtk.ToggleButton()
             button.set_label( key )
             button.connect( 'toggled', self.on_imageTypeButton_toggle, key )
             self.imageTypeButtons.pack_start( button, True, True, 0 )
 
-        if self.advanced:
-            subtractOptions = ['rOS', 'rvOS', 'subVOS', 'subOS']
-        else:
-            subtractOptions = ['subVOS', 'subOS']
+        #if self.advanced:
+            #subtractOptions = ['R', '/R', '−R', '−MBR', '−MB', '−vOS', '−OS']
+        #else:
+            #subtractOptions = ['−vOS', '−OS']
         subtract = Gtk.HBox()
+        subtractOptions = ['R']
         
         self.subtractButton = {}
         for key in subtractOptions:
@@ -433,14 +452,15 @@ class ImageViewer(Gtk.Window):
         imageType = self.get_imageType()
         print 'getPath', runID, imageType
         if runID is None or imageType is None: return [self.no_file]
-        if imageType == 'raw':
+        if imageType in ['raw','osi']:
             return ConniePaths.runIDPath( int(runID) )
-        elif imageType == 'osi':
-            return get_osi_path( int(runID) )
-        elif imageType == 'mbs':
-            return get_mbs_path( int(runID) )
+        #elif imageType == 'osi':
+            #return get_osi_path( int(runID) )
+        elif imageType in ['MB','mbs']:
+            return ConniePaths.masterBiasPath( int(runID) )
         elif imageType == 'scn':
-            return get_scn_path( int(runID) )
+            return ConniePaths.runIDPathProcessed( int(runID), image='scn' )
+            #return get_scn_path( int(runID) )
         return [self.no_file]
     
     def on_runButton_toggle( self, button, run ):
@@ -548,42 +568,83 @@ class ImageViewer(Gtk.Window):
         
         if self.get_runID() is None:
             return False
-
-        print self.get_runID(), self.get_ohdu(), self.get_imageType()
-        self.fullimage = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = self.get_imageType() )
-        self.image = self.fullimage.left()
+    
+        imageType = self.get_imageType()
+        print self.get_runID(), self.get_ohdu(), imageType
+        if imageType in ['osi','mbs']:
+            imageType = 'raw'
         
-        if self.subtractButton['subOS'].get_active():
-            self.image = self.image.horizontalSubtraction()
-        if self.subtractButton['subVOS'].get_active():
-            self.image = self.image.verticalSubtraction()
+        self.fullimage = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = imageType )
+        self.image = self.fullimage.left()
 
-        if self.advanced:
-            if self.subtractButton['rOS'].get_active():
-                right = self.fullimage.right()
-                if self.subtractButton['subOS'].get_active():
-                    right = right.horizontalSubtraction()
-                if self.subtractButton['subVOS'].get_active():
-                    right = right.verticalSubtraction()
-                R = right.overscan().image - np.median(right.overscan().image, axis=1)[:,None]
-                L = self.image.overscan().image - np.median(self.image.overscan().image, axis=1)[:,None]
-                covLR = np.mean( L*R )
-                a = covLR/np.var(R)
-                b = Statistics.MAD(L)/Statistics.MAD(R)
-                print 'covLR', covLR, a, b
-                self.image = ConnieImage.SideImage( self.image.image - b*right.image )
-            elif self.subtractButton['rvOS'].get_active():
-                right = self.fullimage.right()
-                if self.subtractButton['subOS'].get_active():
-                    right = right.horizontalSubtraction()
-                if self.subtractButton['subVOS'].get_active():
-                    right = right.verticalSubtraction()
-                right = self.fullimage.right()
-                R = right.active().halfverticalOverScan().image - np.median(right.active().halfverticalOverScan().image, axis=1)[:,None]
-                L = self.image.active().halfverticalOverScan().image - np.median(self.image.active().halfverticalOverScan().image, axis=1)[:,None]
-                a = np.mean(L*R)/np.var(R)
-                print 'covLR_vos', np.mean(L*R), a
-                self.image = ConnieImage.SideImage( self.image.image - a*right.image )
+        if self.subtractButton['R'].get_active():
+            self.image = self.fullimage.right()
+
+        if self.get_imageType() == 'osi':
+            self.image = self.image.horizontalSubtraction()
+        
+        if self.get_imageType() == 'mbs':
+            self.image = self.image.horizontalSubtraction()
+            if self.subtractButton['R'].get_active():
+                masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).right()
+            else:
+                masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).left()
+            self.image = ConnieImage.SideImage( self.image.image - masterBias.image )
+        
+        #if self.subtractButton['−R'].get_active():
+            #B = np.mean(self.image.overscan().image)
+            #print 'shapeB', B.shape
+            #right = self.fullimage.right()
+            #right.image += B - np.mean(right.overscan().image )
+            #self.image = ConnieImage.SideImage( self.image.image - right.image )
+
+        #if self.subtractButton['−OS'].get_active():
+            #self.image = self.image.horizontalSubtraction()
+
+        #if self.subtractButton['−vOS'].get_active():
+            #self.image = self.image.verticalSubtraction()
+
+        #if self.subtractButton['−MB'].get_active():
+            #print 'masber Bias subtraction'
+            #masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).left()
+            #cov = np.mean( np.median(masterBias.image,axis=0) * np.median(self.image.image, axis=0) )
+            #a = cov/np.var( np.median(masterBias.image,axis=0))
+            #print 'a =', a
+            #self.image.image -= masterBias.image
+
+        #if self.subtractButton['−MBR'].get_active():
+            #masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).right()
+            #cov = np.mean( np.median(masterBias.image,axis=0) * np.median(self.image.image, axis=0) )
+            #a = cov/np.var( np.median(masterBias.image,axis=0) )
+            #print 'a =', a
+            #self.image.image -= a*masterBias.image
+
+        #if self.advanced:
+            #if self.subtractButton['−OS'].get_active():
+                #right = self.fullimage.right()
+                #if self.subtractButton['−OS'].get_active():
+                    #right = right.horizontalSubtraction()
+                #if self.subtractButton['−vOS'].get_active():
+                    #right = right.verticalSubtraction()
+                #R = right.overscan().image - np.median(right.overscan().image, axis=1)[:,None]
+                #L = self.image.overscan().image - np.median(self.image.overscan().image, axis=1)[:,None]
+                #covLR = np.mean( L*R )
+                #a = covLR/np.var(R)
+                #b = Statistics.MAD(L)/Statistics.MAD(R)
+                #print 'covLR', covLR, a, b
+                #self.image = ConnieImage.SideImage( self.image.image - b*right.image )
+            #elif self.subtractButton['−vOS'].get_active():
+                #right = self.fullimage.right()
+                #if self.subtractButton['−OS'].get_active():
+                    #right = right.horizontalSubtraction()
+                #if self.subtractButton['−vOS'].get_active():
+                    #right = right.verticalSubtraction()
+                #right = self.fullimage.right()
+                #R = right.active().halfverticalOverScan().image - np.median(right.active().halfverticalOverScan().image, axis=1)[:,None]
+                #L = self.image.active().halfverticalOverScan().image - np.median(self.image.active().halfverticalOverScan().image, axis=1)[:,None]
+                #a = np.mean(L*R)/np.var(R)
+                #print 'covLR_vos', np.mean(L*R), a
+                #self.image = ConnieImage.SideImage( self.image.image - a*right.image )
 
         
         stats += 'shape (%s, %s)'%(self.image.shape[0],self.image.shape[1])
@@ -625,11 +686,14 @@ class ImageViewer(Gtk.Window):
 
         self.main_ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+yMin)))
         self.main_ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+xMin)))
-        section.add_projection_to_axis( self.y_hist, axis=1, bins=ebins, align='vertical')
+        section2 = section
+        #if self.fast_render:
+            #section2.image = section.image[::5,::5]
+        section2.add_projection_to_axis( self.y_hist, axis=1, bins=ebins, align='vertical')
         self.fig.canvas.draw()
-        section.add_projection_to_axis( self.x_hist, axis=0, bins=ebins, align='horizontal')
+        section2.add_projection_to_axis( self.x_hist, axis=0, bins=ebins, align='horizontal')
         self.fig.canvas.draw()
-        section.add_image_to_axis( self.main_ax, eMin, eMax )
+        section2.add_image_to_axis( self.main_ax, eMin, eMax )
         self.main_ax.yaxis.set_major_locator(ticker.AutoLocator())
         self.main_ax.xaxis.set_major_locator(ticker.AutoLocator())
         self.main_ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+yMin)))
