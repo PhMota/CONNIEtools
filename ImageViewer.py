@@ -51,9 +51,6 @@ import ConnieImage
 import Statistics
 
 class ImageViewer(Gtk.Window):
-    #def __del__(self):
-        #os.remove( self.tempPath )
-        #Gtk.Window.__del__(self)
 
     def __init__(self, **kwargs ):
         self.id = '.' + os.environ['HOME'].split('/')[-1]
@@ -71,14 +68,13 @@ class ImageViewer(Gtk.Window):
         self.set_border_width(3)
         self.image = None
         self.foot = None
-
+        self.all_runIDs = ConniePaths.runID()
+        self.update_runID = True
+        
         self.add( self.build_window() )
 
         self.paths = []
         self.run = -1
-        self.runID_current = -1
-        self.ohdu_current = -1
-        self.imageType_current = -1
         self.no_file = 'file not found'
         
         self.fast_render = False
@@ -101,112 +97,29 @@ class ImageViewer(Gtk.Window):
             self.set_imageType( 'raw' )
         
         print 'run', self.run
-        if self.run is not None: self.runButtons[self.run].set_active(True)
+        if self.run is not None:
+            self.runEntry.get_child().set_text(str(self.run))
 
         self.connect( 'destroy', Gtk.main_quit )
         self.maximize()
         self.show_all()
-    
-    def build_window(self):
-        body = self.build_body()
-        self.foot = self.build_foot()
         
-        window = Gtk.VBox()
-        window.pack_start( body, True, True, 3 )
-        window.pack_start( self.foot, False, False, 3 )
-        return window
+        if 'plot' in kwargs:
+            self.on_plotButton_click(None)
     
-    def build_foot(self):
-        self.pathsLabel = Gtk.Label()
-        self.pathsLabel.set_label( 'None' )
-        self.pathsLabel.set_selectable(True)
-        self.plotButton = Gtk.Button()
-        self.plotButton.set_label('Plot')
-        #self.plotButton.modify_bg( Gtk.StateType.NORMAL, Gdk.color_parse("blue") )
-        self.plotButton.connect( 'clicked', self.on_plotButton_click )
-        subbox = Gtk.VBox()
-        subbox.pack_end( self.plotButton, False, False, 0 )
-        foot = Gtk.HBox()
-        foot.pack_end( subbox, False, False, 1 )
-        foot.pack_start( self.pathsLabel, True, True, 1 )
-        return foot
-
-    def build_body( self ):
-        runPanel = self.build_runPanel()
-        runIDPanel = self.build_runIDPanel()
-        mainPanel = self.build_mainPanel()
-        
+    def build_window( self ):
         body = Gtk.HBox()
-        body.pack_start( runPanel, False, False, 1 )
-        body.pack_start( runIDPanel, False, False, 1 )
-        body.pack_end( mainPanel, True, True, 1 )
+        body.pack_start( self.build_optionsPanel(), False, False, 1 )
+        body.pack_start( self.build_imagePanel(), True, True, 1 )
+        body.pack_start( self.build_statisticsPanel(), False, False, 1 )
         return body
 
-    def build_runPanel(self):
-        runlabel = Gtk.Label()
-        runlabel.set_label( 'runs' )
-
-        runPanel = Gtk.VBox()
-        runPanel.pack_start( runlabel, False, True, 1 )
-        
-        self.runEntry = Gtk.Entry()
-        self.runEntry.set_width_chars(4)
-        self.runEntry.connect('activate', self.on_runEntry_activate )
-        runPanel.pack_start( self.runEntry, False, True, 1 )
-        
-        scrolledwindow = Gtk.ScrolledWindow()
-        scrolledwindow.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        runPanel.pack_start( scrolledwindow, True, True, 1 )
-
-        self.runButtons = {}
-        subbox = Gtk.VBox()
-        for run in ConniePaths.run()[::-1]:
-            self.runButtons[run] = Gtk.ToggleButton()
-            self.runButtons[run].set_label( str(run) )
-            self.runButtons[run].connect( 'toggled', self.on_runButton_toggle, run )
-            subbox.pack_start( self.runButtons[run], False, False, 0 )
-        scrolledwindow.add_with_viewport( subbox )
-
-        return runPanel
-        
-    def build_runIDPanel(self):
-        runIDcolumn = Gtk.VBox()
-
-        self.runLabel = Gtk.Label()
-        self.runLabel.set_label( 'runIDs' )
-        runIDcolumn.pack_start( self.runLabel, False, False, 1 )
-
-        self.runIDEntry = Gtk.Entry()
-        self.runIDEntry.set_width_chars(5)
-        self.runIDEntry.connect('activate', self.on_runIDEntry_activate )
-        runIDcolumn.pack_start( self.runIDEntry, False, False, 1 )
-
-        self.runIDScrolledWindow = Gtk.ScrolledWindow()
-        self.runIDScrolledWindow.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        runIDcolumn.pack_start( self.runIDScrolledWindow, True, True, 1 )
-        
-        return runIDcolumn
-
-    def build_runIDButtons( self, run ):
-        if len(self.runIDScrolledWindow.get_children()) > 0: self.runIDScrolledWindow.get_children()[0].destroy()
-        runIDs = ConniePaths.runID(run=run)
-        #print 'runIDs', runIDs
-        subbox = Gtk.VBox()
-        self.runIDButtons = {}
-        for runID in runIDs[::-1]:
-            self.runIDButtons[runID] = Gtk.ToggleButton()
-            self.runIDButtons[runID].set_label( str(runID) )
-            self.runIDButtons[runID].connect( 'clicked', self.on_runIDButton_toggle, runID )
-            subbox.pack_start( self.runIDButtons[runID], False, False, 0 )
-        self.runIDScrolledWindow.add_with_viewport(subbox)
-        return
-    
     def set_ohdu(self, ohdu ):
-        self.optionEntry['ohdu'].set_text(str(ohdu))
+        self.ohduEntry.set_active( self.ohdus.index(ohdu) )
     
     def get_ohdu(self):
         try:
-            return int(self.optionEntry['ohdu'].get_text())
+            return int( self.ohdus[ self.ohduEntry.get_active()] )
         except:
             return None
         
@@ -217,11 +130,9 @@ class ImageViewer(Gtk.Window):
         self.y_hist.cla()
         self.zoom_ax.cla()
         
-    def build_figure(self):
+    def build_imagePanel(self):
         self.fig = Figure(dpi=100, tight_layout=True)
-
         self.canvas = FigureCanvas(self.fig)
-        
         self.fig.canvas.mpl_connect('draw_event', self.ondraw )
         self.toolbar = NavigationToolbar(self.canvas, self)
         children = self.toolbar.get_children()
@@ -232,143 +143,222 @@ class ImageViewer(Gtk.Window):
         self.x_hist = None
         self.y_hist = None
         self.zoom_ax = None
-        #self.motion_notify_event = self.fig.canvas.callbacks['motion_notify_event']
-        #self.fig.canvas.mpl_connect( 'motion_notify_event', self.on_mouse_move )
-        return self.canvas, self.toolbar
+        
+        box = Gtk.VBox()
+        box.pack_start( self.canvas, True, True, 0 )
+        box.pack_end(self.toolbar, False, False, 0)
+        return box
 
     def ondraw(self, event):
         pass
-
-    #def on_mouse_move( self, event ):
-        #w, h = self.fig.canvas.get_width_height()
-        #print float(event.x)/w, float(event.y)/h
-        #if event.y/h > .9:
-            #self.foot.set_visible(True)
-        #else:
-            #self.foot.set_visible(False)
-            #self.foot.show()
-        #self.toolbar.mouse_move(event)
-        ##return
     
-    def build_imagePanel(self):
-        #self.imageCanvas = Gtk.Image()
-        canvas, toolbar = self.build_figure()
+    def build_statisticsPanel(self):
         box = Gtk.VBox()
-        box.pack_start(canvas, True, True, 0)
-        box.pack_start(toolbar, False, False, 0)
-        #scrolledwindowImage = Gtk.ScrolledWindow()
-        #scrolledwindowImage.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        #scrolledwindowImage.add_with_viewport( self.imageCanvas )
-        #scrolledwindowImage.add_with_viewport( box )
-
-        subbox = Gtk.VBox()
-        #title = Gtk.Label()
-        #title.set_text('Statistics')
-        #subbox.pack_start(title, False, False, 3)
-        
         self.zoom_fig = Figure()
-
         canvas = FigureCanvas( self.zoom_fig )
         b = Gtk.HBox()
         b.pack_start(canvas, True, True, 0)
-        subbox.pack_start( b, True, True, 0)
+        box.pack_start( b, True, True, 0)
         
+        box.pack_start( Gtk.Label(label='Statistics', margin=10), False, False, 0)
+        box.pack_start( Gtk.HSeparator(), False, False, 0)
         self.stats = Gtk.Label()
         self.stats.set_selectable(True)
         self.stats.set_use_markup(True)
-        #self.stats.set_text()
         self.stats.set_justify(Gtk.Justification.RIGHT)
         self.stats.set_width_chars(40)
         
         scrolledStat = Gtk.ScrolledWindow()
         scrolledStat.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scrolledStat.add_with_viewport( self.stats )
-        subbox.pack_end( scrolledStat, True, True, 0)
+        box.pack_end( scrolledStat, True, True, 0)
         
-        imagePanel = Gtk.HBox()
-        imagePanel.pack_start( box, True, True, 0 )
-        imagePanel.pack_end( subbox, False, False, 0 )
-        return imagePanel
-    
-    def build_mainPanel(self):
-        optionsPanel = self.build_optionsPanel()
-        imagePanel = self.build_imagePanel()
-        
-        mainPanel = Gtk.VBox()
-        mainPanel.pack_start( optionsPanel, False, False, 1 )
-        mainPanel.pack_start( imagePanel, True, True, 1 )
-        return mainPanel
+        return box
     
     def build_optionsPanel(self):
         optionsPanel = Gtk.VBox()
-        firstLine = Gtk.HBox()
+        
+        optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
+        optionsPanel.get_children()[-1].pack_start( Gtk.Label(label='run'), False, True, 1 )
+        self.runEntry = Gtk.ComboBoxText( has_entry = True )
+        optionsPanel.get_children()[-1].pack_end( self.runEntry, False, True, 1 )
+        self.runEntry.get_child().set_width_chars(4)
+        self.runList = []
+        for run in ConniePaths.run()[::-1]:
+            self.runEntry.append_text(str(run))
+            self.runList.append(str(run))
+        self.runEntry.connect('changed', self.on_run_changed)
+        self.runEntry.get_child().connect( 'activate', self.on_plotButton_click )
+        
+        optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
+        optionsPanel.get_children()[-1].pack_start( Gtk.Label(label='runID'), False, False, 1 )
+        self.runIDEntry = Gtk.ComboBoxText( has_entry = True )
+        self.runIDEntry.get_child().set_width_chars(5)
+        self.runIDEntry.connect( 'changed', self.on_run_changed )
+        self.runIDEntry.get_child().connect( 'activate', self.on_plotButton_click )
+        optionsPanel.get_children()[-1].pack_end( self.runIDEntry, False, False, 1 )
 
-        self.plotOptions = ['ohdu','E', 'x', 'y']
+        optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
+        optionsPanel.get_children()[-1].pack_start( Gtk.Label(label='image'), False, False, 1 )
+        self.imageTypeEntry = Gtk.ComboBoxText()
+        self.imageTypeOptions = ['raw','osi','MB','mbs','scn']
+        for key in self.imageTypeOptions:
+            self.imageTypeEntry.append_text(key)
+        optionsPanel.get_children()[-1].pack_end( self.imageTypeEntry, False, False, 1 )
+        self.imageTypeEntry.connect( 'changed', self.on_plotButton_click )
+        
+        optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
+        optionsPanel.get_children()[-1].pack_start( Gtk.Label(label='ohdu'), False, False, 1 )
+        self.ohduEntry = Gtk.ComboBoxText()
+        self.ohdus = [2,3,4,5,6,7,8,9,10,13,14]
+        for ohdu in self.ohdus:
+            self.ohduEntry.append_text(str(ohdu))
+        optionsPanel.get_children()[-1].pack_end( self.ohduEntry, False, False, 1 )
+        self.ohduEntry.connect( 'changed', self.on_plotButton_click )
+        
+        optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
+        self.leftButton = Gtk.ToggleButton(label='left')
+        optionsPanel.get_children()[-1].pack_start(self.leftButton, True, True, 0)
+        self.leftButton.set_active(True)
+        self.rightButton = Gtk.ToggleButton(label='right')
+        optionsPanel.get_children()[-1].pack_end(self.rightButton, True, True, 0)
+        self.leftButton.connect('toggled', self.on_side_toggled )
+        self.rightButton.connect('toggled', self.on_side_toggled )
+        
+        self.plotOptions = ['E', 'x', 'y']
         self.optionEntry = {}
         for key in self.plotOptions:
-            optionLabel = Gtk.Label()
-            optionLabel.set_label(key)
-            firstLine.pack_start( optionLabel, False, False, 3 )
+            optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
+            optionsPanel.get_children()[-1].pack_start( Gtk.Label(label=key), False, False, 1 )
             if key == 'x' or key =='y':
-                for s in ['Min','Max']:
+                for s in ['Max','Min']:
                     self.optionEntry['%s%s'%(key,s)] = Gtk.Entry()
                     self.optionEntry['%s%s'%(key,s)].set_text('auto')
                     self.optionEntry['%s%s'%(key,s)].set_width_chars(5)
-                    firstLine.pack_start( self.optionEntry['%s%s'%(key,s)], False, False, 0 )
-                    #self.optionEntry['%s%s'%(key,s)].connect('activate', self.on_plotButton_click )
+                    optionsPanel.get_children()[-1].pack_end( self.optionEntry['%s%s'%(key,s)], False, False, 1 )
                     self.optionEntry['%s%s'%(key,s)].connect('activate', self.on_plotButton_click )
             else:
                 self.optionEntry[key] = Gtk.Entry()
-                firstLine.pack_start( self.optionEntry[key], False, False, 3 )
-                #if key == 'E':
-                    #self.optionEntry[key].connect('activate', self. )
-                #else:
-                    #self.optionEntry[key].connect('activate', self.on_plotButton_click )
+                optionsPanel.get_children()[-1].pack_end( self.optionEntry[key], False, False, 1 )
                 self.optionEntry[key].connect('activate', self.on_plotButton_click )
         self.optionEntry['E'].set_text('200')
-        self.optionEntry['E'].set_width_chars(3)
-        self.optionEntry['ohdu'].set_text('2')
-        self.optionEntry['ohdu'].set_width_chars(2)
-        
-        self.Console = Gtk.Label()
-        firstLine.pack_start(self.Console, True, True, 0)
-        #self.sideButtons = Gtk.HBox()
-        #firstLine.pack_end( self.sideButtons, False, False, 5 )
+        self.optionEntry['E'].set_width_chars(7)
 
-        #sideOptions = ['left', 'right']
-        #for key in sideOptions:
-            #button = Gtk.ToggleButton()
-            #button.set_label( key )
-            #self.sideButtons.pack_start( button, True, True, 0 )
+        self.plotButton = Gtk.Button(label='plot', relief=Gtk.ReliefStyle.NONE)
+        #self.plotButton.set_relief()
+        self.plotButton.connect( 'clicked', self.on_plotButton_click )
+        optionsPanel.pack_end( self.plotButton, False, False, 1 )
 
-        self.imageTypeButtons = Gtk.HBox()
-        firstLine.pack_end( self.imageTypeButtons, False, False, 0 )
-        #self.imageTypeOptions = ['raw','raw*','osi','mbs','scn','scn*']
-        #imageTypeOptions = ['raw','osi','mbs','scn']
-        imageTypeOptions = ['raw','osi','MB','mbs','scn']
-        for key in imageTypeOptions:
-            button = Gtk.ToggleButton()
-            button.set_label( key )
-            button.connect( 'toggled', self.on_imageTypeButton_toggle, key )
-            self.imageTypeButtons.pack_start( button, True, True, 0 )
+        self.consoleButton = Gtk.ToggleButton(label='console')
+        self.consoleButton.set_relief(Gtk.ReliefStyle.NONE)
+        optionsPanel.pack_end( self.consoleButton, False, False, 1 )
+        self.consolePopover = Gtk.Popover(modal=False)
+        self.consolePopover.set_position(Gtk.PositionType.RIGHT)
+        self.consolePopover.add( Gtk.VBox() )
+        self.consolePopover.get_child().pack_start( Gtk.Label(label='Console', margin=10), False, False, 1)
+        self.consolePopover.get_child().pack_start( Gtk.HSeparator(), False, False, 0 )
+        self.Console = Gtk.Label(margin=10)
+        self.consolePopover.get_child().pack_start( self.Console, True, True, 1)
+        def toggled(widget):
+            if widget.get_active():
+                self.consolePopover.set_relative_to(widget)
+                self.consolePopover.show_all()
+            else:
+                self.consolePopover.hide()
+        self.consoleButton.connect('toggled', toggled)
 
-        #if self.advanced:
-            #subtractOptions = ['R', '/R', '−R', '−MBR', '−MB', '−vOS', '−OS']
-        #else:
-            #subtractOptions = ['−vOS', '−OS']
-        subtract = Gtk.HBox()
-        subtractOptions = ['R']
-        
-        self.subtractButton = {}
-        for key in subtractOptions:
-            self.subtractButton[key] = Gtk.ToggleButton(key)
-            subtract.pack_start( self.subtractButton[key], False, False, 0 )
-            self.subtractButton[key].connect('toggled', self.on_plotButton_click )
-        firstLine.pack_end( subtract, False, False, 10 )
+        self.pathsLabel = Gtk.Label()
+        self.pathsLabel.set_label( 'None' )
+        self.pathsLabel.set_selectable(True)
+        self.pathsLabel.set_property('margin', 10)
+        self.pathsPopover = Gtk.Popover()
+        self.pathsPopover.set_modal(False)
+        self.pathsPopover.add( self.pathsLabel )
+        pathsButton = Gtk.ToggleButton(label='paths')
+        pathsButton.set_relief(Gtk.ReliefStyle.NONE)
+        def toggled(widget):
+            if widget.get_active():
+                self.pathsPopover.set_relative_to(widget)
+                self.pathsPopover.show_all()
+            else:
+                self.pathsPopover.hide()
+        pathsButton.connect('toggled', toggled)
+        optionsPanel.pack_end( pathsButton, False, False, 1 )
 
-        optionsPanel.pack_start(firstLine, False, True, 1)
         return optionsPanel
 
+    def refresh_runIDList(self, run=None, runID=None ):
+        self.runIDEntry.remove_all()
+        if run is None:
+            self.runIDEntry.get_child().set_text('')
+            return
+        runIDs = ConniePaths.runID( run=run )[::-1]
+        for runID_ in runIDs:
+            self.runIDEntry.append_text(str(runID_))
+        self.runIDs = runIDs
+        if runID is None:
+            runID = runIDs[0]
+        print 'setting runID to', runID
+        self.runIDEntry.get_child().set_text(str(runID))
+        self.runIDEntry.set_active( self.runIDs.index(runID) )
+        return
+
+    def change_color(self, widget, color=None ):
+        if color == 'red':
+            color_ = Gdk.RGBA(red=1,green=0,blue=0)
+        elif color is None:
+            color_ = Gdk.RGBA(red=0,green=0,blue=0)
+        else:
+            print 'color not predicted', color
+            return
+        widget.override_color(0,color_)
+        
+    def on_run_changed( self, widget, *args ):
+        if not self.update_runID:
+            return
+        self.update_runID = False
+        if widget is self.runEntry:
+            run = self.get_run()
+            print 'on_run_changed', run
+            if not str(run) in self.runList:
+                print self.get_run(), 'is not present'
+                self.change_color(self.runEntry.get_child(), 'red')
+                self.refresh_runIDList()
+            else:
+                widget.set_active( self.runList.index(str(run)) )
+                self.change_color( self.runEntry.get_child() )
+                print 'run', run
+                self.refresh_runIDList(run)
+        elif widget is self.runIDEntry:
+            runID = self.get_runID()
+            print 'on_runID_changed', runID
+            if not runID in self.all_runIDs:
+                print self.get_runID(), 'is not present'
+                self.change_color( self.runIDEntry.get_child(), 'red' )
+                self.runEntry.get_child().set_text('')
+            else:
+                self.change_color(self.runIDEntry.get_child() )
+                if runID not in self.runIDs:
+                    print 'not present in self.runIDs'
+                    run = ConniePaths.run(runID=runID)
+                    self.runEntry.get_child().set_text(str(run))
+                    self.runEntry.set_active( self.runList.index(str(run)) )
+                    self.runEntry.get_child().override_color(0,Gdk.RGBA(red=0,green=0,blue=0))
+                    print 'run', run
+                    self.refresh_runIDList(run, runID)
+                self.runIDEntry.set_active( self.runIDs.index(runID) )
+        self.update_runID = True
+        return
+    
+    def on_side_toggled(self, widget ):
+        if widget.get_active():
+            for child in widget.get_parent().get_children():
+                if child is not widget: child.set_active(False)
+            self.on_plotButton_click(widget)
+        else:
+            for child in widget.get_parent().get_children():
+                if child is not widget: child.set_active(True)
+        
     def on_runEntry_activate( self, entry ):
         self.run = int(entry.get_text())
         print 'activaterun', self.run
@@ -376,9 +366,8 @@ class ImageViewer(Gtk.Window):
     
     def on_runIDEntry_activate( self, entry ):
         print 'activaterunID', entry.get_text()
-        self.set_runID( int( entry.get_text() ) )
+        self.runIDPopover.hide()
         self.on_plotButton_click(entry)
-        #self.
     
     def set_runID( self, runID ):
         #try:
@@ -387,17 +376,23 @@ class ImageViewer(Gtk.Window):
             print 'set_runID datapath.run', ConniePaths.run(runID=runID)
             self.run = ConniePaths.run(runID=runID)
             print 'set_runID run', self.run
-            self.runButtons[self.run].set_active( True )
-            if not runID in self.runIDButtons.keys(): self.build_runIDButtons( self.run )
+            #self.runButtons[self.run].set_active( True )
+            if not runID in self.runIDButtons.keys(): self.build_runIDButtons()
             self.runIDButtons[ runID ].set_active( True )
             self.runIDEntry.set_text( str(runID) )
             self.refresh_pathsLabel()
         #except:
             #return None
 
+    def get_run( self ):
+        try:
+            return int(self.runEntry.get_child().get_text())
+        except:
+            return None
+
     def get_runID( self ):
         try:
-            return int(self.runIDEntry.get_text())
+            return int(self.runIDEntry.get_child().get_text())
         except:
             return None
 
@@ -405,15 +400,11 @@ class ImageViewer(Gtk.Window):
         return [ button.get_label() for button in sideButtons.get_children() if button.get_active() ]
     
     def set_imageType( self, imageType ):
-        for button in self.imageTypeButtons.get_children():
-            if button.get_label() == imageType:
-                button.set_active(True)
-
+        self.imageTypeEntry.set_active( self.imageTypeOptions.index(imageType) )
+        return 
+    
     def get_imageType( self ):
-        for button in self.imageTypeButtons.get_children():
-            if button.get_active() == True:
-                return button.get_label()
-        return None
+        return self.imageTypeOptions[ self.imageTypeEntry.get_active() ]
     
     def refresh_pathsLabel( self ):
         runID = self.get_runID()
@@ -462,50 +453,33 @@ class ImageViewer(Gtk.Window):
             return ConniePaths.runIDPathProcessed( int(runID), image='scn' )
             #return get_scn_path( int(runID) )
         return [self.no_file]
+
+    def console_reset(self):
+        self.Console.set_label('')
     
-    def on_runButton_toggle( self, button, run ):
-        print 'toggle run', run, button.get_active()
-        firstRunID = ConniePaths.runID( run=run )[0]
-        if button.get_active() == True:
-            self.deactivateSiblings( button )
-            self.run = run
-            self.build_runIDButtons( run )
-            self.runEntry.set_text( str(self.run) )
-        self.show_all()
-        
-    def on_runIDButton_toggle( self, button, runID ):
-        print 'toggle runID', runID, button.get_active()
-        if button.get_active() == True:
-            self.deactivateSiblings(button)
-            self.set_runID( runID )
-            self.on_plotButton_click(None)
-    
-    def on_plotButton_click( self, button ):
-        self.Console.set_markup('<span color="green">%s, runID%s[%s]</span>'%(self.get_imageType(), self.get_runID(), self.get_ohdu() ))
+    def console_append(self, text ):
+        label = self.Console.get_label()
+        if label == '':
+            self.Console.set_markup( '%s'%text )
+        else:
+            self.Console.set_markup( '%s\n%s'%(label, text) )
         while Gtk.events_pending(): Gtk.main_iteration()
-        label = self.plotButton.get_label()
-        #def running():
-            #self.plotButton.set_label('running...')
-            #self.plotButton.set_sensitive(False)
-        #GLib.idle_add( running )
-        self.plotButton.set_label('running...')
-        self.plotButton.set_sensitive(False)
+        
+    def on_plotButton_click( self, button ):
+        self.console_reset()
+        self.consoleButton.set_active(True)
+        self.console_append('<span color="green">runID %s\nimageType %s\nohdu %s</span>'%(self.get_runID(), self.get_imageType(), self.get_ohdu() ))
         try:
             self.plotImage(button)
-            self.Console.set_markup('%s<span color="green">... Successful!</span>'%(self.Console.get_label()))
+            self.console_append('<span color="green">plotting successful!</span>')
+            self.consoleButton.set_active(False)
         except Exception as e:
-            self.Console.set_markup('%s\n<span color="red">... Failed :([%s]</span>'%(self.Console.get_label(),str(e)) )
+            self.console_append('<span color="red">plotting failed :(</span>' )
+            self.console_append('<span color="red">%s</span>'%str(e) )
+            #self.console_append('<span color="red">%s</span>'%traceback.print_exc() )
             print traceback.print_exc()
-        
-        self.plotButton.set_label(label)
-        self.plotButton.set_sensitive(True)
-        #def finished():
-            #self.plotButton.set_label(label)
-            #self.plotButton.set_sensitive(True)
-        ##self.plotButton.show()
-        #GLib.idle_add( finished )
-        #while Gtk.events_pending(): Gtk.main_iteration()
-    
+        return
+
     def parse_option( self, opt ):
         o = unicode(self.optionEntry[opt].get_text())
         return int(o) if o.isnumeric() else o
@@ -544,7 +518,15 @@ class ImageViewer(Gtk.Window):
         if xMax_str.startswith('+'): xMax += xMin
         if yMax_str.startswith('+'): yMax += yMin
         
-        print 'x,y', xMin,xMax,yMin,yMax
+        if xMax <= xMin: 
+            self.console_append('<span color="red">range_x [%s:%s]</span>'%(xMin,xMax))
+            raise Exception('xMax &lt;= xMin')
+        else: self.console_append('<span color="green">range_x [%s:%s]</span>'%(xMin,xMax))
+        
+        if yMax <= yMin: 
+            self.console_append('<span color="red">range_y [%s:%s]</span>'%(yMin,yMax))
+            raise Exception('yMax &lt;= yMin')
+        else: self.console_append('<span color="green">range_y [%s:%s]</span>'%(yMin,yMax))
         return xMin,xMax,yMin,yMax
         
     def format_table( self, table, c ):
@@ -564,7 +546,7 @@ class ImageViewer(Gtk.Window):
         
     def plotImage( self, button ):
         stats = ''
-        self.ohdu = int( self.optionEntry['ohdu'].get_text() )
+        ohdu = self.get_ohdu()
         
         if self.get_runID() is None:
             return False
@@ -574,78 +556,33 @@ class ImageViewer(Gtk.Window):
         if imageType in ['osi','mbs']:
             imageType = 'raw'
         
-        self.fullimage = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = imageType )
-        self.image = self.fullimage.left()
+        try:
+            self.fullimage = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = imageType )
+        except:
+            raise Exception('%s not found'%imageType)
+        self.console_append('<span color="green">image loaded</span>')
 
-        if self.subtractButton['R'].get_active():
+        if self.leftButton.get_active():
+            self.image = self.fullimage.left()
+            self.console_append('<span color="green">left side</span>')
+        else:
             self.image = self.fullimage.right()
+            self.console_append('<span color="green">right side</span>')
 
         if self.get_imageType() == 'osi':
             self.image = self.image.horizontalSubtraction()
+            self.console_append('<span color="green">overscan subtracted</span>')
         
         if self.get_imageType() == 'mbs':
             self.image = self.image.horizontalSubtraction()
-            if self.subtractButton['R'].get_active():
+            self.console_append('<span color="green">overscan subtracted</span>')
+            if self.rightButton.get_active():
                 masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).right()
             else:
                 masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).left()
+            self.console_append('<span color="green">masterBias loaded</span>')
             self.image = ConnieImage.SideImage( self.image.image - masterBias.image )
-        
-        #if self.subtractButton['−R'].get_active():
-            #B = np.mean(self.image.overscan().image)
-            #print 'shapeB', B.shape
-            #right = self.fullimage.right()
-            #right.image += B - np.mean(right.overscan().image )
-            #self.image = ConnieImage.SideImage( self.image.image - right.image )
-
-        #if self.subtractButton['−OS'].get_active():
-            #self.image = self.image.horizontalSubtraction()
-
-        #if self.subtractButton['−vOS'].get_active():
-            #self.image = self.image.verticalSubtraction()
-
-        #if self.subtractButton['−MB'].get_active():
-            #print 'masber Bias subtraction'
-            #masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).left()
-            #cov = np.mean( np.median(masterBias.image,axis=0) * np.median(self.image.image, axis=0) )
-            #a = cov/np.var( np.median(masterBias.image,axis=0))
-            #print 'a =', a
-            #self.image.image -= masterBias.image
-
-        #if self.subtractButton['−MBR'].get_active():
-            #masterBias = ConnieImage.FullImage( runID = self.get_runID(), ohdu = self.get_ohdu(), imageType = 'MB' ).right()
-            #cov = np.mean( np.median(masterBias.image,axis=0) * np.median(self.image.image, axis=0) )
-            #a = cov/np.var( np.median(masterBias.image,axis=0) )
-            #print 'a =', a
-            #self.image.image -= a*masterBias.image
-
-        #if self.advanced:
-            #if self.subtractButton['−OS'].get_active():
-                #right = self.fullimage.right()
-                #if self.subtractButton['−OS'].get_active():
-                    #right = right.horizontalSubtraction()
-                #if self.subtractButton['−vOS'].get_active():
-                    #right = right.verticalSubtraction()
-                #R = right.overscan().image - np.median(right.overscan().image, axis=1)[:,None]
-                #L = self.image.overscan().image - np.median(self.image.overscan().image, axis=1)[:,None]
-                #covLR = np.mean( L*R )
-                #a = covLR/np.var(R)
-                #b = Statistics.MAD(L)/Statistics.MAD(R)
-                #print 'covLR', covLR, a, b
-                #self.image = ConnieImage.SideImage( self.image.image - b*right.image )
-            #elif self.subtractButton['−vOS'].get_active():
-                #right = self.fullimage.right()
-                #if self.subtractButton['−OS'].get_active():
-                    #right = right.horizontalSubtraction()
-                #if self.subtractButton['−vOS'].get_active():
-                    #right = right.verticalSubtraction()
-                #right = self.fullimage.right()
-                #R = right.active().halfverticalOverScan().image - np.median(right.active().halfverticalOverScan().image, axis=1)[:,None]
-                #L = self.image.active().halfverticalOverScan().image - np.median(self.image.active().halfverticalOverScan().image, axis=1)[:,None]
-                #a = np.mean(L*R)/np.var(R)
-                #print 'covLR_vos', np.mean(L*R), a
-                #self.image = ConnieImage.SideImage( self.image.image - a*right.image )
-
+            self.console_append('<span color="green">masterBias subtracted</span>')
         
         stats += 'shape (%s, %s)'%(self.image.shape[0],self.image.shape[1])
         stats += '\nrunID %s ohdu %s %s'%(self.get_runID(), self.get_ohdu(), self.get_imageType())
@@ -679,10 +616,13 @@ class ImageViewer(Gtk.Window):
         mid = lambda _: .5*(_[1:]+_[:-1])
         diff = lambda _: _[1:]-_[:-1]
         
-        eRange = float(str(self.optionEntry['E'].get_text()))
-        eMin = median - eRange
-        eMax = median + eRange
-        ebins = np.linspace( eMin, eMax, 100 )
+        try:
+            eRange = float(str(self.optionEntry['E'].get_text()))
+            eMin = median - eRange
+            eMax = median + eRange
+            ebins = np.linspace( eMin, eMax, 100 )
+        except:
+            raise Exception('wrong energy range')
 
         self.main_ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+yMin)))
         self.main_ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+xMin)))
@@ -691,14 +631,17 @@ class ImageViewer(Gtk.Window):
             #section2.image = section.image[::5,::5]
         section2.add_projection_to_axis( self.y_hist, axis=1, bins=ebins, align='vertical')
         self.fig.canvas.draw()
+        self.console_append('<span color="green">X-projection done</span>')
         section2.add_projection_to_axis( self.x_hist, axis=0, bins=ebins, align='horizontal')
         self.fig.canvas.draw()
+        self.console_append('<span color="green">Y-projection done</span>')
         section2.add_image_to_axis( self.main_ax, eMin, eMax )
         self.main_ax.yaxis.set_major_locator(ticker.AutoLocator())
         self.main_ax.xaxis.set_major_locator(ticker.AutoLocator())
         self.main_ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+yMin)))
         self.main_ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '%s'%int(x+xMin)))
         self.fig.canvas.draw()
+        self.console_append('<span color="green">image done</span>')
 
         
         table = [ ['section', 'shape', 'med', 'MAD'] ]
@@ -713,6 +656,9 @@ class ImageViewer(Gtk.Window):
             if sec is None: continue
             print sec.name, 
             hist = self.zoom_ax.hist( sec.flatten(), bins=ebins, histtype='step', color=c, label='L' )[0]
+            self.zoom_fig.canvas.draw()
+            self.console_append('<span color="green">%s histogram done</span>'%sec.name )
+
             if len(sec.shape)>1:
                 median[sec.name] = sec.mean_medians()
                 mad[sec.name] = sec.mean_MADs()
@@ -724,6 +670,7 @@ class ImageViewer(Gtk.Window):
             table.append( [sec.name, size, '%.5g'%median[sec.name], '%.5g'%mad[sec.name]] )
         print
         stats += '\n' + self.format_table(table,cs)
+        self.console_append('<span color="green">statistics done</span>')
         
         table = [ ['', 'os', 'vos'] ]
         if nohits is not None:
