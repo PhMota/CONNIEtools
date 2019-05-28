@@ -1,44 +1,15 @@
 # coding: utf-8
 
-import astropy
-import astropy.io
-import astropy.io.fits
-
-import math
 import numpy as np
-from numpy.lib.recfunctions import append_fields, stack_arrays
-import scipy
-import scipy.stats
-import scipy.signal
-import scipy.special
-from scipy.misc import factorial
-import scipy.optimize
 
-from collections import OrderedDict
-import matplotlib
-#matplotlib.use('Agg')
-#matplotlib.use('qt4agg')
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-from mpl_toolkits.axes_grid1 import make_axes_locatable, ImageGrid
-#from matplotlib.backends.backend_gtk3agg import (FigureCanvasGTK3Agg as FigureCanvas)
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.backends.backend_gtk3cairo import (FigureCanvasGTK3Cairo as FigureCanvas)
 from matplotlib.backends.backend_gtk3 import (NavigationToolbar2GTK3 as NavigationToolbar)
 from matplotlib.figure import Figure
 import matplotlib.ticker as ticker
 
-from functools import partial
-
-import glob
 import os
-import shutil
-import sys
-import re
-import copy
-import root_numpy
-import datetime
 import time
-import random
 import traceback
 
 import gi
@@ -70,6 +41,7 @@ class ImageViewer(Gtk.Window):
         self.foot = None
         self.all_runIDs = ConniePaths.runID()
         self.update_runID = True
+        self.runIDs = None
         
         self.add( self.build_window() )
 
@@ -104,8 +76,8 @@ class ImageViewer(Gtk.Window):
         self.maximize()
         self.show_all()
         
-        if 'plot' in kwargs:
-            self.on_plotButton_click(None)
+        #if 'plot' in kwargs:
+            #self.on_plotButton_click(None)
     
     def build_window( self ):
         body = Gtk.HBox()
@@ -132,10 +104,10 @@ class ImageViewer(Gtk.Window):
         
     def build_imagePanel(self):
         self.fig = Figure(dpi=100, tight_layout=True)
-        self.canvas = FigureCanvas(self.fig)
+        canvas = FigureCanvas(self.fig)
         self.fig.canvas.mpl_connect('draw_event', self.ondraw )
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        children = self.toolbar.get_children()
+        toolbar = NavigationToolbar(canvas, self)
+        children = toolbar.get_children()
         for i in range(len(children)-3):
             children[i].destroy()
         
@@ -145,8 +117,8 @@ class ImageViewer(Gtk.Window):
         self.zoom_ax = None
         
         box = Gtk.VBox()
-        box.pack_start( self.canvas, True, True, 0 )
-        box.pack_end(self.toolbar, False, False, 0)
+        box.pack_start(canvas, True, True, 0 )
+        box.pack_end(toolbar, False, False, 0)
         return box
 
     def ondraw(self, event):
@@ -377,9 +349,10 @@ class ImageViewer(Gtk.Window):
             self.run = ConniePaths.run(runID=runID)
             print 'set_runID run', self.run
             #self.runButtons[self.run].set_active( True )
-            if not runID in self.runIDButtons.keys(): self.build_runIDButtons()
-            self.runIDButtons[ runID ].set_active( True )
-            self.runIDEntry.set_text( str(runID) )
+            self.runIDEntry.get_child().set_text(str(runID))
+            #self.runIDEntry.set_active( self.runIDs.index(runID) )
+            
+            #self.runIDEntry.set_text( str(runID) )
             self.refresh_pathsLabel()
         #except:
             #return None

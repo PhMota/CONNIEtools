@@ -3219,7 +3219,11 @@ class Callable:
     @staticmethod
     def monitorViewer( **kwargs ):
         win = MonitorViewer.MonitorViewer( **kwargs )
-        Gtk.main()
+        try:
+            Gtk.main()
+        except KeyboardInterrupt:
+            print 'KeyboardInterrupt'
+            win.__del__()
         
     @staticmethod
     def dcObservations( **kwargs ):
