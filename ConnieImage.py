@@ -782,7 +782,7 @@ class SideImage(ImageBase):
             print( 'side shape not predited', self.image.shape )
             exit(0)
         if self.image.shape[0] in [4220, 1055, 3165]:
-            self.overscanHeight = 90
+            self.overscanHeight = 70
         elif self.image.shape[0] == 900:
             self.overscanHeight = 70
         else:
