@@ -6,9 +6,10 @@ import astropy.io.fits
 import scipy.stats
 import os
 import root_numpy
+import Statistics as stats
 
-electron_in_ev = 3.745
-electron_in_kev = 3.745*1e-3
+electron_in_eV = 3.745
+electron_in_keV = electron_in_eV*1e-3
 
 def z_to_sigma( z, alpha, beta ):
     '''
@@ -49,7 +50,9 @@ beta = {
     13: 0.000625386*675,
     14: 0.00068271*675,
     15: 6.26018e-05*675,
-        }
+    }
+
+#beta = { k: stats.dfloat(v,'µm') for k,v in beta_.items() }
 
 z2sigmaModel = {
     '2': lambda x: np.sqrt(-891.074*np.log(1-0.000488203*x))/15,
@@ -82,118 +85,85 @@ z2sigmaModel = {
     #return x + xoff, y + yoff
     #return np.rint(sigma * scipy.stats.norm.rvs( size = 2*len(sigma) ).reshape( 2, len(sigma) ) ).astype(int)
 
-def diffuse_electrons( image_in_e, alpha, beta ):
+def diffuse_electrons( image, alpha, beta ):
     '''
     diffuse all electrons
     '''
     t = time.time()
+    image_in_e = image.value
 
     N = int(np.sum( image_in_e ))
-    #print image_in_e[:15,:15]
-    #print 'electrons', N
     z = np.random.rand(N)
-    #print z.min(), z.max()
     sigma = z_to_sigma(z, alpha, beta)
-    #print sigma.min(), sigma.max()
     indices = np.repeat( np.arange(image_in_e.size), image_in_e.flatten().astype(int) )
     positions = np.unravel_index( indices, image_in_e.shape )
-    #print 'positions', len(positions), positions[0][:15], positions[1][:15]
-    #print positions[0].min(), positions[0].max(), positions[1].min(), positions[1].max()
     offsets = np.rint( sigma * scipy.stats.norm.rvs( size = 2*N ).reshape( 2, N ) ).astype(int)
-    #print 'offsets', offsets.shape, offsets[0][:15], offsets[1][:15]
     x, y = positions + offsets
-    #print 'x', len(x), x[:15], y[:15]
     inside_boudary = np.all( [ x >= 0, x < image_in_e.shape[0], y >= 0 , y < image_in_e.shape[1] ], axis=0 )
-    #print 'x[inside]', len(x[inside_boudary])
-    diffused_image = np.zeros_like(image_in_e)
+    diffused_image = np.zeros(image_in_e.shape)
     np.add.at( diffused_image, [ x[inside_boudary], y[inside_boudary] ], 1. )
-    #print 'after', np.sum(diffused_image)
-    #print diffused_image[:15,:15]
-    print '%.2fs'%(time.time() - t)
-    #exit(0)
-    return diffused_image
+    return stats.uarray( diffused_image, 'e-' )
 
 def add_dark_current( image, lambda_ ):
     '''
     adds electrons generated pixel by pixel by a poisson distribution and difused
     '''
-    return image + scipy.stats.poisson.rvs( lambda_, size = image.size ).reshape(image.shape )
-
-
-    #xlen_px, ylen_px = image.shape #self.config.imageShape
-    ##ylen_px -= self.config.overScanCols
-    ##xlen_px -= self.config.overScanLines
-    
-    #numberElectrons = np.zeros( (xlen_px, ylen_px) )
-    #mu = lambda_e_h * exposure_h
-    
-    #numberElectrons0 = scipy.stats.poisson.rvs( mu, size = xlen_px*ylen_px )
-    #totalElectrons = np.sum( numberElectrons0 )
-
-    #electronPositions = np.repeat( np.arange(xlen_px*ylen_px), numberElectrons0 )
-    #electronPositions = np.unravel_index( electronPositions, (xlen_px, ylen_px) )
-
-    ##z_um = self.config.heightCCD * np.random.rand( totalElectrons )
-    #z = np.random.rand( totalElectrons )
-
-    #x_px, y_px = electronPositions
-    ##ix_px, iy_px = round2int( *diffuseElectrons( x_px, y_px, z_um ) )
-    #ix_px, iy_px = diffuseElectrons( x_px, y_px, z_to_sigma( z, alpha, beta ) )
-
-    #inside_boudary = np.all( [ ix_px >= 0, ix_px < xlen_px, iy_px >= 0 , iy_px < ylen_px ], axis=0 )
-    ##image = np.zeros( (xlen_px, ylen_px) )
-
-    #np.add.at( image, [ ix_px[inside_boudary], iy_px[inside_boudary] ], 1. )
-    
-    #print '%.2fs'%(time.time() - t)
-    #return image
+    print 'size', image.size
+    return image + stats.uarray( scipy.stats.poisson.rvs( lambda_, size = image.size ).reshape(image.shape ), errMode = 'poisson', unit='e-' )
 
 def add_readout_noise( image, sigma ):
     '''
-    add noise in adus
+    add noise
     '''
-    return image + sigma*scipy.stats.norm.rvs( size=image.size ).reshape( image.shape )
+    return image + stats.uarray( sigma*scipy.stats.norm.rvs( size=image.size ).reshape( image.shape ), errSqr = sigma**2, unit ='e-')
 
 def rebinImage( image, n ):
     rebinned = np.zeros( ( n * int(np.ceil(image.shape[0]/n)), image.shape[1] ) )
-    rebinned[ :image.shape[0], :image.shape[1] ] = image
-    return rebinned.reshape([-1, n, rebinned.shape[1]] ).sum( axis = 1 )
+    rebinned[ :image.shape[0], :image.shape[1] ] = image.value
+    rebinned.reshape([-1, n, rebinned.shape[1]] ).sum( axis = 1 )
+    return stats.ufloat( rebinned, image.unit )
 
 def add_vOverscan( image, n ):
     result = np.zeros((image.shape[0]+n, image.shape[1]))
-    result[:image.shape[0],:image.shape[1]] = image
-    return result
+    result[:image.shape[0],:image.shape[1]] = image.value
+    return stats.ufloat( result, image.unit )
 
 def add_overscan( image, n ):
     result = np.zeros((image.shape[0], image.shape[1]+n))
-    result[:image.shape[0],:image.shape[1]] = image
-    return result
+    result[:image.shape[0],:image.shape[1]] = image.value
+    return stats.ufloat( result, image.unit )
 
-def make_image( shape, v_os=90, os=550, ohdu=2, lambda_=0.1, sigma=2, gain=2000., rebin=1 ):
-    image = np.zeros(shape)
-    #print 'zeros', image.shape
+def make_image( shape, v_os=70, os=550, ohdu=2, lambda_=0.1, sigma=2, gain=2000., rebin=1, mbs=False ):
+    e_gain = gain*electron_in_keV
+    print 'gain', gain,
+    print 'lambda', lambda_
+    print 'sigma', sigma, sigma.asunit('ADU%s'%ohdu)
+    print 'shape', shape,
+    image = stats.ufloat( np.zeros(shape), 'e-' )
+    print 'zeros shape', image.shape
     image = add_dark_current(image, lambda_)
-    #print 'darkcurrent', image.shape
+    print 'dc shape', image.shape
     image = diffuse_electrons(image, alpha[ohdu], beta[ohdu] )
-    #print 'diffuse', image.shape
     image = rebinImage( image, rebin )
-    #print 'rebin', image.shape
-    image -= np.median( image )
-    #print 'median', image.shape
+    if mbs:
+        image -= np.median( image )
     image = add_vOverscan( image, v_os )
-    #print 'v_os', image.shape
     image = add_overscan( image, os )
-    #print 'os', image.shape
     image = add_readout_noise( image, sigma )
-    #print 'readoutnoise', image.shape
-    return image*electron_in_kev*gain
+    print 'shape after rebin', image.shape
+    print image.__class__.__name__
+    return image
+    #return (image*e_gain).astype(int)
+
+def extractParameters( E, dE=1. ):
+    bins = np.arange( E.min(), E.max(), dE )
+    histogram = np.histogram( E, bins )
+    pass
 
 def writeFITS( image, fname ):
-    try:
-        astropy.io.fits.writeto( fname, image, header = astropy.io.fits.Header() )
-    except IOError:
-        print 'file already exists', fname
-        return False
+    if os.path.exists(fname):
+        os.remove(fname)
+    astropy.io.fits.writeto( fname, image, header = astropy.io.fits.Header() )
     return fname
 
 def convertImage2Hits( self, image, save = None, verbose = False ):

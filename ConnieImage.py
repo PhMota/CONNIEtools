@@ -803,6 +803,9 @@ class SideImage(ImageBase):
         std = np.mean( stats.MAD( image, axis=1 ) )
         return std**2 - self.readoutNoiseMAD()**2
 
+    def overscanLineSubtraction(self):
+        return SideImage( self.image - self.overscan().h_medians() )
+
     def readoutNoiseMAD( self ):
         image = self.overscan().image - self.overscan().v_medians()[None:]
         std = np.mean( stats.MAD( image, axis=1 ) )

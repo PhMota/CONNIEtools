@@ -26,7 +26,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable, ImageGrid
 from matplotlib.backends.backend_gtk3cairo import (FigureCanvasGTK3Cairo as FigureCanvas)
 from matplotlib.backends.backend_gtk3 import (NavigationToolbar2GTK3 as NavigationToolbar)
 from matplotlib.figure import Figure
-import matplotlib.ticker as ticker        
+import matplotlib.ticker as ticker
 
 from functools import partial
 
@@ -54,6 +54,8 @@ from ConnieDataPath import ConnieDataPath as ConniePaths
 import MonitorViewer
 import ImageViewer
 import SimulateImage
+import Statistics as stats
+import Timer
 #np.seterr(all='raise')
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
@@ -604,7 +606,7 @@ def mergeParts( parts ):
 
 def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi=None, verbose=False, image=True, output=True, dohits=True, gain=None, crosstalk=False, onlyoccupancy=False ):
     FITSfile = listFITSscn_runID( runID )[0]
-    print( 'input FITSfile =', FITSfile )
+    print 'input FITSfile =', FITSfile
     if verbose: print( 'output flag =', output )
     if output:
         outputfilenohits = 'hsub_'+os.path.basename(FITSfile)
@@ -612,32 +614,32 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
     
         if not outputfolder is None:
             if not os.path.exists(outputfolder):
-                print( 'creating directory', outputfolder )
+                print 'creating directory', outputfolder
                 os.makedirs( outputfolder )
         else:
             outputfolder = os.path.dirname(FITSfile)
             if os.access( outputfolder, os.W_OK):
-                print( 'outputfolder =', outputfolder )
+                print 'outputfolder =', outputfolder
             else:
                 outputfolder = 'run'+getrunFromPath( FITSfile ) + '/'
-                print( 'outputfolder =', outputfolder )
+                print 'outputfolder =', outputfolder
                 if not os.path.exists(outputfolder):
-                    print( 'creating directory', outputfolder )
+                    print 'creating directory', outputfolder
                     os.makedirs( outputfolder )
     
     removeOHDU = lambda x, ohdu_: map( lambda i: x.pop(i), [ j for j, hdu in enumerate(x) if not int(hdu.header['OHDU']) == int(ohdu) ][::-1] )
     if osi:
         OSIfiles = getAssociatedOSI( FITSfile )
-        print( 'OSI file =' )
-        print( '\n'.join( OSIfiles ) )
+        print 'OSI file =' 
+        print '\n'.join( OSIfiles )
     
-        if verbose: print( 'reading and merging OSI part files' )
+        if verbose: print 'reading and merging OSI part files'
         merged = mergeParts( [ astropy.io.fits.open( OSIfile ) for OSIfile in OSIfiles ] )
-        if verbose: print( 'shape of merged', merged[-1].data.shape )
+        if verbose: print 'shape of merged', merged[-1].data.shape
         if not ohdu is None:
             removeOHDU( merged, ohdu )
     
-    if verbose: print( 'reading SCN file' )
+    if verbose: print 'reading SCN file'
     hdulist = {}
     
     if dohits:
@@ -676,7 +678,7 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
     print( 'input ROOTfile =', ROOTfile )
     hitscatalog = readCatalog( ROOTfile, runID=runID, readGain=readGain, verbose=verbose)
 
-    if verbose: print( 'removing hits' )
+    if verbose: print 'removing hits'
     
     levelcut = 0
     hitsmask = {}
@@ -694,7 +696,7 @@ def removeHitsFromrunID( runID, outputfolder=None, ohdu=None, ROOTfile=None, osi
             hitscatalog['E3'] > 0,
             hitscatalog['E0'] > 0,
             hitscatalog['n3'] > 0,
-            hitscatalog['n0'] > 0,            
+            hitscatalog['n0'] > 0,
             hitscatalog['xVar3'] > 0,
             hitscatalog['xVar0'] > 0,
             hitscatalog['yVar3'] > 0,
@@ -1123,42 +1125,6 @@ def poisson_( x, lamb ):
     y[x>0] = np.exp( x[x>0]*np.log(lamb) -lamb -scipy.special.loggamma(x[x>0]+1) )
     return y
 
-def poisson_gaussian_pdf( x, loc = 0, scale = 1, mu = 1, g = 1, verbose = False, tol=1e-8 ):
-    result = np.zeros_like(x)
-    mu = abs(mu)
-    scale = abs(scale)
-    k = 0
-    poisson_sum = 0
-    if verbose: print 'poisson_gaussian_pdf call with', loc, scale, mu,
-    while True:
-        poisson_weight = scipy.stats.poisson.pmf(k,mu=mu)
-        poisson_sum += poisson_weight
-        result += poisson_weight * scipy.stats.norm.pdf( x, loc = loc + g*k*mu, scale = scale )
-        if poisson_weight/poisson_sum < tol: break
-        k += 1
-    if verbose: print 'took', k, 'iteractions'
-    return result
-
-def random_pdf_continuous( pdf, a, b, N, normed=False ):
-    if not normed:
-        pdf_max = -scipy.optimize.fmin( lambda x: -pdf(x), 0, full_output=True )[1]
-        print 'pdf_max', pdf_max
-        normedpdf = lambda x: pdf(x)/pdf_max
-    else:
-        normedpdf = pdf
-    results = []
-    print '(random',
-    while 1:
-        x = (b - a) * np.random.random_sample( N ) + a
-        tests = np.random.random_sample( N )
-        y = normedpdf(x)
-        mask = tests < y
-        results = np.concatenate( (results, x[mask]) )
-        if len(results) >= N: break
-        print '%.2f'%( float(len(results))/N ),
-    print ')'
-    return results[:N]
-
 def convolution_GP( x, mu = 0, sigma = 1, A = 1, lamb = 0, Nmax = 500 ):
     lamb = abs(lamb)
     mu = abs(mu)
@@ -1287,7 +1253,315 @@ def curve_fit( func, xdata, ydata, p0 ):
     perr = [ np.sqrt( np.abs(pcov2[i][i]) ) for i in range(len(popt)) ]
     return popt, perr, pcov2
 
-def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
+def histogram_fits( data, bins, func, p0, tol = 1, bounds = ()  ):
+    class Result: pass
+    r = Result()
+    r.hist, bins = np.histogram( data, bins )
+    mask = r.hist > tol
+    x = .5*(bins[:-1]+bins[1:])
+    dx = bins[1]-bins[0]
+    N = np.sum(r.hist[mask])*dx
+    r.popt, pcov = scipy.optimize.curve_fit( lambda x, *a: N*func(x, *a), x[mask], r.hist[mask], p0, sigma=np.sqrt(r.hist[mask]), absolute_sigma=True, bounds=bounds )
+    r.perr = np.sqrt(np.diag(pcov))
+    r.chisq = stats.chisquare( r.hist[mask], N*func(x[mask], *r.popt), ddof = len(r.popt) )
+    return r
+
+#def histogram_fits_lsq( data, bins, func, p0, tol=1, bounds = () ):
+    #class Result: pass
+    #r = Result()
+    #r.hist, bins = np.histogram( data, bins )
+    #mask = r.hist > tol
+    #N = np.sum(r.hist[mask])
+    #x = .5*(bins[:-1]+bins[1:])
+    #residual = lambda p: np.sum( (N*func(x[mask], *p) - r.hist[mask])**2/r.hist[mask] )
+    
+    #r.popt, pcov = scipy.optimize.curve_fit( , x[mask], r.hist[mask], p0, sigma=np.sqrt(r.hist[mask]), absolute_sigma=True, bounds=bounds )
+    #r.perr = np.sqrt(np.diag(pcov))
+    #r.chisq = stats.chisquare( r.hist[mask], N*func(x[mask], *r.popt), ddof = len(r.popt) )
+    #return r
+
+def separate_active_overscan( image ):
+    vos = 70
+    if image.shape[1] in [4262,4350]:
+        os = 150
+    elif image.shape[1] in [4662]:
+        os = 550
+    elif image.shape[1] in [9340]:
+        os = 550
+        width = image.shape[1]/2
+        return image[ :-vos, 8 : width - os ], image[ :-vos, width - os : width ]
+    else:
+        print 'shape not predicted', image.shape
+        exit(1)
+    overscan = image[ :-vos, -os: ]
+    active = image[ :-vos, :-os ]
+    return active, overscan
+
+def divide_image( active, overscan, N, i):
+    n = int(active.shape[0]/N)
+    active = active[i*n:(i+1)*n,:]
+    overscan = overscan[i*n:(i+1)*n,:]
+    overscan = overscan[ np.all( [overscan.value != 1e10, overscan.value != REMOVE], axis=0) ]
+    active = active[ np.all( [active.value != 1e10, active.value !=REMOVE], axis=0) ]
+    return active, overscan
+
+def image_MLE( active, overscan ):
+    
+    mu_o = stats.ufloat( np.mean(overscan), errSqr=stats.errSqr_mean(overscan) )
+    sigma_o = stats.ufloat( np.std(overscan), errSqr=stats.errSqr_std(overscan) )
+
+    mu_a = stats.ufloat( np.mean(active), errSqr=stats.errSqr_mean(active) )
+    sigma_a = stats.ufloat( np.std(active), errSqr=stats.errSqr_std(active) )
+    
+    g = (sigma_a**2 - sigma_o**2)/(mu_a - mu_o)
+    lamb = (mu_a-mu_o)/g
+
+    return ( mu_o.val, sigma_o.val, g.val, lamb.val ), ( mu_o.err(), sigma_o.err(), g.err(), lamb.err() )
+
+def image_MLE_robust( active, overscan, divide=2 ):
+    print 'overscan class', overscan.__class__.__name__
+    class Return: pass
+    ret = Return()
+    ret.g = stats.darray()
+    ret.mu = stats.darray()
+    ret.sigma = stats.darray()
+    ret.lamb = stats.darray()
+
+    for i in range(divide):
+        active_, overscan_ = divide_image( active, overscan, divide, i )
+
+        mu = overscan_.median()
+        sigma = overscan_.MAD()
+        
+        mu_a = active_.median()
+        sigma_a = active_.MAD()
+        
+        g = (sigma_a**2 - sigma**2)/(mu_a - mu)
+        lamb = (mu_a - mu)/g
+        
+        print '===divide', i
+        print 'mu', mu
+        print 'sigma', sigma
+        print 'lamb', lamb
+        print 'g', g
+        ret.mu.append(mu)
+        ret.sigma.append(sigma)
+        ret.g.append(g)
+        ret.lamb.append(lamb)
+    
+    print '===done'
+    print 'g.mean', ret.g.mean()
+    #ret.g = stats.mean(ret.g)
+    #print 'gain', ret.g
+    stats.dfloat.set_conversion('e-', '%s'%ret.mu.unit_str(), ret.g.value )
+    print 'MLE robust'
+    for key, val in ret.__dict__.items():
+        print val.__class__.__name__
+        print key, val, val.asunit('e-'), val/ret.g
+    
+    return ret
+
+def image_MLE_fit( active, overscan, dE=1. ):
+    mle = image_MLE( active, overscan )
+    
+    func = lambda x, loc, scale, gain, mu: stats.poisson_norm.pdf( x, loc, scale, gain, mu, fix_loc=False )
+    p0 = ( mle.mu.value, mle.sigma.value, mle.g.value, mle.lamb.value )
+    
+    loc_bounds = (mle[0][0]-mle[1][0], mle[0][0]+mle[1][0])
+    scale_bounds = (mle[0][1]-mle[1][1], mle[0][1]+mle[1][1])
+    gain_bounds = (mle[0][2]-mle[1][2], mle[0][2]+mle[1][2])
+    lambda_bounds = (mle[0][3]-mle[1][3], mle[0][3]+mle[1][3])
+    
+    bounds = loc_bounds, scale_bounds, gain_bounds, lambda_bounds
+    active, _ = get_regions(image)
+    bins = np.arange( active.min(), active.max(), dE )
+    active_fit = histogram_fits( active, bins, func, p0 = p0, bounds = zip( *bounds ), tol=10 )
+    loc = stats.uncertanty( active_fit.popt[0], active_fit.perr[0]*active_fit.chisq)
+    sigma = stats.uncertanty( active_fit.popt[1], active_fit.perr[1]*active_fit.chisq)
+    gain = stats.uncertanty( active_fit.popt[2], active_fit.perr[2]*active_fit.chisq)
+    lamb = stats.uncertanty( active_fit.popt[3], active_fit.perr[3]*active_fit.chisq)
+    
+    #print 'chi_sq', active_fit.chisq
+    #print 'mu', loc
+    #print 'sigma', sigma
+    #print 'gain*lambda', gain*lamb
+    #print 'gain', gain
+    #print 'lambda', lamb
+    return (loc.val, sigma.val, gain.val, lamb.val), (loc.err(), sigma.err(), gain.err(), lamb.err())
+
+def image_MLE_fit_robust( active, overscan, dE = 1., divide=1 ):
+    loc = []
+    sigma = []
+    gain = []
+    lamb = []
+    for i in range(divide):
+        active_, overscan_ = divide_image( active, overscan, divide, i )
+        mle = image_MLE_robust( active_, overscan_ )
+        print 'mle', mle
+        func = lambda x, loc_, scale_, gain_, mu_: stats.poisson_norm.pdf( x, loc_, scale_, gain_, mu_, fix_loc=False )
+        p0 = ( mle[0].value, mle[1].value, mle[2].value, mle[0].value )
+        
+        loc_bounds = (mle[0][0]-mle[1][0], mle[0][0]+mle[1][0])
+        scale_bounds = (mle[0][1]-mle[1][1], mle[0][1]+mle[1][1])
+        gain_bounds = (mle[0][2]-mle[1][2], mle[0][2]+mle[1][2])
+        lambda_bounds = (mle[0][3]-mle[1][3], mle[0][3]+mle[1][3])
+        bounds = loc_bounds, scale_bounds, gain_bounds, lambda_bounds
+
+        bins = np.arange( active_.min(), active_.max(), dE )
+        active_fit = histogram_fits( active_, bins, func, p0 = p0, bounds = zip( *bounds ), tol=10 )
+        loc.append( stats.uncertanty( active_fit.popt[0], active_fit.perr[0]) )
+        sigma.append( stats.uncertanty( active_fit.popt[1], active_fit.perr[1]) )
+        gain.append( stats.uncertanty( active_fit.popt[2], active_fit.perr[2]) )
+        lamb.append( stats.uncertanty( active_fit.popt[3], active_fit.perr[3]) )
+        print (loc[-1].val, sigma[-1].val, gain[-1].val, lamb[-1].val), (loc[-1].err(), sigma[-1].err(), gain[-1].err(), lamb[-1].err())
+    print 'mean', np.mean( loc ), np.sum(loc)/len(loc), np.std( loc )
+    print 'sigma', np.mean( sigma ), np.sum(sigma)/len(sigma), np.std( sigma )
+    print 'gain', np.mean( gain ), np.std( gain )
+    print 'lambda', np.mean( lamb ), np.std( lamb )
+    
+    exit(0)
+    return (loc.val/divide, sigma.val/divide, gain.val/divide, lamb.val/divide), (loc.err()/divide, sigma.err()/divide, gain.err()/divide, lamb.err()/divide)
+
+def compute_params( image ):
+    active, overscan = separate_active_overscan( image )
+    
+    #select half of the active area
+    active = active[:, active.shape[1]/2:]
+
+    ##print stats
+    #print type(active)
+    #print 'shapes', active.shape, overscan.shape
+    #print 'mean', np.mean( active ), np.mean( overscan )
+    #print 'median', np.median( active ), np.median( overscan )
+    #print 'std', np.std( active ), np.std( overscan )
+    #print 'MAD', stats.MAD( active ), stats.MAD( overscan )
+    
+    #subtract overscan lines
+    overscan_lines_median = np.median( overscan, axis = 1 )
+    #print 'shape', overscan_lines_median.shape
+    active = active - overscan_lines_median[:,None]
+    overscan = overscan - overscan_lines_median[:,None]
+
+    ##print stats
+    #print type(active)
+    #print 'shapes', active.shape, overscan.shape
+    #print 'mean', np.mean( active ), np.mean( overscan )
+    #print 'median', np.mean(np.median( active, axis=1 )), np.mean(np.median( overscan, axis=1 ))
+    #print 'std', np.std( active ), np.std( overscan )
+    #print 'MAD', stats.MAD( active ), stats.MAD( overscan )
+    
+    omu = np.mean( np.median( overscan, axis=1 ) )
+    osigma = 1.4826 * np.mean(np.median( np.abs(overscan - np.median(overscan, axis=1)[:,None]), axis=1 ))
+
+    #omu_errSqr = osigma/len()
+    #osigma_errSqr = stats.errSqr_MAD( overscan )
+    
+    #print 'omu', omu
+    #print 'osig', osigma
+
+    amu = np.mean(np.median(active, axis=1))
+    asigma = 1.4826 * np.mean(np.median( np.abs(active - np.median(active, axis=1)[:,None]), axis=1 ))
+    
+    #print 'amu', amu
+    #print 'asig', asigma
+    
+    g = (asigma**2 - osigma**2)/(amu - omu)
+    lamb = (amu - omu)/g
+
+    #print 'g', g
+    #print 'lamb', lamb
+
+    func = lambda x, loc_, scale_, gain_, mu_: stats.poisson_norm.pdf( x, loc_, scale_, gain_, mu_, fix_loc=False )
+    p0 = ( omu, osigma, g, lamb )
+
+    dE = 1.
+    bins = np.arange( active.min(), active.max(), dE )
+
+    loc_bounds = (omu - osigma, omu + osigma)
+    scale_bounds = ( (1-.1)*osigma, (1+.1)*osigma )
+    gain_bounds = ( (1-.1)*g, (1+.1)*g )
+    lambda_bounds = ( (1-.1)*lamb, (1+.1)*lamb )
+    bounds = loc_bounds, scale_bounds, gain_bounds, lambda_bounds
+    #print 'bounds', bounds
+    
+    active_fit = histogram_fits( active, bins, func, bounds=zip(*bounds), p0 = p0, tol=10 )
+    loc = stats.ufloat( active_fit.popt[0], active_fit.perr[0]*active_fit.chisq )
+    sigma = stats.ufloat( active_fit.popt[1], active_fit.perr[1]*active_fit.chisq )
+    gain = stats.ufloat( active_fit.popt[2], active_fit.perr[2]*active_fit.chisq )
+    lamb = stats.ufloat( active_fit.popt[3], active_fit.perr[3]*active_fit.chisq )
+    #print 'loc', loc, active_fit.popt[0], active_fit.perr[0]
+    #print 'sigma', sigma, active_fit.popt[1], active_fit.perr[1]
+    #print 'g', active_fit.popt[2], active_fit.perr[2]
+    #print 'lamb', active_fit.popt[3], active_fit.perr[3]
+
+    return ((active_fit.popt[0], active_fit.perr[0]),
+        (active_fit.popt[1], active_fit.perr[1]),
+        (active_fit.popt[2], active_fit.perr[2]),
+        (active_fit.popt[3], active_fit.perr[3])
+        )
+        
+def table_of_fits( image ):
+    print image_MLE( image )
+    exit(0)
+    
+    active, overscan = get_regions( image )
+    print 'fits shape', image.shape
+
+    s = ' +- '
+    
+    dE = 1.
+    bins = np.arange( active.min(), active.max(), dE )
+
+    overscan_mean = np.mean(overscan)
+    overscan_centered = overscan - overscan_mean
+    overscan_std = np.std(overscan)
+    overscan_var = np.var(overscan)
+    print 'MLE mu', overscan_mean, overscan_std/np.sqrt(len(overscan)), 'sigma', overscan_std, np.sqrt(np.mean( overscan_centered**4 ))/( overscan_std*np.sqrt(len(overscan)) )
+    overscan_fit = histogram_fits( overscan, bins, lambda x, loc, scale: stats.norm.pdf( x, loc, scale ), p0 = (overscan_mean, overscan_std), bounds = zip( (-np.inf,np.inf), (0,np.inf) ) )
+    print 'fit', 'mu[ADU]', print_value_error( overscan_fit.popt[0], overscan_fit.perr[0], s=s )
+    print 'fit', 'sigma[ADU]', print_value_error( overscan_fit.popt[1], overscan_fit.perr[1], s=s )
+    print 'chisq', overscan_fit.chisq
+    
+    active_mean = np.mean(active)
+    active_var = np.var(active)
+    active_gain = ( active_var - overscan_var )/( active_mean - overscan_mean )
+    active_lambda = ( active_mean - overscan_mean )**2/( active_var - overscan_var )
+    print 'MLE g', active_gain, 'lambda', active_lambda
+
+    func = lambda x, loc, scale, gain, mu: stats.poisson_norm.pdf( x, loc, scale, gain, mu, fix_loc=False )
+    p0 = ( overscan_mean, overscan_std, active_gain, active_lambda )
+    
+    delta = .1
+    amplitude_bounds = (0,np.inf)
+    loc_bounds = (-np.inf,np.inf)
+
+    scale_bounds = (0, np.inf)
+    gain_bounds = (0, np.inf)
+    lambda_bounds = (0,np.inf)
+    
+    bounds = loc_bounds, scale_bounds, gain_bounds, lambda_bounds
+    active_fit = histogram_fits( active, bins, func, p0 = p0, bounds = zip( *bounds ), tol=10 )
+    print 'fit', 'mu[ADU]', print_value_error( active_fit.popt[0], active_fit.perr[0], s=s )
+    print 'fit', 'sigma[ADU]', print_value_error( active_fit.popt[1], active_fit.perr[1], s=s )
+    print 'fit', 'sigma[e]', print_value_error( active_fit.popt[1]/active_fit.popt[2], active_fit.perr[1]/active_fit.popt[2], s=s )
+    print 'fit', 'gain[ADU/e]', print_value_error( active_fit.popt[2], active_fit.perr[2], s=s )
+    print 'fit', 'gain[ADU/keV]', print_value_error( active_fit.popt[2]/eIonization*1e3, active_fit.perr[2]/eIonization*1e3, s=s )
+    print 'fit', 'lambda', print_value_error( active_fit.popt[3], active_fit.perr[3], s=s )
+    print 'chisq', active_fit.chisq
+
+    func = lambda x, loc, gain, mu: stats.poisson_norm.pdf( x, loc+gain*mu, overscan_std, gain, mu, fix_loc=False )
+    p0 = ( overscan_mean, active_gain, active_lambda )
+
+    bounds = loc_bounds, gain_bounds, lambda_bounds
+    active_fit = histogram_fits( active, bins, func, p0 = p0, bounds = zip( *bounds ), tol=10 )
+    print 'fit', 'mu[ADU]', print_value_error( active_fit.popt[0], active_fit.perr[0], s=s )
+    print 'fit', 'gain[ADU/e]', print_value_error( active_fit.popt[1], active_fit.perr[1], s=s )
+    print 'fit', 'gain[ADU/keV]', print_value_error( active_fit.popt[1]/eIonization*1e3, active_fit.perr[1]/eIonization*1e3, s=s )
+    print 'fit', 'lambda', print_value_error( active_fit.popt[2], active_fit.perr[2], s=s )
+    print 'chisq', active_fit.chisq
+    
+    exit(0)
+    
     result = []
     header = []
     fmt = []
@@ -1296,40 +1570,43 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
     clean = lambda x: x.flatten()[ np.all( [x.flatten()!=REMOVEOLD, x.flatten()!=REMOVE, x.flatten()!=1e10], axis=0) ]
 
     hdulists = odict( [('scn', hdulists)] )
-    if verbose: print( 'ohdus in file', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulists['scn'] ] )) )
+    if verbose: print 'ohdus in file', ', '.join( map( str, [ hdu.header['OHDU'] for hdu in hdulists['scn'] ] ))
     
     data = odict([ (key, hdu.data) for key, hdulist in hdulists.items() for hdu in hdulist if hdu.header['OHDU'] == ohdu ])
     if verbose: 
-        print( 'keys', data.keys() )
-        print( 'shapes', data['scn'].shape )
-        print( 'data extremes', data['scn'].min(), data['scn'].max() )
-    yccd = 4262
-    xccd = 4220
-    yos = 4112
-    #if osi:
-        #if data['osi'].shape[1] == 2*yccd:
-            #print( 'subtracting idle amplifier' )
-            #data['osisub'] = data['osi'][0:xccd,0:yccd] - np.flip(data['osi'][0:xccd,yccd:2*yccd], 1)
-    #if scnsub:
-        #print( 'subtracting idle overscan' )
-        #print( 'bias correction shape', np.median(data['scn'][0:xccd,yos:], axis=1).shape )
-        #data['scnsub'] = data['scn'][0:xccd,:] - np.median(data['scn'][0:xccd,yos+10:-10], axis=1)[:,np.newaxis]
-    #print( 'data len', data.keys() )
-    dx = 1
-    N = 500
+        print 'keys', data.keys()
+        print 'shapes', data['scn'].shape
+        print 'data extremes', data['scn'].min(), data['scn'].max()
+
+    yccd = data['scn'].shape[1]
+    xccd = data['scn'].shape[0]
+    if yccd in [4262,4350]:
+        yos = yccd-150
+    elif yccd == 4662:
+        yos = yccd-550
+    else:
+        print 'shape not predicted, edit this line of the code to include it'
+        print 'from the FITS header, BIASSEC =', hdulists[0][0].header['BIASSEC'] 
+        exit(0)
+    print 'overscan width', yccd-yos
+    print 'shape', yccd, xccd
+
     shift = lambda bins: ( bins[1:] + bins[:-1] )*.5
-    #bins = np.r_[min(clean(data['scn'])):max(clean(data['scn'])):dx]
+
     maxSCN = max(clean(data['scn']))
     bins = np.linspace(-maxSCN, maxSCN, N)
     dx = 2*maxSCN/N
-    if verbose: print( 'dx', dx )
-    if verbose: print( 'bins', min(bins), max(bins) )
+    if verbose: print 'dx', dx
+    if verbose: print 'bins', min(bins), max(bins)
 
-    if verbose: print( 'computing histogram of full ccd' )
-    vslice = slice(120,4180)
+    if verbose: print 'computing histogram of full ccd'
+    #vslice = slice(120,4180)
+    vslice = slice(120,xccd-70-50)
     hslices = odict( [
-        ('os', slice(4112+10, 4262-10)), 
-        ('ac', slice(20,4100)), 
+        #('os', slice(4112+10, yccd-10)), 
+        #('ac', slice(20,4100)), 
+        ('os', slice(yos+10, yccd-10)), 
+        ('ac', slice(20,yos-20)), 
         #('ac_os', slice(3112+10,3262-10))
         ] )
     countCut = 1e1/dx
@@ -1337,7 +1614,6 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
     #parseHist = lambda h,x: { 'y': h, 'x': (.5*(x[1:]+x[:-1])) }
     
     hist = odict( [ (datakey, { 
-        #'all': {'hist': np.histogram( clean(datum[0:xccd,0:yccd]), bins = bins )[0] }, 'slice': '0:%s|0:%s'%(xccd,yccd),
         slicekey: {
             'data': clean(datum[vslice,hslice]),
             'hist': parseHist( *np.histogram( clean(datum[vslice,hslice]), bins = bins ) ),
@@ -1364,7 +1640,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
     for datakey, thishist in hist.items():
         for slicekey in hslices.keys():
             datum = thishist[slicekey]
-            print( 'pixelcount', datum['pixelcount'], 'total', datum['totalpixel'], 'occupancy', 1.-float(datum['pixelcount'])/datum['totalpixel'] )
+            print 'pixelcount', datum['pixelcount'], 'total', datum['totalpixel'], 'occupancy', 1.-float(datum['pixelcount'])/datum['totalpixel']
             x = datum['hist']['x']
             y = datum['hist']['y']
             datum['mean2'] = np.mean(crop(x,clean(data[datakey][vslice,hslices[slicekey]])))
@@ -1459,11 +1735,11 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 if first: 
                     header += ['tempmin']
                     fmt += ['%.2f']
-                line += [ float(hdulists['scn'][0].header['TEMPMIN' ]) ]
+                line += [ float(fits_image.header['TEMPMIN' ]) ]
                 if first: 
                     header += ['tempmax']
                     fmt += ['%.2f']
-                line += [ float(hdulists['scn'][0].header['TEMPMAX' ]) ]
+                line += [ float(fits_image.header['TEMPMAX' ]) ]
                 if first: 
                     header += ['file']
                     fmt += ['%.32s']
@@ -1494,7 +1770,7 @@ def computeFits( ohdu, runID, hdulists, verbose=False, plot=False, gain=None ):
                 fitindex += 1
     
     header2 = ['runID', 'ohdu', 'tempmin', 'tempmax', 'pixelcount']
-    line2 = [ int(runID), int(ohdu), float(hdulists['scn'][0].header['TEMPMIN' ]), float(hdulists['scn'][0].header['TEMPMAX']), datum['pixelcount'] ]
+    line2 = [ int(runID), int(ohdu), float(fits_image.header['TEMPMIN' ]), float(fits_image.header['TEMPMAX']), datum['pixelcount'] ]
     header2 += [ 'sigma_os', 'err_sigma_os', 'lambda_os', 'err_lambda_os', 'mu_os', 'err_mu_os', 'A_os', 'err_A_os', 'chisq_os' ]
     datum = hist['scn']['ac']['fits'][r'G(µ,σos)*P(λ)A']
     line2 += [ datum['params']['sigma_os'], datum['perr']['sigma_os'],
@@ -3157,7 +3433,22 @@ def computeEqs( X, labels ):
     fig.savefig('computeEqs.png')
 
     return (coefs, variables, eqlabels, stds)#, observations_in_newAxes, newAxes, axisDispersions
-    
+
+def print_value_error( x, dx, s='\pm' ):
+    power = np.log10(abs(dx))
+    power_int = int(np.floor(abs(power)))+1
+    #print 'power', power, power_int, x, dx
+    if power > 0:
+        power_int -= 1
+        if power_int == 0:
+            pre_str = '%d\pm%d'%(round(x), round(dx))
+        else:
+            pre_str = '(%d%s%d)10^{%d}'%(round(x/10**(power_int)), s, round(dx/10**(power_int)), power_int)
+    else:
+        pre_str = '%%.%df%s%%.%df'%(power_int,s,power_int)%(x,dx)
+    #print pre_str
+    return pre_str
+
 class Callable:
     @staticmethod
     def spectrumViewer( **kwargs ):
@@ -3244,10 +3535,10 @@ class Callable:
                     #generate the rvs
                     N = int(1e6)
                     sigma_adu = sigma_e*gain_adu_e
-                    frozen_pdf = lambda E, s=sigma_adu, mu=lambda_, g=gain_adu_e: poisson_gaussian_pdf(E, scale=s, mu=mu, g=g )
+                    frozen_pdf = lambda E, s=sigma_adu, mu=lambda_, g=gain_adu_e: stats.poisson_norm.pdf(E, scale=s, mu=mu, g=g )
                     norm_rvs = scipy.stats.norm.rvs(scale=sigma_adu, size=N)
                     Emin_adu, Emax_adu = 1.5*norm_rvs.min(), 3*norm_rvs.max()
-                    poisson_norm_rvs = random_pdf_continuous( frozen_pdf, Emin_adu, Emax_adu, N )
+                    poisson_norm_rvs = stats.poisson_norm.rvs( frozen_pdf, Emin_adu, Emax_adu, N )
                     
                     #sample multiple times the same rvs
                     for i in range(20):
@@ -3372,20 +3663,6 @@ class Callable:
 
     @staticmethod
     def plotPaper():
-        def print_value_error( x, dx ):
-            power = np.log10(abs(dx))
-            power_int = int(np.floor(abs(power)))+1
-            print 'power', power, power_int, x, dx
-            if power > 0:
-                power_int -= 1
-                if power_int == 0:
-                    pre_str = '%d\pm%d'%(round(x), round(dx))
-                else:
-                    pre_str = '(%d\pm%d)10^{%d}'%(round(x/10**(power_int)), round(dx/10**(power_int)), power_int)
-            else:
-                pre_str = '%%.%df\pm%%.%df'%(power_int,power_int)%(x,dx)
-            print pre_str
-            return pre_str
         reactors = ['on','off']
         ranges = ['3-7keV', '250-350keV']
         for range_ in ranges:
@@ -3399,17 +3676,33 @@ class Callable:
                 if range_ == '250-350keV':
                     X = X[ X>600 ]
                 hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 2 if range_ == '3-7keV' else 15) )
+                #hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 1 if range_ == '3-7keV' else 5) )
                 bins = .5*(bins[1:]+bins[:-1])
                 color = 'blue' if reactor == 'on' else 'red'
                 ax.step(bins, hist.astype(float)/np.sum(hist), where='mid', color=color)
-                #popt, pcov = scipy.stats.curve_fit( scipy.stats.norm.pdf,  )
-                #perr = np.sqrt(np.diag(pcov))
+                
+                #fit unbinned
                 mean, std = scipy.stats.norm.fit(X)
                 N = len(X)
                 mean_err = std/np.sqrt(N)
                 std_err = np.sqrt( np.mean( (X-mean)**4 )/N )/std
-                label = 'Reactor %s\n$\mu=%s$\n$\sigma=%s$'%(reactor.upper(), print_value_error(mean,mean_err), print_value_error(std, std_err))
-                ax.plot( bins, (bins[1]-bins[0])*scipy.stats.norm.pdf(bins, loc=mean, scale=std), color=color, label= label)
+
+                #fit binned
+                popt, pcov = scipy.optimize.curve_fit( lambda x, loc, scale, A: A*scipy.stats.norm.pdf(x, loc, scale), bins, hist.astype(float)/np.sum(hist)/(bins[1]-bins[0]), p0=(mean,std,1) )
+                perr = np.sqrt(np.diag(pcov))
+                print 'popt, perr', zip(popt, perr)
+                func = lambda x, *p: (bins[1]-bins[0])*p[2]*scipy.stats.norm.pdf(x, loc=p[0], scale=p[1])
+                chisq = scipy.stats.chisquare( hist, f_exp = np.sum(hist)*func(bins, *popt), ddof = len(popt) )[0]/(len(hist)-len(popt))
+                print 'chisq.fit', chisq
+                chisq = scipy.stats.chisquare( hist, f_exp = np.sum(hist)*func(bins, mean, std, 1), ddof = 2 )[0]/(len(hist)-2)
+                print 'chisq,MLE', chisq
+                
+                #label = 'Reactor %s\n$\mu=%s$\n$\sigma=%s$'%(reactor.upper(), print_value_error(mean,mean_err), print_value_error(std, std_err))
+                label = '$\mu=%s$\n$\sigma=%s$'%(print_value_error(mean,mean_err), print_value_error(std, std_err))
+                l = np.arange( bins.min(), bins.max(), .1 )
+                print len(l), len(func(l,*popt))
+                ax.plot( l, (bins[1]-bins[0])*scipy.stats.norm.pdf(l, loc=mean, scale=std), color=color, label= label)
+                #ax.plot( l, func(l, *popt), color=color, ls=':')
                 np.savetxt( 'hist_%s_%s.csv'%(reactor,range_), zip(bins,hist), header='bin hist', fmt='%s', delimiter=' ' )
                 print 'save', 'hist_%s_%s.csv'%(reactor,range_)
             ax.minorticks_on()
@@ -3422,6 +3715,140 @@ class Callable:
         print 'done'
             
 
+    @staticmethod
+    def histogramFits( **kwargs ):
+        #None
+        if 'stats' in kwargs:
+            v_os = 70
+            os_ = 150
+            shape = (4150, 4112)
+            ohdu = 3
+            if 'divide' in kwargs: divide = int(kwargs['divide'])
+            else: divide = 1
+            
+            if 'rebin' in kwargs: rebin = int(kwargs['rebin'])
+            else: rebin = 5
+            
+            if 'dE' in kwargs: dE = float(kwargs['dE'])
+            else: dE = 1.
+            
+            N = int(kwargs['stats'])
+            
+            print 'N=', N
+            if 'robust' in kwargs:
+                if 'fit' in kwargs:
+                    fbasename = 'stats_fit_robust_%s_dE%s_div%s'%(rebin,dE, divide)
+                else:
+                    fbasename = 'stats_robust_%s'%rebin
+            else:
+                if 'fit' in kwargs:
+                    fbasename = 'stats_fit_%s_dE%s'%(rebin,dE)
+                else:
+                    fbasename = 'stats_%s'%rebin
+            timer = Timer.LoopTimer(n=N, name='fits')
+            for i in range(N):
+                unit = 'ADU%s'%ohdu
+                timer.eta(i)
+                timer.end(i)
+                loc = stats.dfloat( (np.random.random_sample(1)[0]-.5), 'e-' )
+                sigma = stats.dfloat( 3*np.random.random_sample(1)[0], 'e-' )
+                lambda_ = 1.5*np.random.random_sample(1)[0]
+                gain = 1000*np.random.random_sample(1)[0] + 1000
+                mbs = False
+                if 'mbs' in kwargs:
+                    mbs = True
+                g_e = gain*eIonization*1e-3
+                stats.dfloat.set_conversion( 'eV', unit, gain*1e-3 )
+                
+                fitsimage = SimulateImage.make_image( shape, v_os, os_, ohdu, lambda_, sigma, gain, rebin, mbs )
+                fitsimage += loc
+                fitsimage = fitsimage.asunit(unit)
+                realimage = stats.dfloat( fitsimage.value, 'ADU%s_'%ohdu )
+                active, overscan = get_regions( realimage )
+                if 'robust' in kwargs:
+                    if 'fit' in kwargs:
+                        res, err = image_MLE_fit_robust( active, overscan, dE, divide )
+                    else:
+                        res = image_MLE_robust( active, overscan )
+                else:
+                    if 'fit' in kwargs:
+                        res, err = image_MLE_fit( active, overscan, dE, divide )
+                    else:
+                        res, err = image_MLE( active, overscan )
+                
+                print
+                for key, value in res.__dict__.items():
+                    print key, value
+                exit(0)
+                
+                entry = '%s  %s %s %s' % (loc, sigma, g_e, lambda_ )
+                mle = '%s  %s %s %s' % (res.mu, res.sigma, res.g, res.lamb)
+                mle_err = '%s  %s %s %s' % (err[0]/g_e, err[1]/g_e, err[2], err[3]/rebin)
+                exit(0)
+                if not os.path.exists(fbasename+'.csv'):
+                    with open('stats.csv','a+') as f:
+                        f.write('#loc scale g lambda mu sigma gain lambda muErr sigmaErr gainErr lambdaErr\n')
+                with open(fbasename+'.csv','a+') as f:
+                    line = '%s %s %s\n' % (entry, mle, mle_err)
+                    print line
+                    f.write(line)
+            fig = plt.figure()
+            ax_mu = fig.add_subplot(221)
+            ax_mu.set_xlabel('mu')
+            ax_mu.set_ylabel('err')
+            ax_mu.grid(True)
+            ax_sigma = fig.add_subplot(222)
+            ax_sigma.set_xlabel('sigma')
+            ax_sigma.set_ylabel('err')
+            ax_sigma.grid(True)
+            ax_gain = fig.add_subplot(223)
+            ax_gain.set_xlabel('gain')
+            ax_gain.set_ylabel('err')
+            ax_gain.grid(True)
+            ax_lambda = fig.add_subplot(224)
+            ax_lambda.set_xlabel('lambda')
+            ax_lambda.set_ylabel('err')
+            ax_lambda.grid(True)
+            data = np.loadtxt(fbasename+'.csv')
+            data = data.T
+
+            ax_mu.errorbar(data[0], data[4]-data[0], data[8], fmt='_', elinewidth=.5)
+            ax_sigma.errorbar(data[1], data[5]-data[1], data[9], fmt='_', elinewidth=.5)
+            ax_gain.errorbar(data[2], data[6]-data[2], data[10], fmt='_', elinewidth=.5)
+            ax_lambda.errorbar(data[3], data[7]-data[3], data[11], fmt='_', elinewidth=.5)
+            ax_mu.set_ylim((-1,1))
+            ax_sigma.set_ylim((-1,1))
+            ax_gain.set_ylim((-1,1))
+            ax_lambda.set_ylim((-1,1))
+            fig.tight_layout()
+            fig.savefig(fbasename+'.pdf')
+            exit(0)
+        else:
+            if 'f' in kwargs:
+                print 'file set to ', kwargs['f']
+                fitsfile = astropy.io.fits.open( kwargs['f'] )
+                print [ f.header['OHDU'] for f in fitsfile ]
+                fitsimage = fitsfile[1].data
+                res = compute_params( fitsimage )
+            else:
+                v_os = 70
+                #os = 550
+                os_ = 150
+                shape = (4150, 4112)
+                ohdu = 3
+                rebin = int(kwargs['rebin'])
+                sigma = float(kwargs['sigma'])
+                lambda_ = float(kwargs['lambda'])
+                gain = float(kwargs['gain'])
+                mbs = False
+                if 'mbs' in kwargs:
+                    mbs = True
+                fitsimage = SimulateImage.make_image( shape, v_os, os_, ohdu, lambda_, sigma, gain, rebin, mbs )
+
+            print 'res', res
+        exit(0)
+        return
+    
     @staticmethod
     def plotSpectrumSimulated( c ):
         config = Config(c)
