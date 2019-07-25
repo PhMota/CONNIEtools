@@ -3827,9 +3827,15 @@ class Callable:
             if 'f' in kwargs:
                 print 'file set to ', kwargs['f']
                 fitsfile = astropy.io.fits.open( kwargs['f'] )
-                print [ f.header['OHDU'] for f in fitsfile ]
-                fitsimage = fitsfile[1].data
-                res = compute_params( fitsimage )
+                header = '# ohdu, mu, muE, sigma, sigmaE, gain, gainE, lambda, lambdaE'
+                print header
+                for f in fitsfile:
+                    ohdu = f.header['OHDU']
+                    if ohdu in [2,3,4,5,6,7,8,9,10,13,14]:
+                        fitsimage = f.data
+                        res = compute_params( fitsimage )
+                        res = np.array(res).flatten()
+                        print ohdu, ' '.join([ '%.4f' % i for i in res])
             else:
                 v_os = 70
                 #os = 550
@@ -3845,7 +3851,7 @@ class Callable:
                     mbs = True
                 fitsimage = SimulateImage.make_image( shape, v_os, os_, ohdu, lambda_, sigma, gain, rebin, mbs )
 
-            print 'res', res
+            #print 'res', res
         exit(0)
         return
     
