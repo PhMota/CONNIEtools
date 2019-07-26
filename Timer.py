@@ -23,14 +23,17 @@ class LoopTimer:
         self.n = n
         print self.name, 'start', time.strftime("%Hh%Mm%Ss", time.localtime(self.start) )
         return
+    
     def __del__(self):
         print self.name, 'done in', time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - self.start) )
         return
+    
     def eta( self, i ):
         if i==0: return
         ave = (time.time() - self.start)/i
         print self.name, 'eta', time.strftime("%Hh%Mm%Ss", time.gmtime((self.n-i)*ave ) )
         return
+    
     def end( self, i ):
         if i==0: return
         ave = (time.time() - self.start)/i

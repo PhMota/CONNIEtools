@@ -3449,6 +3449,46 @@ def print_value_error( x, dx, s='\pm' ):
     #print pre_str
     return pre_str
 
+def computeParamsFromFitsFile( filename ):
+    fitsfile = astropy.io.fits.open( filename )
+    header = ['ohdu', 'mu', 'muE', 'sigma', 'sigmaE', 'gain', 'gainE', 'lambda', 'lambdaE']
+    table = []
+    for f in fitsfile:
+        ohdu = int(f.header['OHDU'])
+        if ohdu in [2,3,4,5,6,7,8,9,10,13,14]:
+            fitsimage = f.data
+            res = compute_params( fitsimage )
+            entry = [ohdu] + np.array(res).flatten().tolist()
+            table.append(entry)
+    return header, table
+
+def plotParamsFromCSVList( filenames, outname ):
+    #ax = [fig.add_subplot(111)]
+    fulltable = []
+    for filename in filenames:
+        table = np.genfromtxt(filename, delimiter=',')
+        fulltable = table
+    #fulltable = np.array( fulltable )
+    print fulltable.shape
+    for ohdus in [ [2,3,4,5], [6,7,8,9], [10,13,14] ]:
+        fig = plt.figure()
+        sigma_ax = fig.add_subplot(3,1,1)
+        gain_ax = fig.add_subplot(3,1,2)
+        lambda_ax = fig.add_subplot(3,1,3)
+        sigma_ax.set_ylabel('sigma[ADU]')
+        gain_ax.set_ylabel('gain[ADU/e-]')
+        lambda_ax.set_ylabel('lambda')
+        for ohdu in ohdus:
+            mask = np.all( [fulltable[:,1] == ohdu], axis=0 )
+            sigma_ax.errorbar( fulltable[:,0][mask], fulltable[:,4][mask], yerr=fulltable[:,5][mask], fmt='.', label='%s'%ohdu )
+            gain_ax.errorbar( fulltable[:,0][mask], fulltable[:,6][mask], yerr=fulltable[:,7][mask], fmt='.' )
+            lambda_ax.errorbar( fulltable[:,0][mask], fulltable[:,8][mask], yerr=fulltable[:,9][mask], fmt='.' )
+        sigma_ax.legend( fancybox=True, framealpha=0 )
+        name = outname.split('.')
+        fig.savefig( name[0] + '_%02d.' % ohdus[0] + name[1] )
+        plt.close()
+    return
+
 class Callable:
     @staticmethod
     def spectrumViewer( **kwargs ):
@@ -3824,18 +3864,25 @@ class Callable:
             fig.savefig(fbasename+'.pdf')
             exit(0)
         else:
-            if 'f' in kwargs:
-                print 'file set to ', kwargs['f']
-                fitsfile = astropy.io.fits.open( kwargs['f'] )
-                header = '# ohdu, mu, muE, sigma, sigmaE, gain, gainE, lambda, lambdaE'
-                print header
-                for f in fitsfile:
-                    ohdu = f.header['OHDU']
-                    if ohdu in [2,3,4,5,6,7,8,9,10,13,14]:
-                        fitsimage = f.data
-                        res = compute_params( fitsimage )
-                        res = np.array(res).flatten()
-                        print ohdu, ' '.join([ '%.4f' % i for i in res])
+            if 'p' in kwargs:
+                plotParamsFromCSVList(glob.glob(kwargs['p']), kwargs['o'])
+                exit(0)
+            elif 'f' in kwargs and 'o' in kwargs:
+                filenamelist = sorted(glob.glob(kwargs['f']))
+                print 'input files', filenamelist
+                fulltable = []
+                timer = Timer.LoopTimer(len(filenamelist), 'loop')
+                for i, filename in enumerate(filenamelist):
+                    print '%s(%s)' % ( i+1, len(filenamelist) )
+                    runID = int( re.search( r'runID_[0-9]+?_([0-9]+?)_Int', filename ).groups()[0] )
+                    header, table = computeParamsFromFitsFile( filename )
+                    fullheader = ['runID'] + header
+                    fulltable += [ [runID] + row for row in table ]
+                    with open( kwargs['o'], 'wb') as output:
+                        np.savetxt( output, fulltable, header=', '.join(fullheader), delimiter=', ', fmt='%s' )
+                    timer.eta(i)
+                    timer.end(i)
+                exit(0)
             else:
                 v_os = 70
                 #os = 550
