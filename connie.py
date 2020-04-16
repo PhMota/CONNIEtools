@@ -20,7 +20,7 @@ import matplotlib
 #matplotlib.use('qt4agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
-from matplotlib import patches, colors
+from matplotlib import patches, colors, cm
 from mpl_toolkits.axes_grid1 import make_axes_locatable, ImageGrid
 #from matplotlib.backends.backend_gtk3agg import (FigureCanvasGTK3Agg as FigureCanvas)
 from matplotlib.backends.backend_gtk3cairo import (FigureCanvasGTK3Cairo as FigureCanvas)
@@ -54,6 +54,7 @@ from ConnieDataPath import ConnieDataPath as ConniePaths
 import MonitorViewer
 import ImageViewer
 import SimulateImage
+import ConnieImage
 import Statistics as stats
 import Timer
 #np.seterr(all='raise')
@@ -282,84 +283,11 @@ def str_with_err(value, error):
 folder = '/share/storage2/connie/data_analysis/processed02_data/runs/029*/data_*/scn/merged/*'
 folder2 = '/share/storage2/connie/data_analysis/processed02_data/runs/009*/data_*/scn/merged/*'
 
-#class DataPath:
-    #connie_folder = '/share/storage2/connie/'
-    #run_pattern = r'/runs/([0-9]+?)/'
-    #runID_pattern = r'/runID_([0-9]+?)_([0-9]+?)_.*_p([0-9]).fits.fz'
-    
-    
-    #@classmethod
-    #def parse_run(cls, run):
-        #if run is None: return '*'
-        #if type(run) is int: return '%03d'%run
-        #return run
-    
-    #@classmethod
-    #def run_folder(cls, run):
-        #return cls.connie_folder+'data/runs/%s/'%( cls.parse_run(run) )
-    
-    #@classmethod
-    #def parse_runID(cls, runID):
-        #if runID is None: return '*'
-        #if type(runID) is int: return '%05d'%runID
-        #return runID
-    
-    #@classmethod
-    #def raw_pattern( cls, run, runID, part ): 
-        #return cls.run_folder(run)+'runID_%s_%s_*_p%s.fits.fz'%( cls.parse_run(run), cls.parse_runID(runID), part )
-    
-    #@classmethod
-    #def runPath(cls, run=None):
-        #if run is None: return sorted( glob.glob( cls.run_folder('*') ) )
-        #if type(run) is int: return glob.glob( cls.run_folder(run) )
-        #return map( cls.runPaths, run )
-    
-    #@classmethod
-    #def run(cls, path=None, runID=None):
-        #if path is None and runID is None: return cls.run(cls.runPath())
-        #if type(path) is str: return int( re.search( cls.run_pattern, path ).groups()[0] )
-        #if type(path) is list: return map( cls.run, path )
-        #if type(runID) is str: return int( re.search( cls.runID_pattern, runID ).groups()[0] )
-        #if type(runID) is int: return cls.run( path=cls.runIDPath(runID=runID)[0] )
-        #if type(runID) is list: return map( run, cls.runIDPath(runID) )
-        #if type(runID) is tuple: return sorted(lits(set(cls.run(list(runID)))))
-
-    #@classmethod
-    #def runIDPath(cls, runID=None, run=None, part='*'):
-        #if runID is None and run is None:  return sorted( glob.glob( cls.raw_pattern('*','*',part) ) )
-        #if type(runID) is int: return sorted( glob.glob( cls.raw_pattern('*',runID,part) ) )
-        #if type(runID) is list: return map( cls.runIDPath, runID )
-        #if type(run) is int: return sorted( glob.glob( cls.raw_pattern(run,'*',part) ) )
-        #if type(run) is list: return map( lambda run: cls.runIDPath(run=run), run )
-    
-    #@classmethod
-    #def runID(cls, path=None, run=None, part='*'):
-        #if path is None and run is None: return cls.runID(cls.runIDPath(part='1'))
-        #if type(path) is str: return int( re.search( cls.runID_pattern, path ).groups()[1] )
-        #if type(path) is list: return map( cls.runID, path )
-        #if type(run) is int: return cls.runID(path=cls.runIDPath(run=run, part='1'))
-        #if type(run) is list: return map( lambda run: cls.runID(run=run), run )
-        #if type(run) is tuple: return [ item for line in cls.runID(run=list(run)) for item in line ]
-        
-    #@staticmethod
-    #def test():
-        #print DataPath.parse_run(None)
-        #print DataPath.run()
-        #paths = DataPath.runPath()
-        #print paths
-        ##print DataPath.run( DataPath.runPath( DataPath.run(paths)[-1] ) )
-        #print DataPath.runID(run=[42,43])
-        #print DataPath.runID(run=(42,43))
-
-#DataPath.test()
-#exit(0)
-
 def listFITS( *patterns ):
     '''
     list all files that match the list of patterns given
     '''
     return sortByrunID([ match for pattern in patterns for match in rglob(pattern) if not '-with-' in match ])
-
 
 #/share/storage2/connie/nu_processing/temp_guille_paper/connie_proc/connie_*/data_*/runs/*/
 def list_subruns( run='all' ):
@@ -1281,20 +1209,21 @@ def histogram_fits( data, bins, func, p0, tol = 1, bounds = ()  ):
     #return r
 
 def separate_active_overscan( image ):
+    shape = image.val.shape
     vos = 70
-    if image.shape[1] in [4262,4350]:
+    if shape[1] in [4262,4350]:
         os = 150
-    elif image.shape[1] in [4662]:
+    elif shape[1] in [4662]:
         os = 550
-    elif image.shape[1] in [9340]:
+    elif shape[1] in [9340]:
         os = 550
-        width = image.shape[1]/2
-        return image[ :-vos, 8 : width - os ], image[ :-vos, width - os : width ]
+        width = shape[1]/2
+        return image.val[ :-vos, 8 : width - os ], image.val[ :-vos, width - os : width ]
     else:
-        print 'shape not predicted', image.shape
+        print 'shape not predicted', shape
         exit(1)
-    overscan = image[ :-vos, -os: ]
-    active = image[ :-vos, :-os ]
+    overscan = image.val[ :-vos, -os: ]
+    active = image.val[ :-vos, :-os ]
     return active, overscan
 
 def divide_image( active, overscan, N, i):
@@ -1306,7 +1235,7 @@ def divide_image( active, overscan, N, i):
     return active, overscan
 
 def image_MLE( active, overscan ):
-    
+    print 'image_MLE'
     mu_o = stats.ufloat( np.mean(overscan), errSqr=stats.errSqr_mean(overscan) )
     sigma_o = stats.ufloat( np.std(overscan), errSqr=stats.errSqr_std(overscan) )
 
@@ -1316,7 +1245,7 @@ def image_MLE( active, overscan ):
     g = (sigma_a**2 - sigma_o**2)/(mu_a - mu_o)
     lamb = (mu_a-mu_o)/g
 
-    return ( mu_o.val, sigma_o.val, g.val, lamb.val ), ( mu_o.err(), sigma_o.err(), g.err(), lamb.err() )
+    return mu_o, sigma_o, g, lamb
 
 def image_MLE_robust( active, overscan, divide=2 ):
     print 'overscan class', overscan.__class__.__name__
@@ -3489,7 +3418,239 @@ def plotParamsFromCSVList( filenames, outname ):
         plt.close()
     return
 
+class NormRVS:
+    def __init__( self, mu, sigma, N=1000 ):
+        self.mu = mu
+        self.sigma = sigma
+        self.N = N
+        self.x = scipy.stats.norm.rvs( self.mu[0], self.sigma, self.N )
+        self.y = scipy.stats.norm.rvs( self.mu[1], self.sigma, self.N )
+        self.pos = np.array( zip(self.x, self.y) )
+        self.mean = np.mean( self.pos, axis=0 )
+        self.var = np.var( self.pos, axis=0 )
+        self.std = np.sqrt( self.var )
+        self.fitted = NormFitted( self.x, self.y, self.mean, np.sqrt(self.var) )
+        self.pixelated = Pixelated( self.x, self.y )
+
+    def plot( self, ax, **kwargs ):
+        ax.grid(True)
+        ax.set_aspect(aspect=1)
+        ax.set_xlabel(r'$x$')
+        ax.set_ylabel(r'$y$')
+        ax.scatter( self.x, self.y, s=.1, c='b' )
+        ax.errorbar( self.mean[0], self.mean[1], xerr=self.std[0], yerr=self.std[1], c='r' )
+        ax.set_title(r'$\mu=(%s,%s)\quad \sigma=%s$' %( self.mu[0], self.mu[1], self.sigma ) )
+        
+        return ax
+        
+class NormFitted:
+    def __init__( self, x, y, mean, std, indep=True ):
+        self.x = x
+        self.y = y
+        self.mu = [0,0]
+        self.sigma = np.sqrt( .5*(std[0]**2 +std[1]**2) )
+
+        self.mu[0], self.mu[1], self.sigma = scipy.optimize.minimize( 
+            fun = self.negloglikelihood,
+            x0 = [ mean[0], mean[1], std ]
+            ).x
+        
+    def pdf( self, x, y, p ):
+        return scipy.stats.norm.pdf( x, p[0], p[2] )*scipy.stats.norm.pdf( y, p[1], p[2] )
+
+    def negloglikelihood( self, p ):
+        return -np.sum( np.log( self.pdf( self.x, self.y, p ) ) )
+    
+    def plot(self, ax, show_original=False ):
+        ax.grid(True)
+        ax.set_aspect(aspect=1)
+        ax.set_xlabel(r'$x$')
+        ax.set_ylabel(r'$y$')
+        X, Y = np.meshgrid( np.linspace( self.x.min(), self.x.max(), 100), np.linspace( self.y.min(), self.y.max(), 100) )
+        z = self.pdf( X, Y, (self.mu[0], self.mu[1], self.sigma) )
+        ax.contourf(X, Y, z, cmap=cm.PuBu)
+        ax.errorbar( self.mu[0], self.mu[1], xerr=self.sigma, yerr=self.sigma, c='r' )
+        ax.set_title(r'$\mu=(%.3f,%.3f)\quad\sigma=%.3f$' %( self.mu[0], self.mu[1], self.sigma ) )
+        if show_original:
+            ax.scatter(self.x, self.y, s=.1, c='k' )
+        return ax
+            
+        
+class Pixelated:
+    def __init__( self, x, y ):
+        self.x, self.y = x, y
+        self.xpix = np.floor(x).astype(int)
+        self.ypix = np.floor(y).astype(int)
+
+        self.pix, self.pix_count = np.unique( zip(self.xpix, self.ypix), axis=0, return_counts=True )
+        self.pixs_x, self.pixs_y = self.pix.T
+        #print self.pix
+        #print self.pix_count
+        
+        xbins = np.arange( self.xpix.min(), self.xpix.max()+1, 1)
+        ybins = np.arange( self.ypix.min(), self.ypix.max()+1, 1)
+        self.H, self.xedges, self.yedges = np.histogram2d( self.xpix, self.ypix, bins=[xbins,ybins] )
+        #print self.H
+        #print self.xedges
+        #print self.yedges
+
+        self.meanxpix, self.meanypix = np.average( self.pix+.5, weights=self.pix_count, axis=0 )
+        self.varxpix, self.varypix = self.var_weighted( self.pix+.5, self.pix_count )
+        
+        self.varpix = np.mean( [self.varxpix, self.varypix] )
+        self.std = np.sqrt(self.varpix)
+        
+        self.fitted = PixelatedNormFitted( self.pixs_x, self.pixs_y, self.pix_count, (self.meanxpix, self.meanypix), self.std, len(self.xpix) )
+
+    def var_weighted( self, x, w ):
+        return np.average( x**2, weights=w, axis=0 ) - np.average( x, weights=w, axis=0 )**2
+
+    def plot(self, ax, show_original = False, **kwargs):
+        ax.grid(True)
+        ax.set_aspect(aspect=1)
+        ax.set_xlabel(r'$x[{\rm pix}]$')
+        ax.set_ylabel(r'$y[{\rm pix}]$')
+        z = self.pix_count.astype(float)/self.pix_count.max()
+
+        for xi, yi, zi in zip( self.pixs_x, self.pixs_y, z):
+            rectangle = plt.Rectangle( (xi,yi), width=1, height=1, color=(0,0,1,np.sqrt(zi) ), linewidth=0 )
+            ax.add_artist(rectangle)
+        
+        ax.errorbar( self.meanxpix, self.meanypix, xerr=self.std, yerr=self.std, c='r' )
+        ax.set_xlim((self.pixs_x.min(), self.pixs_x.max()+1))
+        ax.set_ylim((self.pixs_y.min(), self.pixs_y.max()+1))
+        
+        if show_original:
+            ax.scatter(self.x, self.y, s=.1, c='k' )
+        ax.set_title(r'${\rm mean}=(%.3f,%.3f)\quad{\rm std}=%.3f$' %( self.meanxpix, self.meanypix, self.std ) )
+        return ax
+        
+class PixelatedNormFitted:
+    def __init__( self, pixs_x, pixs_y, pix_count, mean, std, N ):
+        self.pixs_x = pixs_x
+        self.pixs_y = pixs_y
+        self.pix_count = pix_count
+        self.mean = mean
+        self.std = std
+        self.N = N
+        self.mu = [0,0]
+        self.mu[0], self.mu[1], self.sigma = scipy.optimize.minimize(
+            fun = self.negloglikelihood,
+            x0 = [ self.mean[0], self.mean[1], self.std ],
+            bounds = [(-np.inf,np.inf), (-np.inf, np.inf), (0.1, np.inf)] ).x
+        
+    def integral_norm_pixel( self, xpix, mu, sigma ):
+        sqrt2 = np.sqrt(2.)
+        return -.5*( scipy.special.erf( -( xpix+1 - mu)/( sqrt2*sigma )) - scipy.special.erf( -( xpix - mu )/( sqrt2*sigma ) ) )
+    
+    def probability_pixel( self, x, y, p ):
+        return self.integral_norm_pixel( x, mu = p[0], sigma = p[2] ) * self.integral_norm_pixel( y, mu = p[1], sigma = p[2] )
+    
+    def pdf( self, p ):
+        return scipy.stats.binom.pmf( self.pix_count, self.N, self.probability_pixel( self.pixs_x, self.pixs_y, p ))
+    
+    def negloglikelihood( self, p ):
+        return -np.sum( np.log( self.pdf( p ) ) )
+
+    def plot( self, ax, show_original = False, **kwargs ):
+        ax.grid(True)
+        ax.set_aspect(aspect=1)
+        ax.set_xlabel(r'$x[{\rm pix}]$')
+        ax.set_ylabel(r'$y[{\rm pix}]$')
+        
+        X, Y = np.meshgrid(np.arange( self.pixs_x.min(), self.pixs_x.max()+1, 1), np.arange( self.pixs_y.min(), self.pixs_y.max()+1, 1) )
+        X = X.flatten()
+        Y = Y.flatten()
+
+        Z = self.probability_pixel( X, Y, (self.mu[0], self.mu[1], self.sigma) )
+        z = Z.astype(float)/Z.max()
+        
+        for xi, yi, zi in zip( X, Y, z ):
+            rectangle = plt.Rectangle( (xi,yi), width=1, height=1, color=(0,0,1,np.sqrt(zi) ), linewidth=0 )
+            ax.add_artist(rectangle)
+        ax.set_xlim((self.pixs_x.min(), self.pixs_x.max()+1))
+        ax.set_ylim((self.pixs_y.min(), self.pixs_y.max()+1))
+        
+        ax.errorbar( self.mu[0], self.mu[1], xerr=self.sigma, yerr=self.sigma, c='r' )
+
+        ax.set_title(r'$\mu=(%.3f,%.3f)\quad\sigma=%.3f$' %( self.mu[0], self.mu[1], self.sigma ) )
+        return ax
+
+#class NoiseGenerator:
+    #def __init__( self, sigma ):
+        
+    #def generateNoise( self, pixs_x, pixs_y ):
+        #X, Y = np.meshgrid(np.arange( pixs_x.min(), pixs_x.max()+1, 1), np.arange( pixs_y.min(), pixs_y.max()+1, 1) )
+        
+
+class RandomSamplingFit:
+    def __init__(self, number_events):
+        self.values = {}
+        self.values[r'$N$'] = np.random.randint( 5, 2000, size=number_events)
+        self.values[r'$\mu$'] = np.random.random( size=(number_events, 2) )
+        self.values[r'$\sigma$'] = np.random.random( size=number_events )*1.2
+
+        self.norm_rvs = [ NormRVS( mu, sigma, N ) for mu, sigma, N in zip(self.values[r'$\mu$'], self.values[r'$\sigma$'], self.values[r'$N$']) ]
+        self.values[r'${\rm std}_{\rm pix}$'] = [ event.pixelated.std for event in self.norm_rvs ]
+        self.values[r'$\sigma_{\rm pix}$'] = [ event.pixelated.fitted.sigma for event in self.norm_rvs ]
+
+    def plot( self, ax, xlabel, ylabel, y2label = False, equal = False, relative_error=False, **kwargs ):
+        if relative_error:
+            x = self.values[xlabel]
+            y = self.values[ylabel]
+            y2 = self.values[y2label]
+            relerr = lambda a, b: 2.*(np.array(a)-np.array(b))/(np.array(a)+np.array(b))
+            z = relerr(y,y2)
+            
+            ax.set_xlabel( xlabel ), ax.set_ylabel( r'errRel(%s, %s)'%(ylabel, y2label) )
+            #ax.plot( x, z, '.' )
+            ax.hist2d( x, z, bins=100 )
+            ax.plot( [min(x),max(x)], [0,0], 'k:' )
+        else:
+            ax.set_aspect(aspect=1)
+            ax.set_xlabel( xlabel ), ax.set_ylabel( ylabel )
+            ax.plot( self.values[xlabel], self.values[ylabel], '.' )
+            if equal:
+                xmin = min(self.values[xlabel])
+                xmax = max(self.values[xlabel])
+                ymin = min(self.values[ylabel])
+                ymax = max(self.values[ylabel])
+                
+                min_ = max(xmin,ymin)
+                max_ = min(xmax,ymax)
+                ax.plot( [min_,max_], [min_,max_], 'k:' )
+
+def plot2file( file, plotfun, **kwargs ):
+    fig = plt.figure()
+    if not isinstance( plotfun, list ):
+        plotfun( fig.add_subplot(111), **kwargs )
+    fig.savefig(file)
+    print 'saved plot', file
+    return
+
 class Callable:
+    @staticmethod
+    def size_like( **kwargs ):
+        print 'size_like function'
+        N = 100
+        mux = 0
+        muy = 0
+        sigma = 1.
+        
+        matplotlib.rcParams['text.usetex'] = True
+        matplotlib.rcParams['font.sans-serif'] = 'Helvetica'
+        
+        randomSamplingFit = RandomSamplingFit(10000)
+        plot2file('sigma_vs_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix}$', equal=True )
+        plot2file('stdPix_vs_sigmaPix.png', randomSamplingFit.plot, xlabel=r'${\rm std}_{\rm pix}$', ylabel=r'$\sigma_{\rm pix}$', equal=True )
+        plot2file('sigma_vs_err_sigma_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix}$', y2label=r'$\sigma$', relative_error=True )
+        plot2file('sigmaPix_vs_err_sigma_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$\sigma_{\rm pix}$', ylabel=r'$\sigma_{\rm pix}$', y2label=r'$\sigma$', relative_error=True )
+        plot2file('N_vs_err_sigma_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$N$', ylabel=r'$\sigma_{\rm pix}$', y2label=r'$\sigma$', relative_error=True )
+        exit(0)
+        
+        return
+        
+    
     @staticmethod
     def spectrumViewer( **kwargs ):
         win = SpectrumWindow( **kwargs )
@@ -3679,97 +3840,223 @@ class Callable:
     @staticmethod
     def paperTable():
         count = {}
-        reactor_subruns = {'on': ['029G','029H','029I','029J','031A','031B'], 'off': ['009','029C', '029D', '029E', '029F']}
-        selections = {'3-7keV': 'flag==0 && E2/gainCu>3 && E2/gainCu<7', '250-350keV': 'flag==0 && E2/gainCu>250 && E2/gainCu<350'}
+        #reactor_subruns = {'on': ['029G','029H','029I','029J','031A','031B'], 'off': ['009','029C', '029D', '029E', '029F']}
+        reactor_subruns = {'on': [
+            #'018A', '018B', '018C', '018D', '018E', '018F',
+            #'025A', '025B', '025C', '025D', '025E', '025F',
+            #'026A', '026B',
+            #'028A', '028B', '028C', '028D', '028E',
+            '029A', '029B', '029C', '029D', '029E', '029F', '029G','029H','029I','029J',
+            '031A', '031B', '031C', '031D', '031E', '031F', '031G','031H','031I',#'031J',
+            #'032A', '032B', '032C', '032D',
+            ]}
+        selections = {#'3-7keV': 'flag==0 && E2/gainCu>3 && E2/gainCu<7', 
+                      '250-350keV': 'flag==0 && E0/gainCu>250 && E0/gainCu<350'}
         for reactor, subruns in reactor_subruns.items():
             for range_, selection in selections.items():
                 fullcount = []
                 for subrun in subruns:
                     count = []
+                    print subrun
                     path = ConniePaths.catalogPath( subrun, gain=True, skim=True )
-                    print subrun, path
-                    data = root_numpy.root2array( path, treename = 'hitSumm', branches = ['runID','E1','gainCu','ohdu'], selection=selection )
+                    print path
+                    data = root_numpy.root2array( path, treename = 'hitSumm', branches = ['runID','E2','gainCu','ohdu', 'expoStart'], selection=selection )
                     runIDs = np.unique( data['runID'] )
+                    expoStarts = np.unique( data['expoStart'] )
+                    print data['runID']
                     ohdus = np.unique( data['ohdu'] )
-                    for runID in runIDs:
+                    print ohdus
+                    for runID, expoStart in zip(runIDs, expoStarts):
                         for ohdu in ohdus:
                             mask = np.all( [ data['runID'] == runID, data['ohdu'] == ohdu ], axis=0 )
-                            count.append( [runID, ohdu, len(data[mask])] )
-                            fullcount.append( [runID, ohdu, len(data[mask])] )
-                    np.savetxt( 'count_%s_%s_%s.csv'%(reactor, range_, subrun), count, header='runID ohdu count', fmt='%s', delimiter=' ' )
+                            count.append( [runID, expoStart, ohdu, len(data[mask])] )
+                            fullcount.append( [runID, expoStart, ohdu, len(data[mask])] )
+                    np.savetxt( 'count_%s_%s_%s.csv'%(reactor, range_, subrun), count, header='runID expoStart ohdu count', fmt='%s', delimiter=' ' )
                     print 'done', reactor, range_, subrun
-                np.savetxt( 'count_%s_%s.csv'%(reactor, range_), count, header='runID ohdu count', fmt='%s', delimiter=' ' )
+                np.savetxt( 'count_%s_%s.csv'%(reactor, range_), count, header='runID expoStart ohdu count', fmt='%s', delimiter=' ' )
                 print 'done', reactor, range_
 
     @staticmethod
     def plotPaper():
-        reactors = ['on','off']
-        ranges = ['3-7keV', '250-350keV']
+        reactors = ['on',#'off'
+                    ]
+        ranges = [#'3-7keV', 
+            '250-350keV']
         for range_ in ranges:
             fig = plt.figure()
             w, h = fig.get_size_inches()
             fig.set_size_inches((w,h*.75))
             ax = fig.add_subplot(111)
+            X_cum = []
+            XX_cum = []
             for reactor in reactors:
                 data = np.genfromtxt('count_%s_%s.csv'%(reactor, range_), names=True )
-                X = data['count']
-                if range_ == '250-350keV':
-                    X = X[ X>600 ]
-                hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 2 if range_ == '3-7keV' else 15) )
-                #hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 1 if range_ == '3-7keV' else 5) )
-                bins = .5*(bins[1:]+bins[:-1])
-                color = 'blue' if reactor == 'on' else 'red'
-                ax.step(bins, hist.astype(float)/np.sum(hist), where='mid', color=color)
-                
-                #fit unbinned
-                mean, std = scipy.stats.norm.fit(X)
-                N = len(X)
-                mean_err = std/np.sqrt(N)
-                std_err = np.sqrt( np.mean( (X-mean)**4 )/N )/std
+                ax.plot( data['expoStart'], data['count'], 'b.' ) 
 
-                #fit binned
-                popt, pcov = scipy.optimize.curve_fit( lambda x, loc, scale, A: A*scipy.stats.norm.pdf(x, loc, scale), bins, hist.astype(float)/np.sum(hist)/(bins[1]-bins[0]), p0=(mean,std,1) )
-                perr = np.sqrt(np.diag(pcov))
-                print 'popt, perr', zip(popt, perr)
-                func = lambda x, *p: (bins[1]-bins[0])*p[2]*scipy.stats.norm.pdf(x, loc=p[0], scale=p[1])
-                chisq = scipy.stats.chisquare( hist, f_exp = np.sum(hist)*func(bins, *popt), ddof = len(popt) )[0]/(len(hist)-len(popt))
-                print 'chisq.fit', chisq
-                chisq = scipy.stats.chisquare( hist, f_exp = np.sum(hist)*func(bins, mean, std, 1), ddof = 2 )[0]/(len(hist)-2)
-                print 'chisq,MLE', chisq
+                #if range_ == '250-350keV':
+                    ##X = X[ X>600 ]
+                    #pass
+                #hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 2 if range_ == '3-7keV' else 15) )
+                ##hist, bins = np.histogram( X, bins=np.arange(X.min(), X.max(), 1 if range_ == '3-7keV' else 5) )
+                #bins = .5*(bins[1:]+bins[:-1])
+                #color = 'blue' if reactor == 'on' else 'red'
+                #ax.step(bins, hist.astype(float)/np.sum(hist), where='mid', color=color)
                 
-                #label = 'Reactor %s\n$\mu=%s$\n$\sigma=%s$'%(reactor.upper(), print_value_error(mean,mean_err), print_value_error(std, std_err))
-                label = '$\mu=%s$\n$\sigma=%s$'%(print_value_error(mean,mean_err), print_value_error(std, std_err))
-                l = np.arange( bins.min(), bins.max(), .1 )
-                print len(l), len(func(l,*popt))
-                ax.plot( l, (bins[1]-bins[0])*scipy.stats.norm.pdf(l, loc=mean, scale=std), color=color, label= label)
-                #ax.plot( l, func(l, *popt), color=color, ls=':')
-                np.savetxt( 'hist_%s_%s.csv'%(reactor,range_), zip(bins,hist), header='bin hist', fmt='%s', delimiter=' ' )
-                print 'save', 'hist_%s_%s.csv'%(reactor,range_)
+                ##fit unbinned
+                #mean, std = scipy.stats.norm.fit(X)
+                #N = len(X)
+                #mean_err = std/np.sqrt(N)
+                #std_err = np.sqrt( np.mean( (X-mean)**4 )/N )/std
+
+                ##fit binned
+                #popt, pcov = scipy.optimize.curve_fit( lambda x, loc, scale, A: A*scipy.stats.norm.pdf(x, loc, scale), bins, hist.astype(float)/np.sum(hist)/(bins[1]-bins[0]), p0=(mean,std,1) )
+                #perr = np.sqrt(np.diag(pcov))
+                #print 'popt, perr', zip(popt, perr)
+                #func = lambda x, *p: (bins[1]-bins[0])*p[2]*scipy.stats.norm.pdf(x, loc=p[0], scale=p[1])
+                #chisq = scipy.stats.chisquare( hist, f_exp = np.sum(hist)*func(bins, *popt), ddof = len(popt) )[0]/(len(hist)-len(popt))
+                #print 'chisq.fit', chisq
+                #chisq = scipy.stats.chisquare( hist, f_exp = np.sum(hist)*func(bins, mean, std, 1), ddof = 2 )[0]/(len(hist)-2)
+                #print 'chisq,MLE', chisq
+                
+                ##label = 'Reactor %s\n$\mu=%s$\n$\sigma=%s$'%(reactor.upper(), print_value_error(mean,mean_err), print_value_error(std, std_err))
+                #label = '$\mu=%s$\n$\sigma=%s$'%(print_value_error(mean,mean_err), print_value_error(std, std_err))
+                #l = np.arange( bins.min(), bins.max(), .1 )
+                #print len(l), len(func(l,*popt))
+                #ax.plot( l, (bins[1]-bins[0])*scipy.stats.norm.pdf(l, loc=mean, scale=std), color=color, label= label)
+                ##ax.plot( l, func(l, *popt), color=color, ls=':')
+                #np.savetxt( 'hist_%s_%s.csv'%(reactor,range_), zip(bins,hist), header='bin hist', fmt='%s', delimiter=' ' )
+                #print 'save', 'hist_%s_%s.csv'%(reactor,range_)
+            #print X_cum
+            #print XX_cum
             ax.minorticks_on()
-            ax.set_xlabel('Event rate', x=1, ha='right')
-            ax.set_ylabel('Frequency', y=1, ha='right')
+            ax.set_xlabel('Rate (events/image)', x=1, ha='right')
+            ax.set_ylabel('Relative frequency', y=1, ha='right')
             fig.set_tight_layout(True)
             ax.legend( fancybox=True, framealpha=0 )
-            fig.savefig( 'hist_%s.pdf'%(range_) )
-            print 'save', 'hist_%s.pdf'%(range_)
+            fig.savefig( 'timeSeries_%s.pdf'%(range_) )
+            print 'save', 'timeSeries_%s.pdf'%(range_)
         print 'done'
             
-
+    
+    @staticmethod
+    def simulateImageAndFit( **kwargs ):
+        simulatedImage = Image.generate( **kwargs )
+        simulatedImage.plotSpectrum( **kwargs )
+    
     @staticmethod
     def histogramFits( **kwargs ):
+        from sklearn import mixture
+        import itertools
+
+        def printAverageEstimates( a ):
+            E = a.flatten()
+            print 'ave', np.mean( E )
+            print 'ave', np.sum( E )/len(E)
+            print 'aveInv', np.sum( 1./(E**2+1)*E )/np.sum( 1./(E**2+1) )
+            print 'aveInv1', np.average( E, weights=1./(E**2+1) )
+            print 'aveInv10', np.average( E, weights=1./(E**2+10) )
+            print 'aveInv100', np.average( E, weights=1./(E**2+100) )
+            print 'aveInv1e3', np.average( E, weights=1./(E**2+1e3) )
+            print 'aveInv1e4', np.average( E, weights=1./(E**2+1e4) )
+
+        def printStdEstimates( a ):
+            E = a.flatten()
+            print 'ave', np.var( E )
+            print 'ave', np.sum( E**2 )/len(E) - (np.sum( E )/len(E))**2
+            print 'aveInv1', np.average( E**2, weights=1./(E**2+1) ) - np.average( E, weights=1./(E**2+1) )**2
+            print 'aveInv10', np.average( E**2, weights=1./(E**2+10) ) - np.average( E, weights=1./(E**2+10) )**2
+            print 'aveInv100', np.average( E**2, weights=1./(E**2+100) ) - np.average( E, weights=1./(E**2+100) )**2
+
+        def compute2DParams( E, N=3 ):
+            print 'computing 2D params with radius', N
+            E0 = np.array(E)
+            E1 = np.array(E)
+            x = np.arange(0,E1.shape[0],1)[:,None]
+            y = np.arange(0,E1.shape[1],1)[None,:]
+            E1 -= np.min(E1)
+            xE = np.zeros( np.array(E1.shape) - [N,N] )
+            yE = np.zeros( np.array(E1.shape) - [N,N] )
+            x2E = np.zeros( np.array(E1.shape) - [N,N] )
+            y2E = np.zeros( np.array(E1.shape) - [N,N] )
+            mE = np.zeros( np.array(E1.shape) - [N,N] )
+            Emax = np.zeros( np.array(E1.shape) - [N,N] )
+            print xE.shape
+            for i in range(0,N):
+                for j in range(0,N):
+                    xE += x[i:-N+i,:] * E1[i:-N+i,j:-N+j]
+                    yE += y[:,j:-N+j] * E1[i:-N+i,j:-N+j]
+                    x2E += x[i:-N+i,:]**2 * E1[i:-N+i,j:-N+j]
+                    y2E += y[:,j:-N+j]**2 * E1[i:-N+i,j:-N+j]
+                    mE += E1[i:-N+i,j:-N+j]
+                    Emax = np.amax( [Emax, E0[i:-N+i,j:-N+j]], axis=0 )
+            xE = xE/mE
+            yE = yE/mE
+            print xE.shape, yE.shape, Emax.shape
+            sE2 = (x2E + y2E)/mE - (xE**2 + yE**2)
+            #print sE2, sE2.shape
+            return sE2 
+            #return Emax
+
+        def plot( hists, lines = [], xlabel = None, ylabel = None ):
+            fig = plt.figure(figsize=(3,3))
+            ax = fig.add_subplot(111)
+            for ia in hists:
+                ax.hist( ia.flatten(), bins=200, histtype='step', normed=True )
+            for ia in lines:
+                ax.plot( ia[0], ia[1]/factor )
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.grid(True)
+            #ax.get_yaxis().get_major_formatter().set_useOffset(False)
+            fig.subplots_adjust()
+            fig.tight_layout()
+            fig.savefig('sE2.png')
+        
+        def plotMultiple( m, merr, s, serr, l, lerr, g, gerr):
+            fig = plt.figure(figsize=(3,3))
+            ax = fig.add_subplot(111)
+            ax.errorbar( )
+            
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.grid(True)
+            #ax.get_yaxis().get_major_formatter().set_useOffset(False)
+            fig.subplots_adjust()
+            fig.tight_layout()
+            fig.savefig('stats.png')
+        
+        def plot_results_1d(X, Y_, means, covariances, weights, index, title):
+            color_iter = itertools.cycle(['navy', 'c', 'cornflowerblue', 'gold', 'darkorange'])
+
+            splot = plt.subplot(2, 1, 1 + index)
+            splot = plt.subplot(1, 1, 1)
+            _, bins, _ = plt.hist( X, bins=500, histtype='step', normed=True )
+            for i, (mean, covar, weight, color) in enumerate(zip(means, covariances, weights, color_iter)):
+                print mean, covar
+                if not np.any(Y_ == i):
+                    continue
+                x = .5*(bins[1:]+bins[:-1])
+                plt.plot( x, weight*stats.norm.pdf(x,mean,covar[0]) )
+            plt.title(title)
+            #plt.yscale('log')
+            #plt.ylim((1,200))
+            plt.savefig('test.png')
+
         #None
+        #print 'matrix'
+        #print stats.ufloat.show_conversion_matrix()
         if 'stats' in kwargs:
             v_os = 70
             os_ = 150
             shape = (4150, 4112)
             ohdu = 3
-            if 'divide' in kwargs: divide = int(kwargs['divide'])
+            if 'divide' in kwargs: divide = int( kwargs['divide'] )
             else: divide = 1
             
-            if 'rebin' in kwargs: rebin = int(kwargs['rebin'])
+            if 'rebin' in kwargs: rebin = int( kwargs['rebin'] )
             else: rebin = 5
             
-            if 'dE' in kwargs: dE = float(kwargs['dE'])
+            if 'dE' in kwargs: dE = float( kwargs['dE'] )
             else: dE = 1.
             
             N = int(kwargs['stats'])
@@ -3790,35 +4077,73 @@ class Callable:
                 unit = 'ADU%s'%ohdu
                 timer.eta(i)
                 timer.end(i)
-                loc = stats.dfloat( (np.random.random_sample(1)[0]-.5), 'e-' )
-                sigma = stats.dfloat( 3*np.random.random_sample(1)[0], 'e-' )
-                lambda_ = 1.5*np.random.random_sample(1)[0]
-                gain = 1000*np.random.random_sample(1)[0] + 1000
+                #loc = stats.ufloat( (np.random.random_sample(1)[0]-.5), unit='e-' )
+                loc = stats.ufloat( 0, unit='e-' )
+                #sigma = stats.ufloat( 3*np.random.random_sample(1)[0], unit='e-' )
+                sigma = stats.ufloat( 1., unit='e-' )
+                #lambda_ = 1.5*np.random.random_sample(1)[0]
+                lambda_ = .5
+                #gain = 1000*np.random.random_sample(1)[0] + 1000
+                gain = 1500
                 mbs = False
                 if 'mbs' in kwargs:
                     mbs = True
                 g_e = gain*eIonization*1e-3
-                stats.dfloat.set_conversion( 'eV', unit, gain*1e-3 )
+                stats.ufloat.add_conversion( 'eV', unit, gain*1e-3 )
                 
-                fitsimage = SimulateImage.make_image( shape, v_os, os_, ohdu, lambda_, sigma, gain, rebin, mbs )
-                fitsimage += loc
-                fitsimage = fitsimage.asunit(unit)
-                realimage = stats.dfloat( fitsimage.value, 'ADU%s_'%ohdu )
-                active, overscan = get_regions( realimage )
+                print 'matrix'
+                print stats.ufloat.show_conversion_matrix()
+                #fitsimage = SimulateImage.make_image( shape, v_os, os_, ohdu, lambda_, sigma, gain, rebin, mbs )
+                fitsimage = ConnieImage.readImage_raw( 7000, 4 )
+                #fitsimage += loc
+                #fitsimage = fitsimage.asunit(unit)
+                #realimage = stats.ufloat( fitsimage.val, unit = 'ADU%s_'%ohdu )
+                realimage = stats.ufloat( fitsimage, unit = 'ADU%s_'%ohdu )
+                active, overscan = separate_active_overscan( realimage )
+                print active.shape, active
+
+                # Fit a Dirichlet process Gaussian mixture using five components
+                X_ = active.flatten()
+                X_ = X_[X_< 1e9]
+                X_ = X_[:int(1e6)]
+                print X_.shape
+                X = zip(X_)
+                dpgmm = mixture.GaussianMixture(n_components=3, covariance_type='full', tol=1e-5, max_iter=200).fit(X)
+                print 'done', dpgmm.means_
+                print dpgmm.covariances_
+                plot_results_1d(X_, dpgmm.predict(X), dpgmm.means_, dpgmm.covariances_, dpgmm.weights_, 1, 'Bayesian Gaussian Mixture with a Dirichlet process prior')
+                
+                exit(0)
+                
                 if 'robust' in kwargs:
                     if 'fit' in kwargs:
-                        res, err = image_MLE_fit_robust( active, overscan, dE, divide )
+                        res = image_MLE_fit_robust( active, overscan, dE, divide )
                     else:
                         res = image_MLE_robust( active, overscan )
                 else:
                     if 'fit' in kwargs:
-                        res, err = image_MLE_fit( active, overscan, dE, divide )
+                        res = image_MLE_fit( active, overscan, dE, divide )
                     else:
-                        res, err = image_MLE( active, overscan )
+                        res = image_MLE( active, overscan )
                 
-                print
-                for key, value in res.__dict__.items():
-                    print key, value
+                print 'mu', res[0], loc.asunit('ADU3')
+                print 'sigma', res[1], sigma.asunit('ADU3')
+                print 'lambda_', res[3], lambda_
+                print 'gain', res[2], g_e
+                
+                fig = plt.figure(figsize=(3,3))
+                ax = fig.add_subplot(111)
+                _, bins, _ = ax.hist( active.flatten(), bins=200, histtype='step', normed=True )
+                x = .5*(bins[1:]+bins[:-1])
+                y = stats.poisson_norm.pdf(x, res[0].val, res[1].val, res[2].val, res[3].val)
+                ax.plot( x, y )
+                ax.set_xlabel('E[ADU]')
+                ax.set_ylabel('freq')
+                ax.grid(True)
+                fig.subplots_adjust()
+                fig.tight_layout()
+                fig.savefig('sE2.png')
+                
                 exit(0)
                 
                 entry = '%s  %s %s %s' % (loc, sigma, g_e, lambda_ )
@@ -3829,7 +4154,7 @@ class Callable:
                     with open('stats.csv','a+') as f:
                         f.write('#loc scale g lambda mu sigma gain lambda muErr sigmaErr gainErr lambdaErr\n')
                 with open(fbasename+'.csv','a+') as f:
-                    line = '%s %s %s\n' % (entry, mle, mle_err)
+                    line = '%s %s %s\n' % ( entry, mle, mle_err )
                     print line
                     f.write(line)
             fig = plt.figure()
@@ -3868,10 +4193,10 @@ class Callable:
                 plotParamsFromCSVList(glob.glob(kwargs['p']), kwargs['o'])
                 exit(0)
             elif 'f' in kwargs and 'o' in kwargs:
-                filenamelist = sorted(glob.glob(kwargs['f']))
+                filenamelist = sorted( glob.glob(kwargs['f']) )
                 print 'input files', filenamelist
                 fulltable = []
-                timer = Timer.LoopTimer(len(filenamelist), 'loop')
+                timer = Timer.LoopTimer( len(filenamelist), 'loop' )
                 for i, filename in enumerate(filenamelist):
                     print '%s(%s)' % ( i+1, len(filenamelist) )
                     runID = int( re.search( r'runID_[0-9]+?_([0-9]+?)_Int', filename ).groups()[0] )
@@ -3879,7 +4204,7 @@ class Callable:
                     fullheader = ['runID'] + header
                     fulltable += [ [runID] + row for row in table ]
                     with open( kwargs['o'], 'wb') as output:
-                        np.savetxt( output, fulltable, header=', '.join(fullheader), delimiter=', ', fmt='%s' )
+                        np.savetxt( output, fulltable, header = ', '.join( fullheader ), delimiter = ', ', fmt='%s' )
                     timer.eta(i)
                     timer.end(i)
                 exit(0)
@@ -4342,6 +4667,7 @@ if __name__ == "__main__":
                 kwargs[pair[0]] = pair[1]
             else:
                 kwargs[pair[0]] = None
+        print 'called with', method, kwargs
         getattr(Callable, method)( **kwargs )
         exit(0)
     print( 'callables', Callable.__dict__ )

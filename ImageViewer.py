@@ -173,7 +173,7 @@ class ImageViewer(Gtk.Window):
         optionsPanel.pack_start( Gtk.HBox(), False, False, 1 )
         optionsPanel.get_children()[-1].pack_start( Gtk.Label(label='image'), False, False, 1 )
         self.imageTypeEntry = Gtk.ComboBoxText()
-        self.imageTypeOptions = ['raw','osi','MB','mbs','scn']
+        self.imageTypeOptions = ['raw','vosi','vhosi','osi','MB','mbs','scn','conv','convRaw']
         for key in self.imageTypeOptions:
             self.imageTypeEntry.append_text(key)
         optionsPanel.get_children()[-1].pack_end( self.imageTypeEntry, False, False, 1 )
@@ -416,7 +416,7 @@ class ImageViewer(Gtk.Window):
         imageType = self.get_imageType()
         print 'getPath', runID, imageType
         if runID is None or imageType is None: return [self.no_file]
-        if imageType in ['raw','osi']:
+        if imageType in ['raw','osi','vosi','vhosi','conv', 'convRaw']:
             return ConniePaths.runIDPath( int(runID) )
         #elif imageType == 'osi':
             #return get_osi_path( int(runID) )
@@ -526,7 +526,7 @@ class ImageViewer(Gtk.Window):
     
         imageType = self.get_imageType()
         print self.get_runID(), self.get_ohdu(), imageType
-        if imageType in ['osi','mbs']:
+        if imageType in ['osi','mbs','vosi','vhosi','conv','convRaw']:
             imageType = 'raw'
         
         try:
@@ -542,9 +542,24 @@ class ImageViewer(Gtk.Window):
             self.image = self.fullimage.right()
             self.console_append('<span color="green">right side</span>')
 
+        if self.get_imageType() == 'conv':
+            self.image = self.image.verticalSubtraction()
+            self.console_append('<span color="green">V overscan subtracted</span>')
+            self.image = self.image.horizontalSubtraction()
+            self.console_append('<span color="green">overscan subtracted</span>')
+
         if self.get_imageType() == 'osi':
             self.image = self.image.horizontalSubtraction()
             self.console_append('<span color="green">overscan subtracted</span>')
+
+        if self.get_imageType() == 'vosi':
+            self.image = self.image.verticalSubtraction()
+            self.console_append('<span color="green">V overscan subtracted</span>')
+
+        if self.get_imageType() == 'vhosi':
+            self.image = self.image.verticalSubtraction()
+            self.image = self.image.horizontalSubtraction()
+            self.console_append('<span color="green">VH overscan subtracted</span>')
         
         if self.get_imageType() == 'mbs':
             self.image = self.image.horizontalSubtraction()
@@ -565,6 +580,10 @@ class ImageViewer(Gtk.Window):
         
         xMin,xMax,yMin,yMax = self.parse_lims()
         section = ConnieImage.ImageBase( self.image.image[yMin:yMax,xMin:xMax][::-1,:] )
+        if self.get_imageType() in ['conv', 'convRaw']:
+            section = section.convolve()
+            self.console_append('<span color="green">convolve</span>')
+
         section.name = 'selected'
 
         self.main_ax = self.fig.add_subplot(111)
@@ -584,8 +603,10 @@ class ImageViewer(Gtk.Window):
 
         self.zoom_fig.canvas.draw()
 
-        median = self.image.median()
-        mad = self.image.MAD()
+        #median = self.image.median()
+        #mad = self.image.MAD()
+        median = section.median()
+        mad = section.MAD()
         mid = lambda _: .5*(_[1:]+_[:-1])
         diff = lambda _: _[1:]-_[:-1]
         

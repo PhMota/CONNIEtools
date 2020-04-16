@@ -90,7 +90,7 @@ def diffuse_electrons( image, alpha, beta ):
     diffuse all electrons
     '''
     t = time.time()
-    image_in_e = image.value
+    image_in_e = image.val
 
     N = int(np.sum( image_in_e ))
     z = np.random.rand(N)
@@ -102,36 +102,44 @@ def diffuse_electrons( image, alpha, beta ):
     inside_boudary = np.all( [ x >= 0, x < image_in_e.shape[0], y >= 0 , y < image_in_e.shape[1] ], axis=0 )
     diffused_image = np.zeros(image_in_e.shape)
     np.add.at( diffused_image, [ x[inside_boudary], y[inside_boudary] ], 1. )
-    return stats.uarray( diffused_image, 'e-' )
+    return stats.ufloat( diffused_image, unit='e-' )
 
 def add_dark_current( image, lambda_ ):
     '''
     adds electrons generated pixel by pixel by a poisson distribution and difused
     '''
-    print 'size', image.size
-    return image + stats.uarray( scipy.stats.poisson.rvs( lambda_, size = image.size ).reshape(image.shape ), errMode = 'poisson', unit='e-' )
+    print 'size', image.val.size
+    size = image.val.size
+    shape = image.val.shape
+    return image + stats.ufloat( scipy.stats.poisson.rvs( lambda_, size = size ).reshape(shape ), unit='e-' )
 
 def add_readout_noise( image, sigma ):
     '''
-    add noise
+    add reaout noise noise
     '''
-    return image + stats.uarray( sigma*scipy.stats.norm.rvs( size=image.size ).reshape( image.shape ), errSqr = sigma**2, unit ='e-')
+    size = image.val.size
+    shape = image.val.shape
+    print 'sigma', sigma
+    return image + stats.ufloat( sigma.val*scipy.stats.norm.rvs( size=size ).reshape( shape ), errSqr = sigma.val**2, unit ='e-')
 
 def rebinImage( image, n ):
-    rebinned = np.zeros( ( n * int(np.ceil(image.shape[0]/n)), image.shape[1] ) )
-    rebinned[ :image.shape[0], :image.shape[1] ] = image.value
+    shape = image.val.shape
+    rebinned = np.zeros( ( n * int(np.ceil(shape[0]/n)), shape[1] ) )
+    rebinned[ :shape[0], :shape[1] ] = image.val
     rebinned.reshape([-1, n, rebinned.shape[1]] ).sum( axis = 1 )
-    return stats.ufloat( rebinned, image.unit )
+    return stats.ufloat( rebinned, unit=image.unit )
 
 def add_vOverscan( image, n ):
-    result = np.zeros((image.shape[0]+n, image.shape[1]))
-    result[:image.shape[0],:image.shape[1]] = image.value
-    return stats.ufloat( result, image.unit )
+    shape = image.val.shape
+    result = np.zeros(( shape[0]+n, shape[1]))
+    result[ :shape[0], :shape[1]] = image.val
+    return stats.ufloat( result, unit=image.unit )
 
 def add_overscan( image, n ):
-    result = np.zeros((image.shape[0], image.shape[1]+n))
-    result[:image.shape[0],:image.shape[1]] = image.value
-    return stats.ufloat( result, image.unit )
+    shape = image.val.shape
+    result = np.zeros(( shape[0], shape[1]+n))
+    result[ :shape[0], :shape[1]] = image.val
+    return stats.ufloat( result, unit=image.unit )
 
 def make_image( shape, v_os=70, os=550, ohdu=2, lambda_=0.1, sigma=2, gain=2000., rebin=1, mbs=False ):
     e_gain = gain*electron_in_keV
@@ -139,18 +147,19 @@ def make_image( shape, v_os=70, os=550, ohdu=2, lambda_=0.1, sigma=2, gain=2000.
     print 'lambda', lambda_
     print 'sigma', sigma, sigma.asunit('ADU%s'%ohdu)
     print 'shape', shape,
-    image = stats.ufloat( np.zeros(shape), 'e-' )
-    print 'zeros shape', image.shape
+    image = stats.ufloat( np.zeros(shape), unit='e-' )
+    print 'zeros shape', image.val.shape, image.unit
     image = add_dark_current(image, lambda_)
-    print 'dc shape', image.shape
+    print 'dc shape', image.val.shape, image.unit
     image = diffuse_electrons(image, alpha[ohdu], beta[ohdu] )
+    
     image = rebinImage( image, rebin )
     if mbs:
         image -= np.median( image )
     image = add_vOverscan( image, v_os )
     image = add_overscan( image, os )
     image = add_readout_noise( image, sigma )
-    print 'shape after rebin', image.shape
+    print 'shape after rebin', image.val.shape
     print image.__class__.__name__
     return image
     #return (image*e_gain).astype(int)

@@ -33,7 +33,17 @@ def MAD( data, axis = None, scale=1.4826 ):
         median = np.median( data, axis = 1 )[:,None]
     else:
         median = np.median( data )
-    return scale * float(np.median( np.abs( data - median ), axis = axis ))
+    return scale * np.median( np.abs( data - median ), axis = axis )
+
+def nanMAD( data, axis = None, scale=1.4826 ):
+    if axis == 0:
+        median = np.nanmedian( data, axis = 0 )[None,:]
+    elif axis == 1:
+        median = np.nanmedian( data, axis = 1 )[:,None]
+    else:
+        median = np.nanmedian( data )
+    return scale * np.nanmedian( np.abs( data - median ), axis = axis )
+
 
 def mean_outliers( data, axis=None, n=2 ):
     med = np.median(data,axis)
@@ -51,7 +61,7 @@ class poisson_norm:
     
     @classmethod
     def pdf2(cls, x, loc = 0, scale = 1, g = 1, mu = 1, tol=1e-8 ):
-        result = np.zeros_like(x)
+        result = np.zeros_like(x).astype(float)
         mu = abs(mu)
         scale = abs(scale)
         g = abs(g)
@@ -76,18 +86,26 @@ class poisson_norm:
         return result
 
     @classmethod
-    def pdf(cls, x, loc = 0, scale = 1, g = 1, mu = 1, tol=1e-8, fix_loc=False ):
-        result = np.zeros_like(x)
+    def pdf(cls, x, loc = 0, scale = 1, g = 1, mu = 1, tol=1e-8, fix_loc=False, debug=False ):
+        if scale < 0: raise Exception( 'scale is negative' )
+        if mu < 0: raise Exception( 'mu is negative' )
+        if g < 0: raise Exception( 'g is negative' )
+        
+        result = np.zeros_like(x).astype(float)
         if fix_loc:
-            loc = loc + g*mu
+            loc = loc - g*mu
         
         k = 0
         poisson_sum = 0
         if cls.verbose: print 'poisson_gaussian_pdf call with', loc, scale, mu,
         while True:
             poisson_weight = poisson.pmf( k, mu=mu )
+            if poisson_weight != poisson_weight: 
+                if debug: print '(poisson_norm.pdf)NaN', 'k=', k, 'mu=', mu
+                break
             poisson_sum += poisson_weight
             result += poisson_weight * norm.pdf( x, loc = loc + g*k, scale = scale )
+            if debug: print '(poisson_norm.pdf)ratio=', poisson_weight/poisson_sum, 'k=', k
             if poisson_weight/poisson_sum < tol: break
             k += 1
         if cls.verbose: print 'took', k, 'iteractions'
@@ -277,7 +295,7 @@ class ufloat:
             else:
                 self.unit = {unit: 1}
         else:
-            raise Exception('unit type not recognized: %s' % (type(unit)) )
+            raise Exception('unit type not recognized: %s %s' % ( type(unit), unit ) )
 
     def tuple(self):
         if isinstance(self.value, np.ndarray):
@@ -306,32 +324,39 @@ class ufloat:
     def add_conversion(cls, unit1, unit2, value ):
         print 'add', unit1, unit2, value
         
+        new_units = list( cls.__units__ )
         N = len(cls.__units__)
-        if not unit1 in cls.__units__:
-            cls.__units__.append( unit1 )
-        if not unit2 in cls.__units__:
-            cls.__units__.append( unit2 )
+        if unit1 in cls.__units__ and unit2 in cls.__units__:
+            raise Exception( 'conversion already set' )
+        if not unit1 in new_units:
+            new_units.append( unit1 )
+        if not unit2 in new_units:
+            new_units.append( unit2 )
             
-        __conversion_matrix__ = np.zeros(( len(cls.__units__), len(cls.__units__) )).tolist()
+        new_conversion_matrix = np.zeros(( len(new_units), len(new_units) )).tolist()
         for i1 in range(N):
             for i2 in range(N):
-                __conversion_matrix__[i1][i2] = cls.__conversion_matrix__[i1][i2]
+                new_conversion_matrix[i1][i2] = cls.__conversion_matrix__[i1][i2]
         
-        i1 = cls.__units__.index(unit1)
-        i2 = cls.__units__.index(unit2)
-        __conversion_matrix__[i1][i1] = 1.
-        __conversion_matrix__[i2][i2] = 1.
-        __conversion_matrix__[i1][i2] = value
-        __conversion_matrix__[i2][i1] = 1./value
-        for i, u in enumerate(cls.__units__):
+        i1 = new_units.index( unit1 )
+        i2 = new_units.index( unit2 )
+        
+        new_conversion_matrix[i1][i1] = 1.
+        new_conversion_matrix[i2][i2] = 1.
+        new_conversion_matrix[i1][i2] = value
+        new_conversion_matrix[i2][i1] = 1./value
+        
+        for i, u in enumerate(new_units):
             if u != unit1 and u != unit2:
-                i1 = cls.__units__.index(unit1)
-                i2 = cls.__units__.index(unit2)
-                __conversion_matrix__[i1][i] = __conversion_matrix__[i2][i] * value
-                __conversion_matrix__[i2][i] = __conversion_matrix__[i1][i] / value
-                __conversion_matrix__[i][i1] = __conversion_matrix__[i][i2] / value
-                __conversion_matrix__[i][i2] = __conversion_matrix__[i][i1] * value
-        cls.__conversion_matrix__ = __conversion_matrix__
+                if new_conversion_matrix[ i2 ][ i ] == 0:
+                    new_conversion_matrix[ i2 ][ i ] = new_conversion_matrix[ i2 ][ i1 ] * new_conversion_matrix[ i1 ][ i ]
+                    new_conversion_matrix[ i ][ i2 ] = 1./new_conversion_matrix[ i2 ][ i ]
+                if new_conversion_matrix[ i1 ][ i ] == 0:
+                    new_conversion_matrix[ i1 ][ i ] = new_conversion_matrix[ i1 ][ i2 ] * new_conversion_matrix[ i2 ][ i ]
+                    new_conversion_matrix[ i ][ i1 ] = 1./new_conversion_matrix[ i1 ][ i ]
+        
+        cls.__conversion_matrix__ = new_conversion_matrix
+        cls.__units__ = new_units
     
     @classmethod
     def show_conversion_matrix(cls):
@@ -495,7 +520,7 @@ class uarray:
         '''
         initiate with list of uncertainties
         '''
-        if isinstace( value, np.ndarray ):
+        if isinstance( value, np.ndarray ):
             self.unit = unit
             self.val = value
             if errMode == 'poisson':
@@ -518,7 +543,7 @@ class uarray:
                     self.val.append( entry.val )
                     self.errSqr.append( entry.errSqr )
                     if not self.unit is entry.unit:
-                        raise Exception('unmatching units: %s and %s' % ( self.unit, entry.unit ) )
+                        raise Exception( 'unmatching units: %s and %s' % ( self.unit, entry.unit ) )
                 else:
                     u = ufloat( entry, unit=unit )
                     self.val.append( u.val )

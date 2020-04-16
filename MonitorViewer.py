@@ -72,6 +72,20 @@ class Logger(object):
             self.write( '[queued]%s'%self.queue.pop(0) )
         return
 
+extraGainRanges = [
+    range(12005, 12073),
+    range(12073, 12111),
+    range(12111, 12213),
+    range(12750, 12995),
+    ]
+extraGainValues = [
+    [0, 0, 1535.88, 1925.54, 1635.64, 1715, 1655.42, 1503.19, 1886.29, 1974.87, 1807.92, 0, 0, 2191.9, 1929.86, 2182.48],
+    [0, 0, 1533.69, 1924.11, 1641.09, 1717.8, 1648.48, 1508.44, 1885.13, 1973, 1814.79, 0, 0, 2186, 1939.81, 2179.73],
+    [0, 0, 1531.06, 1919.26, 1640.19, 1713.7, 1646.31, 1495.45, 1895.85, 1963.93, 1821.96, 0, 0, 2183.45, 1939.44, 2178.98],
+    [0, 0, 1530.48, 750.294, 1653.49, 1717.29, 1675.27, 1506.53, 1886.35, 1956.81, 1577.76, 0, 0, 2207.73, 1929.47, 1785.21]
+    ]
+
+
 class MonitorViewer(Gtk.Window):
     
     def __del__(self, widget=None, msg=None ):
@@ -85,7 +99,7 @@ class MonitorViewer(Gtk.Window):
         #self.remove_lock( self.readoutNoiseRawTable )
         return True
         
-    def __init__(self):
+    def __init__(self, span=None):
         os.umask(0)
 
         self.id = '.' + os.environ['HOME'].split('/')[-1]
@@ -96,8 +110,24 @@ class MonitorViewer(Gtk.Window):
         sys.stderr = Logger( self.id, sys.stderr, 'err')
         
         self.log_file = '/home/mota/public/gui/%s.log'%self.id
-        self.quantities = ['darkCurrent', 'readoutNoise','diffMADSqr']
+        self.quantities = [
+            #'lambdaBGbin',
+            'lambdaBGbinRAW',
+            #'gainElectronbin',
+            'gainElectronMAD',
+            'gainElectron',
+            'diffMedianBG',
+            'darkCurrent', 
+            'readoutNoise', 
+            'diffMADSqr', 
+            'sigmaOS', 
+            'sigmaOSMAD', 
+            'sigmaOSMAD2', 
+            'sigmaOSbin',
+            'gainCu',
+            ]
         
+        self.range_ = span
         self.ohdus = range(2,16)
         self.global_runIDMax = None
         self.global_runIDMin = None
@@ -142,10 +172,34 @@ class MonitorViewer(Gtk.Window):
         #self.connect( 'motion-notify-event', self.on_mouse_move )
         self.show_all()
         self.quit = False
+        self.parallel = False
 
-        for quantity in self.quantities:
-            print 'request thread for %s %s'%(quantity, threading.active_count())
-            self.start_thread( lambda quantity=quantity: self.computation_loop(quantity), quantity )
+        if self.parallel:
+            for quantity in self.quantities:
+                print 'request thread for %s %s'%(quantity, threading.active_count())
+                self.start_thread( lambda quantity=quantity: self.computation_loop(quantity), quantity )
+        else:
+            print 'request thread for serial computation %s'%(threading.active_count())
+            self.start_thread( self.serial_computation_loop, 'serialComputation' )
+        
+    def serial_computation_loop( self ):
+        self.eta = []
+        while 1:
+            start = time.time()
+            for quantity in self.quantities:
+                print 
+                print '*** start %s loop in thread %s number of threads %s***'%( quantity, threading.currentThread().getName(), threading.active_count() )
+                if self.wait[quantity] > 0:
+                    self.wait[quantity] = 0
+                    continue
+                if self.should_quit():
+                    exit(0)
+                #try:
+                self.update_table( quantity )
+                #except:
+                    #print "*** exception in update table", quantity, "***"
+            self.eta.append( time.time() - start )
+        return True
 
     def computation_loop( self, quantity ):
         print 'start %s loop in thread %s number of threads %s'%( quantity, threading.currentThread().getName(), threading.active_count() )
@@ -172,41 +226,61 @@ class MonitorViewer(Gtk.Window):
     
     def build_header(self):
         subbox = Gtk.HBox()
+        subsubbox = Gtk.HBox()
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
         label = Gtk.Label()
         label.set_label('Dark Current and Readout Noise')
         runIDLabel = Gtk.Label()
         runIDLabel.set_label('runIDs')
         self.runIDRangeEntry = Gtk.Entry()
-        self.runIDRangeEntry.set_text('-100:auto')
+        if self.range_ is None:
+            self.runIDRangeEntry.set_text('-100:auto')
+        else:
+            self.runIDRangeEntry.set_text(self.range_)
         self.runIDRangeEntry.set_width_chars(len(' auto: auto'))
-        self.runIDRangeEntry.connect( 'activate', self.on_runIDRangeEntry_activate )
+        #self.runIDRangeEntry.connect( 'activate', self.on_runIDRangeEntry_activate )
         self.omitOutliersButton = Gtk.ToggleButton()
         self.omitOutliersButton.set_label('outliers')
-        self.omitOutliersButton.set_active(True)
+        self.omitOutliersButton.set_active(False)
         self.omitOutliersButton.connect( 'clicked', self.on_omitOutliersButton_clicked )
-        subbox.pack_start(label, True, True, 1 )
-        subbox.pack_start(runIDLabel, False, False, 1 )
-        subbox.pack_start(self.runIDRangeEntry, False, False, 1 )
-        subbox.pack_start(self.omitOutliersButton, False, False, 1 )
+        
+        self.interactivePlotButton = Gtk.ToggleButton(label='interactive')
+        self.interactivePlotButton.set_active(False)
+        self.interactivePlotButton.connect( 'clicked', self.on_interactivePlotButton_clicked )
+        
+        subsubbox.pack_start(label, expand=True, fill=True, padding=5 )
+        subsubbox.pack_start(runIDLabel, expand=False, fill=False, padding=1 )
+        subsubbox.pack_start(self.runIDRangeEntry, expand=False, fill=False, padding=1 )
+
+        #subsubbox.pack_start(yLabel, expand=False, fill=False, padding=1 )
+        #subsubbox.pack_start(self.yRangeEntry[, expand=False, fill=False, padding=1 )
+
+        subsubbox.pack_start(self.omitOutliersButton, expand=False, fill=False, padding=1 )
+        #subsubbox.pack_start(self.interactivePlotButton, expand=False, fill=False, padding=1 )
         
         self.ohdusBox = Gtk.HBox()
-        subbox.pack_start(self.ohdusBox, False, False, 1 )
+        subsubbox.pack_start(self.ohdusBox, expand=False, fill=False, padding=1 )
         for ohdu in self.ohdus:
             toggleButton = Gtk.ToggleButton()
             toggleButton.set_label( '%2s'%(ohdu) )
             toggleButton.set_active(True)
             if ohdu in [11,12,15]: toggleButton.set_active(False)
             #toggleButton.connect('clicked', self.on_ohduButton_clicked )
-            self.ohdusBox.pack_start( toggleButton, False, False, 0 )
+            self.ohdusBox.pack_start( toggleButton, expand=False, fill=False, padding=0 )
 
         refreshButton = Gtk.Button(label='refresh')
         refreshButton.connect('clicked', self.on_ohduButton_clicked )
-        subbox.pack_start(refreshButton, False, False, 1)
+        scroll.add_with_viewport( subsubbox )
+        subbox.pack_start(scroll, expand=False, fill=True, padding=1)
+        subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
     
     def build_body(self):
         notebook = Gtk.Notebook()
         notebook.connect( 'switch-page', self.on_switch_page )
+        notebook.set_scrollable(True)
         self.currentPageLabel = None
         self.labels = {}
         self.fig = {}
@@ -223,18 +297,24 @@ class MonitorViewer(Gtk.Window):
             self.resetLabel(quantity)
             self.subHeader[quantity].pack_start(self.labels[quantity], True, True, 0)
             self.fig[quantity] = Figure(dpi=100)
-            self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
+            #self.fig[quantity].canvas.mpl_connect('button_press_event', self.onclick )
+            #if self.interactivePlotButton.get_active():
+                #self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
+            #else:
+                #self.imageCanvases[quantity] = Gtk.Image()
+            self.imageCanvases[quantity] = Gtk.Image()
+            
             self.imageCanvases[quantity].set_property('height-request', 500)
-            self.fig[quantity].canvas.mpl_connect('button_press_event', self.onclick )
-            self.toolbar[quantity] = NavigationToolbar(self.imageCanvases[quantity], self)
-            children = self.toolbar[quantity].get_children()
-            for i in range(len(children)-3):
-                children[i].destroy()
+            #self.toolbar[quantity] = NavigationToolbar( self.imageCanvases[quantity], self )
+            #children = self.toolbar[quantity].get_children()
+            #for i in range(len(children)-3):
+                #children[i].destroy()
             
             box.pack_start(self.subHeader[quantity], False, False, 0)
             box.pack_start(self.imageCanvases[quantity], True, True, 0)
-            box.pack_start(self.toolbar[quantity], False, False, 0)
-            notebook.append_page(box,Gtk.Label(label=quantity))
+            #box.pack_start(self.toolbar[quantity], False, False, 0)
+            
+            notebook.append_page( box, Gtk.Label(label=quantity) )
         return notebook
     
     def updateLabel(self, quantity, text ):
@@ -252,7 +332,7 @@ class MonitorViewer(Gtk.Window):
             if percentage is None:
                 self.labels[quantity].set_markup( '<span color="blue">%s</span>'%(quantity) )
                 return
-            self.labels[quantity].set_markup( '<span color="blue">%s(%d%%)</span>'%(quantity, int(self.percentage_done[quantity]) ) )
+            self.labels[quantity].set_markup( '<span color="blue">%s(-%d)</span>'%(quantity, int(self.percentage_done[quantity]) ) )
             return False
         GLib.idle_add( callback )
 
@@ -334,6 +414,15 @@ class MonitorViewer(Gtk.Window):
         self.plot_table( self.currentPageLabel )
         button.set_sensitive(True)
         return
+
+    def on_interactivePlotButton_clicked( self, button ):
+        print 'interactive toggled %s'%button.get_active()
+        button.set_sensitive(False)
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        #self.plot_table( self.currentPageLabel )
+        button.set_sensitive(True)
+        return
     
     def create_remove_lock_button( self, quantity ):
         def callback():
@@ -365,43 +454,69 @@ class MonitorViewer(Gtk.Window):
         startTime = time.time()
         self.create_lock( quantity )
         
-        all_runIDs_reversed = ConniePaths.runID()[::-1]
+        if quantity in ['sigmaOS', 'sigmaOSbin', 'sigmaOSMAD', 'sigmaOSMAD2', 'gainCu']:
+            #all_runIDs_reversed = range(6322, 6521+1)[::-1]
+            all_runIDs_reversed = ConniePaths.runIDProcessed_v3()[::-1]
+            #print '(update_table)', all_runIDs_reversed
+        elif quantity in ['lambdaBGbin', 'lambdaBGbinRAW']:
+            #all_runIDs_reversed = extraGainRanges[-1]
+            #all_runIDs_reversed.extend( self.read_from_table_runIDs( quantity='gainCu' )[::-1] )
+            all_runIDs_reversed = self.read_from_table_runIDs( quantity='gainCu' )[::-1]
+        else:
+            all_runIDs_reversed = ConniePaths.runID()[::-1]
+            #all_runIDs_reversed = range(6322, 6522+1)
         if os.path.exists( self.tablePaths[quantity] ):
             data = np.genfromtxt( self.tablePaths[quantity], names=True )
             data = data.tolist()
         else:
-            runID = int(getrunIDFromPath(all_runIDs_reversed[0]))
-            data = self.make_entry(runID,quantity)
+            print '*** path does not exist***'
+            lastrunID = all_runIDs_reversed[0]
+            data = self.make_entry( lastrunID, quantity )
         
-        runIDs_done = zip(*data)[0]
-        runIDs_done = list(set(runIDs_done))
-        self.resetLabel(quantity)
-        if len(runIDs_done) == len(all_runIDs_reversed):
-            if self.firstAllDoneMsg[quantity]:
-                print '%s all done in thread %s'%( threading.currentThread().getName(), quantity )
-                self.firstAllDoneMsg[quantity] = False
+        runIDs_done = []
+        if len(data) > 0:
+            runIDs_done = zip(*data)[0]
+            runIDs_done = list(set(runIDs_done))
+            #print '(update_table)runIDs_done=', runIDs_done
             self.resetLabel(quantity)
-            self.remove_lock(quantity)
-            self.updateLabel(quantity, 'all done; sleeping for a minute')
-            self.wait[quantity] = 60
-            return False
+            runIDs_todo = set(all_runIDs_reversed) - set(runIDs_done)
+            if len(runIDs_todo) == 0:
+                if self.firstAllDoneMsg[quantity]:
+                    print '%s all done in thread %s'%( threading.currentThread().getName(), quantity )
+                    self.firstAllDoneMsg[quantity] = False
+                self.resetLabel(quantity)
+                self.remove_lock(quantity)
+                self.updateLabel(quantity, 'all done; sleeping for a minute')
+                self.wait[quantity] = 60
+                return False
         
         self.firstAllDoneMsg[quantity] = False
-        #print len(runIDs_done), len(all_runIDs_reversed)
-        self.percentage_done[quantity] = (100*len(runIDs_done))/len(all_runIDs_reversed)
-        for runID in all_runIDs_reversed:
-            if runID not in runIDs_done:
-                print '%s runID %s in thread %s'%(quantity, runID, threading.currentThread().getName() )
-                self.resetLabel( quantity )
-                self.updateLabel(quantity, 'calculating runID <b>%s</b>'%runID)
-                data.extend( self.make_entry(runID, quantity ) )
+        runIDs_todo = set(all_runIDs_reversed) - set(runIDs_done)
+        print '(update_table)[%s]len_todo='%quantity, len(runIDs_todo)
+        self.percentage_done[quantity] = len(runIDs_todo)
+        for runID in list(runIDs_todo)[::-1]:
+            #if runID not in runIDs_done:
+            print '%s runID %s in thread %s'%(quantity, runID, threading.currentThread().getName() )
+            self.resetLabel( quantity )
+            self.updateLabel(quantity, 'calculating runID <b>%s</b>'%runID)
+            entry = self.make_entry(runID, quantity )
+            if len(entry) > 0:
+                data.extend( entry )
                 break
+            else:
+                print '(update_table)empty entry at quantity', quantity, 'runID', runID
         
-        with open( self.tablePaths[quantity], 'wb' ) as f:
-            np.savetxt( f, data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
+        if len(data) > 0:
+            with open( self.tablePaths[quantity], 'wb' ) as f:
+                np.savetxt( f, data, header='#runID ohdu %s'%quantity, fmt='%d %d %.6f' )
+
         self.remove_lock( quantity )
         self.resetLabel(quantity)
         self.updateLabel(quantity,'concluded <b>%s</b> (%ds)'%(runID, time.time()-startTime) )
+        if len(self.eta) > 0:
+            estimateEnd = np.mean( self.eta ) * len(runIDs_todo)
+            self.updateLabel(quantity,'ETA <b>%s</b>'%( time.ctime( estimateEnd + time.time() ) ) )
+        
         if self.currentPageLabel == quantity:
             self.plot_table( quantity )
         print 'finished %s runID %s in thread %s'%( quantity, runID, threading.currentThread().getName() )
@@ -415,23 +530,108 @@ class MonitorViewer(Gtk.Window):
                 print 'should quit now from thread %s %s'%( threading.currentThread().getName(), quantity )
                 exit(0)
             value = self.compute(runID, ohdu, quantity)
+            if value is None:
+                continue
             entry.append( [runID, ohdu, value] )
             self.updateLabel(quantity, str(ohdu))
         return entry
             
-    def compute( self, runID, ohdu, quantity ):
+    def compute( self, runID, ohdu, quantity, debug=False ):
         '''
         opens a raw image of the associated runID and ohdu and returns the dark current based on the mean of the diffrence between the medians of the active and overscan area for each line
         '''
+        if debug:
+            print '(MonitorViewer.compute)quantity=%s'%quantity
         if quantity == 'darkCurrent':
             return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).darkCurrentEstimate()
         elif quantity == 'readoutNoise':
             return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).readoutNoiseEstimate()
         elif quantity == 'diffMADSqr':
             return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw' ).diffMAD()
+        elif quantity == 'diffMedianBG':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).diffMedianBG()
+        elif quantity == 'gainElectron':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).left().gainElectron()
+        elif quantity == 'gainElectronbin':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).left().gainElectronbin()
+        elif quantity == 'gainElectronMAD':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).left().gainElectronMAD()
+        elif quantity == 'sigmaOS':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='scn', debug=debug ).sigmaOS()
+        elif quantity == 'sigmaOSbin':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='scn', debug=debug ).sigmaOSbin()
+        elif quantity == 'sigmaOSMAD':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='scn', debug=debug ).sigmaOSMAD()
+        elif quantity == 'sigmaOSMAD2':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='scn', debug=debug ).sigmaOSMAD2()
+        elif quantity == 'gainCu':
+            #print '(compute)runID=', runID, 'ohdu=', ohdu, 'quantity=', quantity
+            gainCu = ConnieImage.read_gainCu( runID=runID, ohdu=ohdu )
+            #print '(compute)gainCu=', gainCu
+            return gainCu
+        elif quantity == 'lambdaBGbin':
+            print 'lambdaBGbin', 'runID=', runID, 'ohud=', ohdu
+            if runID == 9777:
+                return None
+            gainCu = None
+            for index, extraGainRange in enumerate(extraGainRanges):
+                if runID in extraGainRange:
+                    gainCu = extraGainValues[index][ohdu]
+                    if gainCu is None: return None
+                    if gainCu == 0: return None
+                    break
+            if gainCu is None and 'gainCu' in self.quantities: gainCu = self.read_from_table( runID=runID, ohdu=ohdu, quantity='gainCu' )
+            if gainCu is None or gainCu == 0: return None
+            gain = gainCu * 3.745e-3 #ADU/keV * keV/e-
+            
+            #try:
+            lambdaBGbin = ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='scn', debug=debug ).lambdaBGbin( sigma=None, gain=gain )
+            #except:
+                #print "*** lambdaBGbin error for", runID, ohdu, "***"
+                #return None
+            return lambdaBGbin
+        elif quantity == 'lambdaBGbinRAW':
+            print 'lambdaBGbin', 'runID=', runID, 'ohud=', ohdu
+            gainCu = None
+            #for index, extraGainRange in enumerate(extraGainRanges):
+                #if runID in extraGainRange:
+                    #gainCu = extraGainValues[index][ohdu]
+                    #if gainCu is None: return None
+                    #if gainCu == 0: return None
+                    #break
+            if gainCu is None and 'gainCu' in self.quantities: gainCu = self.read_from_table( runID=runID, ohdu=ohdu, quantity='gainCu' )
+            if gainCu is None or gainCu == 0: return None
+            gain = gainCu * 3.745e-3 #ADU/keV * keV/e-
+
+            lambdaBGbinRAW = ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).lambdaBGbin( sigma=None, gain=gain, osi=True )
+            return lambdaBGbinRAW
         else:
             print 'unpredicted quantity', quantity
             exit(1)
+    
+    def read_from_table( self, runID, ohdu, quantity ):
+        if os.path.exists( self.tablePaths[quantity] ):
+            data = np.genfromtxt( self.tablePaths[quantity], names=True )
+        else:
+            return None
+        #print '(MonitorViewer.read_from_table)quantity=', quantity
+        #print '(MonitorViewer.read_from_table)runID=', runID, 'ohdu=', ohdu
+        #data = data[ data['runID'] == runID ]
+        #print '(MonitorViewer.read_from_table)data=', data
+        ret = data[ np.all([data['runID']==runID, data['ohdu']==ohdu], axis=0) ]
+        if len(ret) == 0: return None
+        print '(MonitorViewer.read_from_table)ret=', ret[0][-1]
+        return ret[0][-1]
+
+    def read_from_table_runIDs( self, quantity ):
+        if os.path.exists( self.tablePaths[quantity] ):
+            data = np.genfromtxt( self.tablePaths[quantity], names=True )
+        else:
+            return None
+        #print '(update_table)', data['runID']
+        runIDs = list(set([ int(i) for i in data['runID'] ]))
+        #print '(update_table)', runIDs
+        return runIDs
     
     def onclick(self, event):
         #print 'onclik signal'
@@ -493,6 +693,26 @@ class MonitorViewer(Gtk.Window):
         self.plotting[quantity] = True
         startTime = time.time()
         
+        if self.interactivePlotButton.get_active():
+            print 'plotting interactive'
+            self.fig[quantity] = Figure(dpi=100)
+            self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
+            
+            #self.toolbar[quantity] = NavigationToolbar(self.imageCanvases[quantity], self)
+            #children = self.toolbar[quantity].get_children()
+            #for i in range(len(children)-3):
+                #children[i].destroy()
+        else:
+            print 'plotting image'
+            allocation = self.imageCanvases[quantity].get_allocation()
+            print 'allocated size', allocation.width, allocation.height
+            
+            self.fig[quantity] = plt.figure( figsize=(allocation.width/100., allocation.height/100.), dpi=100)
+            self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( '/home/mota/public/gui/loading.gif' ) )
+            #self.imageCanvases[quantity] = Gtk.Image()
+
+            #self.toolbar[quantity] = None
+        
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
         
@@ -540,9 +760,9 @@ class MonitorViewer(Gtk.Window):
         #m = int(np.floor( np.sqrt(float(len(ohdus))) ))
         n = float(len(ohdus))/m
         if m==0: return
-        for fig in self.fig.values():
-            fig.clf()
-            fig.set_frameon(True)
+        #for fig in self.fig[quantity].values():
+            #fig.clf()
+            #fig.set_frameon(True)
         self.grid = []
         ohdus_ranges = []
         for i in range(m):
@@ -571,12 +791,18 @@ class MonitorViewer(Gtk.Window):
         ax.set_xticklabels( map( lambda runBox: runBox['run'], runBoxes ) )
         ax.set_zorder(-100)
 
-        medians = np.median(ycum, axis=1)
-        mads = stats.MAD(ycum, axis=1)
-        if self.omitOutliersButton.get_active():
-            val_max = 1.2*medians.max()
-        else:
-            val_max = 1.05*np.max(ycum)
+        #mads = stats.MAD(ycum, axis=1)
+
+        print 'ycum length', len(ycum)
+        val_max = 1
+        if len(ycum) > 1:
+            if len(ycum[0]) > 0: 
+                if self.omitOutliersButton.get_active():
+                    medians = np.nanmedian(ycum, axis=1)
+                    val_max = 2 * np.nanmax( medians )
+                else:
+                    val_max = 1.05 * np.nanmax( ycum )
+                #val_max = 1.05*np.nanmax(ycum)
         
         self.grid[-1].set_xlabel('runID')
         plt.setp(self.grid[-1].get_xticklabels(), visible=True)
@@ -593,15 +819,22 @@ class MonitorViewer(Gtk.Window):
             if m>1:
                 self.grid[i].set_ylim((0, val_max))
 
-        #fig.savefig( self.imagePaths[quantity] )
-        #plt.close()
+        if not self.interactivePlotButton.get_active():
+            print 'plotting path', self.imagePaths[quantity]
+            self.fig[quantity].savefig( self.imagePaths[quantity] )
+            plt.close()
+        
         self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
 
         def callback():
-            self.fig[quantity].canvas.draw()
-            #self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
+            if self.interactivePlotButton.get_active():
+                print 'plotting interactive callback'
+                self.fig[quantity].canvas.draw()
+            else:
+                print 'plotting image callback'
+                self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
+                self.imageCanvases[quantity].show()
             return False
-        
         
         GLib.idle_add(callback)
         self.plotting[quantity] = False

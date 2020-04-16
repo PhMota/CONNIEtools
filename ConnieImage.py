@@ -15,6 +15,7 @@ from scipy.misc import factorial
 import scipy.optimize
 
 import matplotlib
+import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib import patches, colors
 
@@ -22,24 +23,82 @@ import os
 import time
 import random
 
+import root_numpy
+
 from ConnieDataPath import ConnieDataPath as ConniePaths
 import Statistics as stats
 
+class Image:
+    __row__ = 0
+    __col__ = 1
+    
+    def __init__( self, matrix ):
+        if not len(matrix.shape) == 2:
+            raise Exception( 'shape is not 2d' )
+        self.matrix = matrix
+    
+    def get_nrows(self):
+        return self.matrix.shape[Image.__row__]
+
+    def get_ncols(self):
+        return self.matrix.shape[Image.__col__]
+    
+    def plot_to_axis( self, ax, **kwargs ):
+        ax.hist( self.matrix.flatten(), kwargs )
+        return ax
+
+    #def get_mean( self ):
+        
+class CCDImage:
+    def __init__( self ):
+        self.data_section = None
+        self.overscan_section = None
+        self.voverscan_section = None
+        self.trim_section = None
+    
+    def add_section( self, section, _type_ ):
+        if not isinstance(section, Image):
+            section = Image(section)
+        self.__dict__[_type_] = section
+        return self
+        
+    def add_overscan(self, section): return self.add_section(section, 'overscan_section')
+    def add_data(self, section): return self.add_section(section, 'data_section')
+    def add_voverscan(self, section): return self.add_section(section, 'voverscan_section')
+    
 def readImage_raw( runID, ohdu ):
+    print 'readImage_raw, runID=', runID, 'ohdu=', ohdu, 
     files = ConniePaths.runIDPath( int(runID) )
+    print 'path=', files[-1]
     return merge_images( files, ohdu )
 
 def readImage_MB( runID, ohdu ):
     files = ConniePaths.masterBiasPath( int(runID) )
     return merge_images( files, ohdu )
 
-def readImage_processed( runID, ohdu, image='scn' ):
-    files = ConniePaths.runIDPathProcessed( int(runID), image=image )
-    return merge_images( files, ohdu)
+def readImage_processed( runID, ohdu, image='scn', debug=False ):
+    #files = ConniePaths.runIDPathProcessed( int(runID), image=image )
+    if debug: print '(readImage_processed)runID=%s'%runID
+    print 'readImage_processed, runID=', runID, 'ohdu=', ohdu,
+    files = ConniePaths.runIDPathProcessed_v3( int(runID), image=image, debug=debug )
+    print 'path=', files[-1]
+    return merge_images( files, ohdu, debug=debug)
 
-def merge_images( files, ohdu ):
-    ohdus = lambda fits: fits[ohdu-1].data
-    image = np.concatenate( [ ohdus(astropy.io.fits.open(file)) for file in files[::-1] ], axis=0 )
+def merge_images( files, ohdu, debug=False ):
+    if debug: print '(merge_images)files=%s,ohdu=%s' % (files, ohdu)
+    l = []
+    for file in files[::-1]:
+        fits = astropy.io.fits.open(file)
+        entry = None
+        for fit in fits:
+            if debug: print '(merge_images)HEADER=%s' % (fit.header['OHDU'])
+            if int(fit.header['OHDU']) == ohdu: entry = fit.data
+        if entry is None: 
+            raise Exception('ohdu not found')
+        l.append( entry )
+    #ohdus = lambda fits: fits[ohdu-1].data
+    image = np.concatenate( l, axis=0 )
+    #print '(merge_images)image.shape=', image.shape
     return image
 
 class ArrayExtension:
@@ -54,7 +113,8 @@ class ArrayExtension:
 
     def IQR(self): return stats.IQR( self.array )
 
-    def mean(self, axis=None): return np.mean( self.array, axis=axis )
+    def mean(self, axis=None): 
+        return np.mean( self.array, axis=axis )
 
     def median_half(self, axis=None): return np.median( self.array[self.shape[0]/2:,:], axis = axis )
 
@@ -70,8 +130,9 @@ class ArrayExtension:
     def mean_MADs( self ):
         return .5*( np.mean( self.MAD(axis=0) ) + np.mean( self.MAD(axis=1) ) )
 
-class ImageBase(ArrayExtension):
-    def __init__( self, image ):
+class ImageBase( ArrayExtension ):
+    def __init__( self, image, debug=False ):
+        if debug: print '(ImageBase.__init__)'
         ArrayExtension.__init__(self, image.astype(float))
         self.image = self.array
         self.shape = self.image.shape
@@ -125,6 +186,22 @@ class ImageBase(ArrayExtension):
     
     def extract(self, thr=15):
         return processImage3(self.image, threshold = thr)
+    
+    def convolve( self, function=lambda x: np.sum(x), footprint=None, size=(7,7), origin=0 ):
+        #output = None
+        #center = 13 #4
+        center = 25
+        def _(x):
+            #return np.abs( np.sum(x-x[center])/np.sum( np.abs(x) ) )
+            #return np.var(x)
+            return abs( np.mean(x) - np.median(x) )
+        function = _
+        print '(convolve)ishape', self.image.shape
+        output = scipy.ndimage.filters.generic_filter(self.image, function, size=size, footprint=footprint, output=None, mode='constant', cval=0.0, origin=origin, extra_arguments=(), extra_keywords=None)
+        print '(convolve)oshape', output.shape
+        return ImageBase( output )
+        
+    
     
     def add_image_to_axis( self, axes, eMin, eMax ):
         axes.imshow( self.image, vmin = eMin, vmax = eMax, interpolation='none', origin='lower' )
@@ -781,7 +858,7 @@ class SideImage(ImageBase):
         else:
             print( 'side shape not predited', self.image.shape )
             exit(0)
-        if self.image.shape[0] in [4220, 1055, 3165]:
+        if self.image.shape[0] in [4220, 1055, 3165, 1800]:
             self.overscanHeight = 70
         elif self.image.shape[0] == 900:
             self.overscanHeight = 70
@@ -791,6 +868,7 @@ class SideImage(ImageBase):
 
         self.os = np.s_[:,-self.overscanWidth:]
         self.ac = np.s_[:,:-self.overscanWidth]
+    
         
     def active( self ):
         return ActiveImage( self.image[self.ac] )
@@ -802,6 +880,254 @@ class SideImage(ImageBase):
         image = self.active().image - self.active().v_medians()[None:]
         std = np.mean( stats.MAD( image, axis=1 ) )
         return std**2 - self.readoutNoiseMAD()**2
+
+    def sigmaOS( self ):
+        image = self.overscan().image
+        sigma = scipy.stats.norm.fit( image.flatten() )[1]
+        #print '(SideImage.sigmaOS)sigma=%s'%sigma
+        return sigma
+
+    def sigmaOSbin( self ):
+        #print '(SideImage.sigmaOSbin)'
+        image = self.overscan().image
+        #print '(SideImage.sigmaOSbin)image.shape=', image.shape
+        data = image.flatten()
+        data = data[ data < 1e9 ]
+        #print '(SideImage.sigmaOSbin)data.minmax=', data.min(), data.max()
+        bins = np.arange(data.min(), data.max(), 1)
+        hist, _ = np.histogram(data, bins)
+        #print '(SideImage.sigmaOSbin)data.size=', data.size
+        fit_func = lambda x,A,mu,sig: A*scipy.stats.norm.pdf(x, mu, sig)
+        p0 = [np.sum(data),0., 1.]
+        params = scipy.optimize.curve_fit( fit_func, .5*(bins[:-1] + bins[1:]), hist, p0=p0 )[0]
+        print '(SideImage.sigmaOSbin)params=', params
+        return params[-1]
+        
+    def sigmaOSMAD( self ):
+        image = self.overscan().image
+        std = np.mean( stats.MAD( image, axis=1 ) )
+        #print '(SideImage.sigmaOSbin)std=%s'%(std)
+        return std
+
+    def sigmaOSMAD2( self ):
+        image = self.overscan().image
+        std = stats.MAD( image.flatten() )
+        return std
+    
+    def lambdaBGbin( self, sigma, gain, thr=15, osi=False ):
+        #print '(SideImage.lambdaBGbin)sigma=', sigma, 'gain=', gain, 'thr=', 15
+        
+        subimage = self.image[:,:-self.overscanWidth ]
+        shape = subimage.shape
+        subimage = subimage[:,shape[1]/2:]
+        if osi: 
+            osicorrection = np.median( self.image[:,self.overscanWidth:], axis=1 )
+            #print '(lambdaBGbin)shapeOSI=', osicorrection.shape
+            subimage -= osicorrection[:,None]
+        #print '(lambdaBGbin)shape=', shape, subimage.shape, 
+
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
+        #print 'clusters shape', clusters.shape
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        x, y = np.unravel_index( np.argmax( distance_from_thr ), subimage.shape )
+        #print 'void max dist', distance_from_thr[ x, y ]
+        data = subimage[ distance_from_thr >= 3 ]
+        if data.size == 0:
+            return None
+        #print '(SideImage.lambdaBGbin)data.size=', data.size, 'subimage.size=', subimage.size, '%.2f' % (float(data.size)/subimage.size)
+        
+        bins = np.arange(data.min(), data.max(), 1)
+        x = .5*(bins[:-1] + bins[1:])
+        hist, _ = np.histogram(data, bins)
+        maskCount = hist > 10
+        
+        #fig = plt.figure()
+        #ax = fig.add_subplot(211)
+        imageOS = self.overscan().image
+        if osi: 
+            osicorrection = np.median( self.overscan().image, axis=1 )
+            #print '(lambdaBGbin)shapeOSI_OS=', osicorrection.shape
+            imageOS -= osicorrection[:,None]
+            
+        dataOS = imageOS.flatten()
+        dataOS = dataOS[ dataOS < 1e9 ]
+        binsOS = np.arange(dataOS.min(), dataOS.max(), 1)
+        histOS, _ = np.histogram(dataOS, binsOS)
+        xOS = .5*(binsOS[:-1] + binsOS[1:])
+        maskCountOS = histOS > 10
+        fit_funcOS = lambda x,A,mu,sig: A*scipy.stats.norm.pdf(x, mu, sig)
+
+        p0OS = [np.sum(histOS[maskCountOS]),0., 1.]
+        paramsOS = scipy.optimize.curve_fit( fit_funcOS, xOS[maskCountOS], histOS[maskCountOS], p0=p0OS )[0]
+        #print '(SideImage.lambdaBGbin)paramsOS=', paramsOS
+        #ax.step( xOS[maskCountOS], histOS[maskCountOS], where='mid' )
+        #ax.step( xOS[maskCountOS], paramsOS[0]*scipy.stats.norm.pdf(xOS[maskCountOS],paramsOS[1],paramsOS[2]), where='mid' )
+
+        #ax = fig.add_subplot(212, sharex=ax )
+        #ax.step( x[maskCount], hist[maskCount], where='mid' )
+        A = float( np.sum(hist[maskCount]) )/np.sum(histOS[maskCountOS]) * paramsOS[0]
+        #ax.step( x[maskCount], A * scipy.stats.norm.pdf( x[maskCount], paramsOS[1], paramsOS[2] ), where='mid' )
+        #fig.savefig('lambdBGbin.png')
+        #print '(SideImage.lambdaBGbin)image saved'
+        
+        fit_func = lambda x,A,loc,mu: A*stats.poisson_norm.pdf(x, loc, paramsOS[2], gain, mu )
+        p0 = [A, paramsOS[1], .001]
+        print '(SideImage.lambdaBGbin)fitting'
+        try:
+            params = scipy.optimize.curve_fit( fit_func, x[maskCount], hist[maskCount], p0=p0, bounds=[(0,-np.inf,0), (np.inf, np.inf, np.inf)] )[0]
+            print '(SideImage.lambdaBGbin)params=', params
+        except:
+            print 'error in lambdaBGbin'
+            return None
+        
+        return params[-1]
+
+    def gainElectronbin( self, thr=15 ):
+        subimage = self.image[:,:-self.overscanWidth ]
+        shape = subimage.shape
+        subimage = subimage[:,shape[1]/2:]
+        osicorrection = np.median( self.image[:,self.overscanWidth:], axis=1 )
+        subimage -= osicorrection[:,None]
+
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
+        #print 'clusters shape', clusters.shape
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        x, y = np.unravel_index( np.argmax( distance_from_thr ), subimage.shape )
+        #print 'void max dist', distance_from_thr[ x, y ]
+        data = subimage[ distance_from_thr >= 3 ]
+        if data.size == 0:
+            return None
+        #print '(SideImage.lambdaBGbin)data.size=', data.size, 'subimage.size=', subimage.size, '%.2f' % (float(data.size)/subimage.size)
+        
+        bins = np.arange(data.min(), data.max(), 1)
+        x = .5*(bins[:-1] + bins[1:])
+        hist, _ = np.histogram(data, bins)
+        maskCount = hist > 10
+        
+        imageOS = self.overscan().image
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        imageOS -= osicorrection[:,None]
+            
+        dataOS = imageOS.flatten()
+        dataOS = dataOS[ dataOS < 1e9 ]
+        binsOS = np.arange(dataOS.min(), dataOS.max(), 1)
+        histOS, _ = np.histogram(dataOS, binsOS)
+        xOS = .5*(binsOS[:-1] + binsOS[1:])
+        maskCountOS = histOS > 10
+        fit_funcOS = lambda x,A,mu,sig: A*scipy.stats.norm.pdf( x, mu, sig )
+
+        p0OS = [ np.sum(histOS[maskCountOS]), 0., 1.]
+        paramsOS = scipy.optimize.curve_fit( fit_funcOS, xOS[maskCountOS], histOS[maskCountOS], p0=p0OS )[0]
+        print '(SideImage.gainElectronbin)paramsOS=', paramsOS
+        A = float( np.sum(hist[maskCount]) )/np.sum(histOS[maskCountOS]) * paramsOS[0]
+
+        fit_func = lambda x,A,mu,sig: A*scipy.stats.norm.pdf( x, mu, sig )
+        p0 = [ A, 0, 1. ]
+        params = scipy.optimize.curve_fit( fit_func, x[maskCount], hist[maskCount], p0=p0, bounds=[(0,-np.inf,0), (np.inf, np.inf, np.inf)] )[0]
+        print '(SideImage.gainElectronbin)params=', params
+        
+        gain = (params[2]**2 - paramsOS[2]**2)/(params[1] - paramsOS[1])
+        print '(SideImage.gainElectronbin)gain=', gain
+        return 
+
+    def diffMedianBG( self, thr=15, osi=True ):
+        subimage = self.image[:,:-self.overscanWidth ]
+        shape = subimage.shape
+        subimage = subimage[:,shape[1]/2:]
+        if osi: 
+            osicorrection = np.median( self.overscan().image, axis=1 )
+            subimage -= osicorrection[:,None]
+
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
+        #print 'clusters shape', clusters.shape
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        #x, y = np.unravel_index( np.argmax( distance_from_thr ), subimage.shape )
+        #print 'void max dist', distance_from_thr[ x, y ]
+        subimage[ distance_from_thr < 3 ] = np.nan
+        
+        medianAC = np.nanmedian( subimage, axis=1 )
+        
+        imageOS = self.overscan().image
+        if osi: 
+            osicorrection = np.median( self.overscan().image, axis=1 )
+            imageOS -= osicorrection[:,None]
+            #print '(MADBG)shapeOSI_OS=', osicorrection.shape
+            
+        dataOS = imageOS#.flatten()
+        dataOS[ dataOS > 1e9 ] = np.nan
+        medianOS = np.nanmedian( dataOS, axis=1 )
+        
+        diffMedian = np.mean( medianAC - medianOS )
+        print '(SideImage.lambdaBGbin)diffMedian=', diffMedian, np.mean(medianAC), np.mean(medianOS)
+        if diffMedian < 0: return 0
+        return np.sqrt( diffMedian )
+
+    def gainElectron( self, thr=15 ):
+        subimage = self.image[:,:-self.overscanWidth ]
+        shape = subimage.shape
+        subimage = subimage[:,shape[1]/2:]
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        subimage -= osicorrection[:,None]
+
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        subimage[ distance_from_thr < 3 ] = np.nan
+        
+        medianAC = np.nanmedian( subimage, axis=1 )
+        
+        imageOS = self.overscan().image
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        imageOS -= osicorrection[:,None]
+            
+        dataOS = imageOS
+        dataOS[ dataOS > 1e9 ] = np.nan
+        medianOS = np.nanmedian( dataOS, axis=1 )
+        
+        diffMedian = np.mean( medianAC - medianOS )
+        diffVar = np.mean( medianAC**2 - medianOS**2 ) - np.mean( medianAC + medianOS )*diffMedian
+        gain = diffVar/diffMedian
+        #print '(SideImage.gainElectron)diffMedian=', diffMedian, diffVar
+        #print '(SideImage.gainElectron)gain=', gain
+        
+        diffVarMAD = np.mean( stats.nanMAD( subimage, axis=1 )**2 - stats.nanMAD( imageOS, axis=1 )**2 )
+        gain_prime = diffVarMAD/diffMedian
+        #print '(SideImage.gainElectron)diffMedian=', diffMedian, diffVarMAD
+        #print '(SideImage.gainElectron)gain\'=', gain_prime
+        
+        #if diffMedian < 0: return 0
+        return gain
+
+    def gainElectronMAD( self, thr=15 ):
+        subimage = self.image[:,:-self.overscanWidth ]
+        shape = subimage.shape
+        subimage = subimage[:,shape[1]/2:]
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        subimage -= osicorrection[:,None]
+
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        subimage[ distance_from_thr < 3 ] = np.nan
+        
+        medianAC = np.nanmedian( subimage, axis=1 )
+        
+        imageOS = self.overscan().image
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        imageOS -= osicorrection[:,None]
+            
+        dataOS = imageOS
+        dataOS[ dataOS > 1e9 ] = np.nan
+        medianOS = np.nanmedian( dataOS, axis=1 )
+        
+        diffMedian = np.mean( medianAC - medianOS )
+        diffVarMAD = np.mean( stats.nanMAD( subimage, axis=1 )**2 - stats.nanMAD( imageOS, axis=1 )**2 )
+        gain_prime = diffVarMAD/diffMedian
+
+        return gain_prime
 
     def overscanLineSubtraction(self):
         return SideImage( self.image - self.overscan().h_medians() )
@@ -827,10 +1153,14 @@ class SideImage(ImageBase):
         #return SideImage( self.image - np.median( self.image[:,-self.overscanWidth:], axis=1 )[:,None] )
         return SideImage( self.image - np.median( self.image[:,-self.overscanWidth:], axis=1 )[:,None] )
 
+    def horizontalSubtraction(self):
+        return SideImage( self.image - np.median( self.image[-self.overscanHeight:,:], axis=0 )[None,:] )
+
 class FullImage(ImageBase):
-    def __init__( self, runID, ohdu, imageType ):
+    def __init__( self, runID, ohdu, imageType, debug=False ):
         self.has_right = True
         self.name = 'full'
+        if debug: print '(FullImage.__init__)imageType=%s,runID=%s,ohdu=%s'%(imageType,runID,ohdu)
         if imageType.startswith('raw'):
             ImageBase.__init__(self, readImage_raw( runID=runID, ohdu=ohdu )[::-1,:] )
             if self.width in [ 8540, 9340, 8716, ]:
@@ -873,7 +1203,8 @@ class FullImage(ImageBase):
         
         elif imageType.startswith('scn'):
             self.has_right = False
-            ImageBase.__init__(self, readImage_processed( runID=runID, ohdu=ohdu, image='scn' )[::-1,:] )
+            #debug=True
+            ImageBase.__init__(self, readImage_processed( runID=runID, ohdu=ohdu, image='scn', debug=debug )[::-1,:] )
             if self.width in [ 4262, 4662 ]:
                 self.trim = 0
                 self.side =  np.s_[:, :self.width]
@@ -929,6 +1260,24 @@ class FullImage(ImageBase):
     def diffMAD(self):
         return self.left().diffMAD()
     
+    def sigmaOS(self):
+        return self.left().sigmaOS()
+
+    def sigmaOSbin(self):
+        return self.left().sigmaOSbin()
+
+    def lambdaBGbin( self, sigma, gain, osi=False ):
+        return self.left().lambdaBGbin( sigma, gain, osi=osi )
+
+    def sigmaOSMAD(self):
+        return self.left().sigmaOSMAD()
+
+    def diffMedianBG(self):
+        return self.left().diffMedianBG()
+    
+    def sigmaOSMAD2(self):
+        return self.left().sigmaOSMAD2()
+    
     def darkCurrentEstimate2( self, medianVoid = None, sigmaVoid=None, sigmaBase = None ):
         #if sigmaVoid is None: sigmaVoid = self.data().mad_half()
         #if medianVoid is None: medianVoid = self.data().median_half()
@@ -939,4 +1288,54 @@ class FullImage(ImageBase):
         gain = Var**2/med**3 #ADU
         sigma = self.overscan().MAD()/gain #no unit
         return gain, lamb, sigma
- 
+
+class FullImage2:
+    def __init__(self, ac, os, hos ):
+        self.active = ac
+        self.overscan = os
+        self.hoverscan = hos
+    
+    def sigma( self ):
+        return self.overscan.std()
+    
+    def gain_lambda( self ):
+        return self.active.loc()
+    
+    def mean_active_minus_overscan( self ):
+        return self.active.mean() - self.overscan.mean()
+    
+    def mean_active_minus_overscan_line_by_line( self ):
+        return np.mean( self.active.mean_line_by_line( (-self.overscan.number_of_lines(), None) ) - self.overscan.mean_line_by_line() )
+    
+def get_overscan_sizes( shape ):
+    pass
+
+def read_full_image( image, **kwargs ):
+    overscan_lines, vertical_overscan_columns = get_overscan_sizes( image.shapes )
+    active_section = image[ : -vertical_overscan_columns, : -overscan_lines ]
+    overscan_section = image[ : -vertical_overscan_columns, overscan_lines : ]
+    vertical_overscan_section = image[ vertical_overscan_columns : , : ]
+    return FullImage2( active_section, overscan_section, vertical_overscan_section )
+    
+def simulate_full_image( **kwargs ):
+    image = FullImage2()
+    return image
+
+def read_gainCu( runID, ohdu ):
+    path = ConniePaths.get_gainCatalog_path( runID )
+    if path is None: return None
+    #print '(read_gainCu)runID=%s,ohdu=%s' % (runID, ohdu)
+    return read_gainCu_from_gainCatalog( path, runID, ohdu )
+
+def read_gainCu_from_gainCatalog( path, runID, ohdu ):
+    #data = root_numpy.root2array( path, treename = 'hitSumm', branches = ['gainCu'], selection = 'runID==%d && ohdu==%d' % (runID, ohdu) )
+    data = root_numpy.root2array( path, treename = 'hitSumm', branches = ['gainCu', 'ohdu', 'runID'] )
+    #print '(read_gainCu_from_gainCatalog)len(data)', len(data)
+    data = data['gainCu'][ np.all( [ data['runID'] == runID, data['ohdu'] == ohdu ], axis=0 ) ]
+    #print '(read_gainCu_from_gainCatalog)len(data)', list(data)
+    gainCu = list(set(data))
+    #print '(read_gainCu_from_gainCatalog)gainCu=', gainCu
+    #exit(1)
+    if len(gainCu) == 0:
+        return None
+    return gainCu[0]
