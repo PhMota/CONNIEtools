@@ -167,7 +167,7 @@ class MonitorViewer(Gtk.Window):
         print 'first plottig, number of threads %s'%threading.active_count()
         #for quantity in self.quantities:
             #self.plot_table( quantity )
-        self.plot_table( self.currentPageLabel )
+        #self.plot_table( self.currentPageLabel )
 
         #self.connect( 'motion-notify-event', self.on_mouse_move )
         self.show_all()
@@ -260,15 +260,37 @@ class MonitorViewer(Gtk.Window):
         subsubbox.pack_start(self.omitOutliersButton, expand=False, fill=False, padding=1 )
         #subsubbox.pack_start(self.interactivePlotButton, expand=False, fill=False, padding=1 )
         
-        self.ohdusBox = Gtk.HBox()
-        subsubbox.pack_start(self.ohdusBox, expand=False, fill=False, padding=1 )
-        for ohdu in self.ohdus:
-            toggleButton = Gtk.ToggleButton()
-            toggleButton.set_label( '%2s'%(ohdu) )
-            toggleButton.set_active(True)
-            if ohdu in [11,12,15]: toggleButton.set_active(False)
-            #toggleButton.connect('clicked', self.on_ohduButton_clicked )
-            self.ohdusBox.pack_start( toggleButton, expand=False, fill=False, padding=0 )
+        popover = Gtk.Popover( modal = False )
+        popover.set_position( Gtk.PositionType.BOTTOM )
+        popover.add( self.build_ohdu_box() )
+        def on_ohduButtonToggled( widget ):
+            if widget.get_active():
+                popover.set_relative_to(widget)
+                popover.show_all()
+            else:
+                popover.hide()
+
+        ohduButton = Gtk.ToggleButton( label='ohdus' )
+        ohduButton.connect('toggled', on_ohduButtonToggled )
+        subsubbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
+        
+
+        #self.ohdusBox = Gtk.HBox()
+        #self.ohdusBox = Gtk.VBox()
+        ##subsubbox.pack_start(self.ohdusBox, expand=False, fill=False, padding=1 )
+        #for ohdu in self.ohdus:
+            #checkButton = Gtk.CheckButton( label='ohdu%02d'%ohdu )
+            #checkButton.set_active(True)
+            
+            #toggleButton = Gtk.ToggleButton()
+            #toggleButton.set_label( '%2s'%(ohdu) )
+            #toggleButton.set_active(True)
+            #if ohdu in [11,12,15]: 
+                #checkButton.set_active(False)
+                #toggleButton.set_active(False)
+            ##toggleButton.connect('clicked', self.on_ohduButton_clicked )
+            ##self.ohdusBox.pack_start( toggleButton, expand=False, fill=False, padding=0 )
+            #self.ohdusBox.pack_start( checkButton, expand=False, fill=False, padding=0 )
 
         refreshButton = Gtk.Button(label='refresh')
         refreshButton.connect('clicked', self.on_ohduButton_clicked )
@@ -276,11 +298,24 @@ class MonitorViewer(Gtk.Window):
         subbox.pack_start(scroll, expand=False, fill=True, padding=1)
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
+
+        
+    def build_ohdu_box(self):
+        self.ohdusBox = Gtk.VBox()
+        for ohdu in self.ohdus:
+            checkButton = Gtk.CheckButton( label='%02d'%ohdu )
+            checkButton.set_active(True)
+            if ohdu in [11,12,15]: 
+                checkButton.set_active(False)
+            self.ohdusBox.pack_start( checkButton, expand=False, fill=False, padding=0 )
+        return self.ohdusBox
+        
     
     def build_body(self):
         notebook = Gtk.Notebook()
         notebook.connect( 'switch-page', self.on_switch_page )
         notebook.set_scrollable(True)
+        notebook.popup_enable()
         self.currentPageLabel = None
         self.labels = {}
         self.fig = {}
@@ -682,6 +717,9 @@ class MonitorViewer(Gtk.Window):
         print 'mouse event fig.canvas', (event.x, event.y)
         print 'axes position', self.grid[0].get_window_extent()
     
+    def get_active_ohdus(self):
+        return [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
+    
     def plot_table( self, quantity, max_per_subplot=4 ):
         '''
         generate image and associate it with the proper imageCanvas object. The range is set by to rangeEntry
@@ -716,7 +754,8 @@ class MonitorViewer(Gtk.Window):
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
         
-        ohdus = [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
+        #ohdus = [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
+        ohdus = self.get_active_ohdus()
         runIDRange_str = self.runIDRangeEntry.get_text()
         try:
             runIDMin_str, runIDMax_str = runIDRange_str.split(':')
