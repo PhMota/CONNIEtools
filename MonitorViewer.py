@@ -318,7 +318,8 @@ class MonitorViewer(Gtk.Window):
         self.subHeader = Gtk.HBox()
         self.subHeader.pack_start( self.label, expand=False, fill=False, padding=0 )
         box.pack_start(self.subHeader, expand=False, fill=False, padding=0)
-        
+        return box
+    
         #notebook = Gtk.Notebook()        
         #notebook.set_scrollable(True)
         #notebook.popup_enable()
@@ -357,7 +358,7 @@ class MonitorViewer(Gtk.Window):
             
             #notebook.append_page( box, Gtk.Label(label=quantity) )
         #notebook.connect( 'switch-page', self.on_switch_page )
-        return notebook
+        #return notebook
     
     def updateLabel(self, quantity, text ):
         def callback(): 
@@ -720,6 +721,7 @@ class MonitorViewer(Gtk.Window):
         
         self.fig = plt.figure( figsize=(allocation.width/100., allocation.height/100.), dpi=100)
         self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( '/home/mota/public/gui/loading.gif' ) )
+        self.fig.suptitle(quantity)
         
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
@@ -825,7 +827,7 @@ class MonitorViewer(Gtk.Window):
             if m>1:
                 self.grid[i].set_ylim(( (1-.05)*np.nanmin(ycum), val_max ))
 
-        self.fig.tight_layout(rect=(0, 0, .875, 1))
+        self.fig.tight_layout(rect=(0, 0, .875, .95))
         self.fig.subplots_adjust( hspace = 0.05 )
         
         print 'plotting path', self.imagePaths[quantity]
