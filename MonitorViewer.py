@@ -221,14 +221,9 @@ class MonitorViewer(Gtk.Window):
     
     def build_header(self):
         subbox = Gtk.HBox()
-        #subsubbox = Gtk.HBox()
-        #scroll = Gtk.ScrolledWindow()
-        #scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
 
-        label = Gtk.Label()
-        label.set_label('Dark Current and Readout Noise')
-        runIDLabel = Gtk.Label()
-        runIDLabel.set_label('runIDs')
+        label = Gtk.Label('Dark Current and Readout Noise')
+        runIDLabel = Gtk.Label('runIDs')
         self.runIDRangeEntry = Gtk.Entry()
         if self.range_ is None:
             self.runIDRangeEntry.set_text('-200:auto')
