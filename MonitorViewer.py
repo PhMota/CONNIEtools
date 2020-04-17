@@ -258,6 +258,19 @@ class MonitorViewer(Gtk.Window):
         ohduButton.connect('clicked', on_ohduButtonClicked )
 
         subbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
+
+        qpopover = Gtk.Popover( modal = True )
+        qpopover.set_position( Gtk.PositionType.BOTTOM )
+        qpopover.add( self.build_quantity_box() )
+        def on_quantityButtonClicked( widget ):
+            qpopover.set_relative_to(widget)
+            qpopover.show_all()
+            qpopover.popup()
+        quantityButton = Gtk.Button( label='quantity' )
+        quantityButton.set_relief( Gtk.ReliefStyle.NONE )
+        quantityButton.connect('clicked', on_quantityButtonClicked )
+
+        subbox.pack_start( quantityButton, expand=False, fill=False, padding=1 )
         
         refreshButton = Gtk.Button(label='refresh')
         refreshButton.connect('clicked', self.on_refreshButton_clicked )
@@ -265,6 +278,16 @@ class MonitorViewer(Gtk.Window):
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
 
+    def build_quantity_box(self):
+        self.quantityBox = Gtk.VBox()
+        for quantity in self.quantities:
+            if quantity is self.quantities[0]:
+                btn = None
+            btn = Gtk.RadioButton.new_with_label_from_widget( btn, quantity )
+            #btn.set_tooltip_text(quantity) 
+            self.quantityBox.pack_start( btn, expand=False, fill=False, padding=0)
+        return self.quantityBox
+            
     def build_ohdu_box(self):
         self.ohdusBox = Gtk.VBox()
         for ohdu in self.ohdus:
