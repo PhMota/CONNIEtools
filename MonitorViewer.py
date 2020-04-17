@@ -215,15 +215,15 @@ class MonitorViewer(Gtk.Window):
         vbox = Gtk.VBox()
         header = self.build_header()
         body = self.build_body()
-        vbox.pack_start(header, False, False, 1)
-        vbox.pack_start(body, True, True, 1)
+        vbox.pack_start(header, expand=False, fill=False, padding=1)
+        vbox.pack_start(body, expand=True, fill=True, padding=1)
         return vbox
     
     def build_header(self):
         subbox = Gtk.HBox()
-        subsubbox = Gtk.HBox()
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        #subsubbox = Gtk.HBox()
+        #scroll = Gtk.ScrolledWindow()
+        #scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
 
         label = Gtk.Label()
         label.set_label('Dark Current and Readout Noise')
@@ -231,52 +231,50 @@ class MonitorViewer(Gtk.Window):
         runIDLabel.set_label('runIDs')
         self.runIDRangeEntry = Gtk.Entry()
         if self.range_ is None:
-            self.runIDRangeEntry.set_text('-100:auto')
+            self.runIDRangeEntry.set_text('-200:auto')
         else:
             self.runIDRangeEntry.set_text(self.range_)
         self.runIDRangeEntry.set_width_chars(len(' auto: auto'))
 
-        self.omitOutliersButton = Gtk.ToggleButton()
-        self.omitOutliersButton.set_label('outliers')
-        self.omitOutliersButton.set_active(False)
-        #self.omitOutliersButton.connect( 'clicked', self.on_omitOutliersButton_clicked )
+        ypopover = Gtk.Popover( modal = True )
+        ypopover.set_position( Gtk.PositionType.BOTTOM )
+        ypopover.add( self.build_yrange_box() )
+        def on_yrangeButtonClicked( widget ):
+            ypopover.set_relative_to(widget)
+            ypopover.show_all()
+            ypopover.popup()
+        self.yrangeButton = Gtk.Button( label='yrange' )
+        self.yrangeButton.set_relief( Gtk.ReliefStyle.NONE )
+        self.yrangeButton.connect('clicked', on_yrangeButtonClicked )
         
         self.interactivePlotButton = Gtk.ToggleButton(label='interactive')
         self.interactivePlotButton.set_active(False)
-        #self.interactivePlotButton.connect( 'clicked', self.on_interactivePlotButton_clicked )
         
-        subsubbox.pack_start(label, expand=True, fill=True, padding=5 )
-        subsubbox.pack_start(runIDLabel, expand=False, fill=False, padding=1 )
-        subsubbox.pack_start(self.runIDRangeEntry, expand=False, fill=False, padding=1 )
-
-        #subsubbox.pack_start(yLabel, expand=False, fill=False, padding=1 )
-        #subsubbox.pack_start(self.yRangeEntry[, expand=False, fill=False, padding=1 )
-
-        subsubbox.pack_start(self.omitOutliersButton, expand=False, fill=False, padding=1 )
-        #subsubbox.pack_start(self.interactivePlotButton, expand=False, fill=False, padding=1 )
+        subbox.pack_start( label, expand=True, fill=True, padding=5 )
+        subbox.pack_start( runIDLabel, expand=False, fill=False, padding=1 )
+        subbox.pack_start( self.runIDRangeEntry, expand=False, fill=False, padding=1 )
+        subbox.pack_start( self.yrangeButton, expand=False, fill=False, padding=1 )
         
-        popover = Gtk.Popover( modal = False )
+        popover = Gtk.Popover( modal = True )
         popover.set_position( Gtk.PositionType.BOTTOM )
         popover.add( self.build_ohdu_box() )
-        def on_ohduButtonToggled( widget ):
-            if widget.get_active():
-                popover.set_relative_to(widget)
-                popover.show_all()
-            else:
-                popover.hide()
+        def on_ohduButtonClicked( widget ):
+            popover.set_relative_to(widget)
+            popover.show_all()
+            popover.popup()
+        ohduButton = Gtk.Button( label='ohdus' )
+        ohduButton.set_relief( Gtk.ReliefStyle.NONE )
+        ohduButton.connect('clicked', on_ohduButtonClicked )
 
-        ohduButton = Gtk.ToggleButton( label='ohdus' )
-        ohduButton.connect('toggled', on_ohduButtonToggled )
-        subsubbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
+        subbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
         
         refreshButton = Gtk.Button(label='refresh')
         refreshButton.connect('clicked', self.on_refreshButton_clicked )
-        scroll.add_with_viewport( subsubbox )
-        subbox.pack_start(scroll, expand=False, fill=True, padding=1)
+        #scroll.add_with_viewport( subsubbox )
+        #subbox.pack_start(scroll, expand=False, fill=True, padding=1)
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
 
-        
     def build_ohdu_box(self):
         self.ohdusBox = Gtk.VBox()
         for ohdu in self.ohdus:
@@ -287,7 +285,13 @@ class MonitorViewer(Gtk.Window):
             self.ohdusBox.pack_start( checkButton, expand=False, fill=False, padding=0 )
         return self.ohdusBox
         
-    
+    def build_yrange_box(self):
+        self.yrangeBox = Gtk.VBox()
+        button = Gtk.RadioButton.new_with_label_from_widget( None, " ymax + 5% " )
+        self.yrangeBox.pack_start( button, expand=False, fill=False, padding=0)
+        self.yrangeBox.pack_start( Gtk.RadioButton.new_with_label_from_widget( button, " median(y) × 2 " ), expand=False, fill=False, padding=0)
+        return self.yrangeBox
+        
     def build_body(self):
         notebook = Gtk.Notebook()
         notebook.connect( 'switch-page', self.on_switch_page )
@@ -308,7 +312,7 @@ class MonitorViewer(Gtk.Window):
             self.labels[quantity].set_justify(Gtk.Justification.LEFT)
             self.subHeader[quantity] = Gtk.HBox()
             self.resetLabel(quantity)
-            self.subHeader[quantity].pack_start(self.labels[quantity], True, True, 0)
+            self.subHeader[quantity].pack_start( self.labels[quantity], expand=False, fill=False, padding=0 )
             self.fig[quantity] = Figure(dpi=100)
             #self.fig[quantity].canvas.mpl_connect('button_press_event', self.onclick )
             #if self.interactivePlotButton.get_active():
@@ -323,8 +327,8 @@ class MonitorViewer(Gtk.Window):
             #for i in range(len(children)-3):
                 #children[i].destroy()
             
-            box.pack_start(self.subHeader[quantity], False, False, 0)
-            box.pack_start(self.imageCanvases[quantity], True, True, 0)
+            box.pack_start(self.imageCanvases[quantity], expand=True, fill=True, padding=0)
+            box.pack_start(self.subHeader[quantity], expand=False, fill=False, padding=0)
             #box.pack_start(self.toolbar[quantity], False, False, 0)
             
             notebook.append_page( box, Gtk.Label(label=quantity) )
@@ -407,17 +411,6 @@ class MonitorViewer(Gtk.Window):
             #Gtk.main_iteration()
         return
         
-    def on_omitOutliersButton_clicked( self, button ):
-        print 'omitOutliers toggled %s'%button.get_active()
-        button.set_sensitive(False)
-        while Gtk.events_pending():
-            Gtk.main_iteration()
-        #for quantity in self.quantities:
-            #self.plot_table( quantity )
-        self.plot_table( self.currentPageLabel )
-        button.set_sensitive(True)
-        return
-
     def on_interactivePlotButton_clicked( self, button ):
         print 'interactive toggled %s'%button.get_active()
         button.set_sensitive(False)
@@ -673,11 +666,6 @@ class MonitorViewer(Gtk.Window):
         self.plot_table( self.currentPageLabel )
         
     def on_mouse_move( self, window, event ):
-        #buttonSize = self.omitOutliersButton.get_allocation()
-        #print 'button size', buttonSize
-        #buttonCoord = window.translate_coordinates( self.omitOutliersButton, event.x, event.y )
-        #print 'mouse event omitButton', ( float(buttonCoord[0])/buttonSize[0], float(buttonCoord[1])/buttonSize[1] )
-        #print 'mouse event omitButton', ( (event.x-buttonSize.x)/buttonSize.width, (event.y-buttonSize.y)/buttonSize.height )
         canvasSize = self.imageCanvases[self.currentPageLabel].get_allocation()
         print 'canvas size', canvasSize.x, canvasSize.y, canvasSize.width, canvasSize.height
         print 'mouse event fig.canvas', (event.x, event.y)
@@ -685,6 +673,9 @@ class MonitorViewer(Gtk.Window):
     
     def get_active_ohdus(self):
         return [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
+
+    def get_active_yrange(self):
+        return [ button.get_label() for button in self.yrangeBox.get_children() if button.get_active() ][0]
     
     def plot_table( self, quantity, max_per_subplot=4 ):
         '''
@@ -791,7 +782,7 @@ class MonitorViewer(Gtk.Window):
                 ycum.append(y)
                 x = data['runID'][ohduMask]
                 self.lines[ohdu], = self.grid[i].plot( x, y, '.', ms=3., 
-                        label = '${\bf %02d}$ $\mu%.2f$ $\sigma%.2f$' % ( ohdu, np.mean(y), np.std(y) ) )#, rasterized=True )
+                        label = r'${\bf %02d}$ $\mu%.2f$ $\sigma%.2f$' % ( ohdu, np.mean(y), np.std(y) ) )#, rasterized=True )
                 self.grid[i].hlines( np.mean(y), min(x), max(x), color=self.lines[ohdu].get_color() )
         
         #print 'lines data', lines[2][0].get_xdata()
@@ -801,18 +792,18 @@ class MonitorViewer(Gtk.Window):
         ax.set_xticklabels( map( lambda runBox: runBox['run'], runBoxes ) )
         ax.set_zorder(-100)
 
-        #mads = stats.MAD(ycum, axis=1)
-
-        print 'ycum length', len(ycum)
         val_max = 1
         if len(ycum) > 1:
-            if len(ycum[0]) > 0: 
-                if self.omitOutliersButton.get_active():
+            if len(ycum[0]) > 0:
+                yrange = self.get_active_yrange()
+                #print 
+                #print yrange
+                #print self.yrangeBox.get_children()[0].get_label()
+                if yrange == self.yrangeBox.get_children()[0].get_label():
+                    val_max = 1.05 * np.nanmax( ycum )
+                elif yrange == self.yrangeBox.get_children()[1].get_label():
                     medians = np.nanmedian(ycum, axis=1)
                     val_max = 2 * np.nanmax( medians )
-                else:
-                    val_max = 1.05 * np.nanmax( ycum )
-                #val_max = 1.05*np.nanmax(ycum)
         
         self.grid[-1].set_xlabel('runID')
         plt.setp(self.grid[-1].get_xticklabels(), visible=True)
