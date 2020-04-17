@@ -233,42 +233,24 @@ class MonitorViewer(Gtk.Window):
         self.runIDRangeEntry.set_width_chars(len(' auto: auto'))
         subbox.pack_start( self.runIDRangeEntry, expand=False, fill=False, padding=1 )
 
-        ypopover = Gtk.Popover( modal = True )
-        ypopover.set_position( Gtk.PositionType.BOTTOM )
+        ypopover = Gtk.Popover( modal = True, position = Gtk.PositionType.BOTTOM )
         ypopover.add( self.build_yrange_box() )
-        def on_yrangeButtonClicked( widget ):
-            ypopover.set_relative_to(widget)
-            ypopover.show_all()
-            ypopover.popup()
-        self.yrangeButton = Gtk.Button( label='yrange' )
-        self.yrangeButton.set_relief( Gtk.ReliefStyle.NONE )
-        self.yrangeButton.connect('clicked', on_yrangeButtonClicked )
+        self.yrangeButton = Gtk.Button( label='yrange', relief = Gtk.ReliefStyle.NONE )
+        self.yrangeButton.connect('clicked', lambda _: self.show_popover(_, ypopover) )
         
         subbox.pack_start( self.yrangeButton, expand=False, fill=False, padding=1 )
         
-        popover = Gtk.Popover( modal = True )
-        popover.set_position( Gtk.PositionType.BOTTOM )
+        popover = Gtk.Popover( modal = True, position = Gtk.PositionType.BOTTOM )
         popover.add( self.build_ohdu_box() )
-        def on_ohduButtonClicked( widget ):
-            popover.set_relative_to(widget)
-            popover.show_all()
-            popover.popup()
-        ohduButton = Gtk.Button( label='ohdus' )
-        ohduButton.set_relief( Gtk.ReliefStyle.NONE )
-        ohduButton.connect('clicked', on_ohduButtonClicked )
+        ohduButton = Gtk.Button( label='ohdus', relief = Gtk.ReliefStyle.NONE )
+        ohduButton.connect('clicked', lambda _: self.show_popover(_, popover) )
 
         subbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
 
-        qpopover = Gtk.Popover( modal = True )
-        qpopover.set_position( Gtk.PositionType.BOTTOM )
+        qpopover = Gtk.Popover( modal = True, position = Gtk.PositionType.BOTTOM )
         qpopover.add( self.build_quantity_box() )
-        def on_quantityButtonClicked( widget ):
-            qpopover.set_relative_to(widget)
-            qpopover.show_all()
-            qpopover.popup()
-        quantityButton = Gtk.Button( label='quantity' )
-        quantityButton.set_relief( Gtk.ReliefStyle.NONE )
-        quantityButton.connect('clicked', on_quantityButtonClicked )
+        quantityButton = Gtk.Button( label='quantity', relief = Gtk.ReliefStyle.NONE )
+        quantityButton.connect('clicked', lambda _: self.show_popover(_, qpopover) )
 
         subbox.pack_start( quantityButton, expand=False, fill=False, padding=1 )
         
@@ -277,16 +259,38 @@ class MonitorViewer(Gtk.Window):
 
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
+    
+    def show_popover( self, widget, popover ):
+        popover.set_relative_to(widget)
+        popover.show_all()
+        popover.popup()
+        return
+    
+    def build_explanation_popover( self, widget, ref, quantity ):
+        popover = Gtk.Popover( modal = True, position = Gtk.PositionType.LEFT )
+        markup = '<span color="blue">%s</span>' % quantity
+        label = Gtk.Label()
+        popover.add( label )
+        label.set_markup( markup )
+        widget.connect( 'clicked', lambda _: self.show_popover( ref, popover) )
+        return popover
 
     def build_quantity_box(self):
-        self.quantityBox = Gtk.VBox()
+        #self.quantityBox = 
+        vbox = Gtk.VBox()
+        self.quantitySelector = []
         for quantity in self.quantities:
             if quantity is self.quantities[0]:
                 btn = None
             btn = Gtk.RadioButton.new_with_label_from_widget( btn, quantity )
-            #btn.set_tooltip_text(quantity) 
-            self.quantityBox.pack_start( btn, expand=False, fill=False, padding=0)
-        return self.quantityBox
+            self.quantitySelector.append( btn )
+            line = Gtk.HBox()
+            line.pack_start( btn, expand=False, fill=True, padding=0)
+            explanationButton = Gtk.Button('?', relief = Gtk.ReliefStyle.NONE)
+            popover = self.build_explanation_popover( explanationButton, btn, quantity )
+            line.pack_end( explanationButton, expand=False, fill=True, padding=0)
+            vbox.pack_start( line, expand=False, fill=False, padding=0)
+        return vbox
             
     def build_ohdu_box(self):
         self.ohdusBox = Gtk.VBox()
@@ -302,12 +306,12 @@ class MonitorViewer(Gtk.Window):
         self.yrangeBox = Gtk.VBox()
         button = Gtk.RadioButton.new_with_label_from_widget( None, " ymax + 5% " )
         self.yrangeBox.pack_start( button, expand=False, fill=False, padding=0)
-        self.yrangeBox.pack_start( Gtk.RadioButton.new_with_label_from_widget( button, " median(y) × 2 " ), expand=False, fill=False, padding=0)
+        self.yrangeBox.pack_start( 
+            Gtk.RadioButton.new_with_label_from_widget( button, " median(y) × 2 " ), expand=False, fill=False, padding=0)
         return self.yrangeBox
         
     def build_body(self):
         notebook = Gtk.Notebook()
-        notebook.connect( 'switch-page', self.on_switch_page )
         
         notebook.set_scrollable(True)
         notebook.popup_enable()
@@ -345,14 +349,14 @@ class MonitorViewer(Gtk.Window):
             #box.pack_start(self.toolbar[quantity], False, False, 0)
             
             notebook.append_page( box, Gtk.Label(label=quantity) )
+        notebook.connect( 'switch-page', self.on_switch_page )
         return notebook
     
     def updateLabel(self, quantity, text ):
         def callback(): 
             self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' ' + text )
             return False
-        #GLib.idle_add(callback)
-        callback()
+        GLib.idle_add(callback)
 
     def should_quit(self):
         return self.quit
