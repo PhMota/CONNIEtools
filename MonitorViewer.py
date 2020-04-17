@@ -239,11 +239,11 @@ class MonitorViewer(Gtk.Window):
         self.omitOutliersButton = Gtk.ToggleButton()
         self.omitOutliersButton.set_label('outliers')
         self.omitOutliersButton.set_active(False)
-        self.omitOutliersButton.connect( 'clicked', self.on_omitOutliersButton_clicked )
+        #self.omitOutliersButton.connect( 'clicked', self.on_omitOutliersButton_clicked )
         
         self.interactivePlotButton = Gtk.ToggleButton(label='interactive')
         self.interactivePlotButton.set_active(False)
-        self.interactivePlotButton.connect( 'clicked', self.on_interactivePlotButton_clicked )
+        #self.interactivePlotButton.connect( 'clicked', self.on_interactivePlotButton_clicked )
         
         subsubbox.pack_start(label, expand=True, fill=True, padding=5 )
         subsubbox.pack_start(runIDLabel, expand=False, fill=False, padding=1 )
@@ -270,7 +270,7 @@ class MonitorViewer(Gtk.Window):
         subsubbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
         
         refreshButton = Gtk.Button(label='refresh')
-        refreshButton.connect('clicked', self.on_ohduButton_clicked )
+        refreshButton.connect('clicked', self.on_refreshButton_clicked )
         scroll.add_with_viewport( subsubbox )
         subbox.pack_start(scroll, expand=False, fill=True, padding=1)
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
@@ -290,6 +290,8 @@ class MonitorViewer(Gtk.Window):
     
     def build_body(self):
         notebook = Gtk.Notebook()
+        notebook.connect( 'switch-page', self.on_switch_page )
+        
         notebook.set_scrollable(True)
         notebook.popup_enable()
         self.currentPageLabel = None
@@ -326,7 +328,6 @@ class MonitorViewer(Gtk.Window):
             #box.pack_start(self.toolbar[quantity], False, False, 0)
             
             notebook.append_page( box, Gtk.Label(label=quantity) )
-            notebook.connect( 'switch-page', self.on_switch_page )
         return notebook
     
     def updateLabel(self, quantity, text ):
@@ -396,7 +397,7 @@ class MonitorViewer(Gtk.Window):
         self.thread[quantity] = threading.Thread(target=callback, name=quantity)
         self.thread[quantity].start()
         
-    def on_ohduButton_clicked( self, button ):
+    def on_refreshButton_clicked( self, button ):
         button.set_sensitive(False)
         while Gtk.events_pending():
             Gtk.main_iteration()
@@ -635,38 +636,39 @@ class MonitorViewer(Gtk.Window):
         #print '(update_table)', runIDs
         return runIDs
     
-    def onclick(self, event):
-        #print 'onclik signal'
-        print 'onclick', (event.x, event.y)
-        try:
-            ax = event.inaxes
-        except:
-            return
-        lines_points = [ (int(line.get_label()), ax.transData.transform((x,y))) for line in ax.get_lines() for x, y in zip(line.get_xdata(),line.get_ydata()) ]
-        #print 'points', points
-        picked = [ ( l, ax.transData.inverted().transform((x,y)) ) for l,(x,y) in lines_points if (x-event.x)**2+(y-event.y)**2 < 5**2 ]
-        print 'picked', picked
-        if len(picked) > 1:
-            ohdus = np.unique([ l for l,(x,y) in picked ])
-            print 'ohdus', ohdus
-            picked_runIDs = [ x for l,(x,y) in picked ]
-            runIDmin = min( picked_runIDs )
-            runIDmax = max( picked_runIDs )
-            self.runIDRangeEntry.set_text( '%d:%d'%( runIDmin, runIDmax ) )
-            for button in self.ohdusBox.get_children():
-                if not int(button.get_label()) in ohdus: 
-                    button.set_active(False)
-                else: 
-                    button.set_active(True)
-            self.plot_table( self.currentPageLabel, max_per_subplot=len(ohdus))
-        elif len(picked) == 1:
-            runID = int(picked[0][1][0])
-            ohdu = int(picked[0][0])
-            print 'should get runID', runID, 'ohdu', ohdu
-            open_imageViewer( runID, ohdu )
+    #def onclick(self, event):
+        ##print 'onclik signal'
+        #print 'onclick', (event.x, event.y)
+        #try:
+            #ax = event.inaxes
+        #except:
+            #return
+        #lines_points = [ (int(line.get_label()), ax.transData.transform((x,y))) for line in ax.get_lines() for x, y in zip(line.get_xdata(),line.get_ydata()) ]
+        ##print 'points', points
+        #picked = [ ( l, ax.transData.inverted().transform((x,y)) ) for l,(x,y) in lines_points if (x-event.x)**2+(y-event.y)**2 < 5**2 ]
+        #print 'picked', picked
+        #if len(picked) > 1:
+            #ohdus = np.unique([ l for l,(x,y) in picked ])
+            #print 'ohdus', ohdus
+            #picked_runIDs = [ x for l,(x,y) in picked ]
+            #runIDmin = min( picked_runIDs )
+            #runIDmax = max( picked_runIDs )
+            #self.runIDRangeEntry.set_text( '%d:%d'%( runIDmin, runIDmax ) )
+            #for button in self.ohdusBox.get_children():
+                #if not int(button.get_label()) in ohdus: 
+                    #button.set_active(False)
+                #else: 
+                    #button.set_active(True)
+            #self.plot_table( self.currentPageLabel, max_per_subplot=len(ohdus))
+        #elif len(picked) == 1:
+            #runID = int(picked[0][1][0])
+            #ohdu = int(picked[0][0])
+            #print 'should get runID', runID, 'ohdu', ohdu
+            #open_imageViewer( runID, ohdu )
     
     def on_switch_page( self, notebook, page, page_num ):
         self.currentPageLabel = notebook.get_tab_label_text(page)
+        print
         print 'active notebook', self.currentPageLabel
         self.plot_table( self.currentPageLabel )
         
@@ -737,11 +739,12 @@ class MonitorViewer(Gtk.Window):
             self.global_runIDMin = runIDMin
             self.update = True
         if runIDMax is None: 
-            runIDMax = max( self.global_runIDMax, data['runID'].max() )
+            #runIDMax = max( self.global_runIDMax, data['runID'].max() )
+            runIDMax = data['runID'].max()
             self.global_runIDMax = runIDMax
             self.update = True
         
-
+        
         if runIDMax < 0: runIDMax = data['runID'].max() + runIDMax
         if runIDMin < 0: runIDMin = runIDMax + runIDMin
 
@@ -788,7 +791,7 @@ class MonitorViewer(Gtk.Window):
                 ycum.append(y)
                 x = data['runID'][ohduMask]
                 self.lines[ohdu], = self.grid[i].plot( x, y, '.', ms=3., 
-                        label = '%02d $\mu%.2f$ $\sigma%.2f$' % ( ohdu, np.mean(y), np.std(y) ) )#, rasterized=True )
+                        label = '${\bf %02d}$ $\mu%.2f$ $\sigma%.2f$' % ( ohdu, np.mean(y), np.std(y) ) )#, rasterized=True )
                 self.grid[i].hlines( np.mean(y), min(x), max(x), color=self.lines[ohdu].get_color() )
         
         #print 'lines data', lines[2][0].get_xdata()
@@ -834,7 +837,7 @@ class MonitorViewer(Gtk.Window):
             self.fig[quantity].savefig( self.imagePaths[quantity] )
             plt.close()
         
-        self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
+        #self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
         
         def callback():
             if self.interactivePlotButton.get_active():
