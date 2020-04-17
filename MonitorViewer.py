@@ -222,14 +222,16 @@ class MonitorViewer(Gtk.Window):
     def build_header(self):
         subbox = Gtk.HBox()
 
-        label = Gtk.Label('Dark Current and Readout Noise')
-        runIDLabel = Gtk.Label('runIDs')
+        subbox.pack_start( Gtk.Label('Dark Current and Readout Noise'), expand=True, fill=True, padding=5 )
+        subbox.pack_start( Gtk.Label('runIDs'), expand=False, fill=False, padding=1 )
+
         self.runIDRangeEntry = Gtk.Entry()
         if self.range_ is None:
             self.runIDRangeEntry.set_text('-200:auto')
         else:
             self.runIDRangeEntry.set_text(self.range_)
         self.runIDRangeEntry.set_width_chars(len(' auto: auto'))
+        subbox.pack_start( self.runIDRangeEntry, expand=False, fill=False, padding=1 )
 
         ypopover = Gtk.Popover( modal = True )
         ypopover.set_position( Gtk.PositionType.BOTTOM )
@@ -242,12 +244,6 @@ class MonitorViewer(Gtk.Window):
         self.yrangeButton.set_relief( Gtk.ReliefStyle.NONE )
         self.yrangeButton.connect('clicked', on_yrangeButtonClicked )
         
-        self.interactivePlotButton = Gtk.ToggleButton(label='interactive')
-        self.interactivePlotButton.set_active(False)
-        
-        subbox.pack_start( label, expand=True, fill=True, padding=5 )
-        subbox.pack_start( runIDLabel, expand=False, fill=False, padding=1 )
-        subbox.pack_start( self.runIDRangeEntry, expand=False, fill=False, padding=1 )
         subbox.pack_start( self.yrangeButton, expand=False, fill=False, padding=1 )
         
         popover = Gtk.Popover( modal = True )
@@ -265,8 +261,7 @@ class MonitorViewer(Gtk.Window):
         
         refreshButton = Gtk.Button(label='refresh')
         refreshButton.connect('clicked', self.on_refreshButton_clicked )
-        #scroll.add_with_viewport( subsubbox )
-        #subbox.pack_start(scroll, expand=False, fill=True, padding=1)
+
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
 
