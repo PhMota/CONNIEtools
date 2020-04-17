@@ -681,37 +681,21 @@ class MonitorViewer(Gtk.Window):
         '''
         generate image and associate it with the proper imageCanvas object. The range is set by to rangeEntry
         '''
-        #if self.plotting[quantity]:
-            #self.updateLabel(quantity, '!<span color="yellow">wait for plot</span>' )
-            #return
+
         print 'plot table', quantity
         self.plotting[quantity] = True
         startTime = time.time()
         
-        if self.interactivePlotButton.get_active():
-            print 'plotting interactive'
-            self.fig[quantity] = Figure(dpi=100)
-            self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
-            
-            #self.toolbar[quantity] = NavigationToolbar(self.imageCanvases[quantity], self)
-            #children = self.toolbar[quantity].get_children()
-            #for i in range(len(children)-3):
-                #children[i].destroy()
-        else:
-            print 'plotting image'
-            allocation = self.imageCanvases[quantity].get_allocation()
-            print 'allocated size', allocation.width, allocation.height
-            
-            self.fig[quantity] = plt.figure( figsize=(allocation.width/100., allocation.height/100.), dpi=100)
-            self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( '/home/mota/public/gui/loading.gif' ) )
-            #self.imageCanvases[quantity] = Gtk.Image()
-
-            #self.toolbar[quantity] = None
+        print 'plotting image'
+        allocation = self.imageCanvases[quantity].get_allocation()
+        print 'allocated size', allocation.width, allocation.height
+        
+        self.fig[quantity] = plt.figure( figsize=(allocation.width/100., allocation.height/100.), dpi=100)
+        self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( '/home/mota/public/gui/loading.gif' ) )
         
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
         
-        #ohdus = [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
         ohdus = self.get_active_ohdus()
         runIDRange_str = self.runIDRangeEntry.get_text()
         try:
@@ -751,20 +735,13 @@ class MonitorViewer(Gtk.Window):
         runBoxes[0]['range'][0] = runIDMin
         runBoxes[-1]['range'][1] = runIDMax
 
-        #w, h = self.fig[quantity].get_size_inches()
-        #self.fig[quantity].set_size_inches((2*w,h))
         m = int(np.ceil(np.float(len(ohdus))/max_per_subplot))
-        #m = int(np.floor( np.sqrt(float(len(ohdus))) ))
         n = float(len(ohdus))/m
         if m==0: return
-        #for fig in self.fig[quantity].values():
-            #fig.clf()
-            #fig.set_frameon(True)
         self.grid = []
         ohdus_ranges = []
         for i in range(m):
             share = None if self.grid == [] else self.grid[0]
-            #grid.append( self.fig[quantity].add_axes([ .1, .1+(m-i-1)*.8/m, .8, .8/m ], sharex=share, sharey=share ))
             self.grid.append( self.fig[quantity].add_subplot(m,1,i+1, sharex=share, sharey=share ) )
             plt.setp( self.grid[i].get_xticklabels(), visible=False )
             ohdus_ranges.append( ohdus[ int(i*n) : int( (i+1)*n ) ] )
@@ -823,21 +800,16 @@ class MonitorViewer(Gtk.Window):
         self.fig[quantity].tight_layout(rect=(0, 0, .875, 1))
         self.fig[quantity].subplots_adjust( hspace = 0.05 )
         
-        if not self.interactivePlotButton.get_active():
-            print 'plotting path', self.imagePaths[quantity]
-            self.fig[quantity].savefig( self.imagePaths[quantity] )
-            plt.close()
+        print 'plotting path', self.imagePaths[quantity]
+        self.fig[quantity].savefig( self.imagePaths[quantity] )
+        plt.close()
         
         #self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
         
         def callback():
-            if self.interactivePlotButton.get_active():
-                print 'plotting interactive callback'
-                self.fig[quantity].canvas.draw()
-            else:
-                print 'plotting image callback'
-                self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
-                self.imageCanvases[quantity].show()
+            print 'plotting image callback'
+            self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
+            self.imageCanvases[quantity].show()
             return False
         
         GLib.idle_add(callback)
