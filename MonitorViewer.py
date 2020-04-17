@@ -311,50 +311,57 @@ class MonitorViewer(Gtk.Window):
         return self.yrangeBox
         
     def build_body(self):
-        notebook = Gtk.Notebook()
+        box = Gtk.VBox()
+        self.imageCanvas = Gtk.Image()
+        box.pack_start(self.imageCanvas, expand=True, fill=True, padding=0)
+        self.label = Gtk.Label()
+        self.subHeader = Gtk.HBox()
+        self.subHeader.pack_start( self.label, expand=False, fill=False, padding=0 )
+        box.pack_start(self.subHeader, expand=False, fill=False, padding=0)
         
-        notebook.set_scrollable(True)
-        notebook.popup_enable()
-        self.currentPageLabel = None
-        self.labels = {}
-        self.fig = {}
-        self.subHeader = {}
-        self.imageCanvases = {}
-        self.toolbar = {}
-        for quantity in self.quantities:
-            box = Gtk.VBox()
-            #vbox.pack_start( box, True, True, 0)
+        #notebook = Gtk.Notebook()        
+        #notebook.set_scrollable(True)
+        #notebook.popup_enable()
+        #self.currentPageLabel = None
+        #self.labels = {}
+        #self.fig = {}
+        #self.subHeader = {}
+        #self.imageCanvases = {}
+        #self.toolbar = {}
+        #for quantity in self.quantities:
+            #box = Gtk.VBox()
+            ##vbox.pack_start( box, True, True, 0)
 
-            self.labels[quantity] = Gtk.Label()
-            self.labels[quantity].set_justify(Gtk.Justification.LEFT)
-            self.subHeader[quantity] = Gtk.HBox()
-            self.resetLabel(quantity)
-            self.subHeader[quantity].pack_start( self.labels[quantity], expand=False, fill=False, padding=0 )
-            self.fig[quantity] = Figure(dpi=100)
-            #self.fig[quantity].canvas.mpl_connect('button_press_event', self.onclick )
-            #if self.interactivePlotButton.get_active():
-                #self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
-            #else:
-                #self.imageCanvases[quantity] = Gtk.Image()
-            self.imageCanvases[quantity] = Gtk.Image()
+            #self.labels[quantity] = Gtk.Label()
+            #self.labels[quantity].set_justify(Gtk.Justification.LEFT)
+            #self.subHeader[quantity] = Gtk.HBox()
+            #self.resetLabel(quantity)
+            #self.subHeader[quantity].pack_start( self.labels[quantity], expand=False, fill=False, padding=0 )
+            #self.fig[quantity] = Figure(dpi=100)
+            ##self.fig[quantity].canvas.mpl_connect('button_press_event', self.onclick )
+            ##if self.interactivePlotButton.get_active():
+                ##self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
+            ##else:
+                ##self.imageCanvases[quantity] = Gtk.Image()
+            #self.imageCanvases[quantity] = Gtk.Image()
             
-            self.imageCanvases[quantity].set_property('height-request', 500)
-            #self.toolbar[quantity] = NavigationToolbar( self.imageCanvases[quantity], self )
-            #children = self.toolbar[quantity].get_children()
-            #for i in range(len(children)-3):
-                #children[i].destroy()
+            #self.imageCanvases[quantity].set_property('height-request', 500)
+            ##self.toolbar[quantity] = NavigationToolbar( self.imageCanvases[quantity], self )
+            ##children = self.toolbar[quantity].get_children()
+            ##for i in range(len(children)-3):
+                ##children[i].destroy()
             
-            box.pack_start(self.imageCanvases[quantity], expand=True, fill=True, padding=0)
-            box.pack_start(self.subHeader[quantity], expand=False, fill=False, padding=0)
-            #box.pack_start(self.toolbar[quantity], False, False, 0)
+            #box.pack_start(self.imageCanvases[quantity], expand=True, fill=True, padding=0)
+            #box.pack_start(self.subHeader[quantity], expand=False, fill=False, padding=0)
+            ##box.pack_start(self.toolbar[quantity], False, False, 0)
             
-            notebook.append_page( box, Gtk.Label(label=quantity) )
-        notebook.connect( 'switch-page', self.on_switch_page )
+            #notebook.append_page( box, Gtk.Label(label=quantity) )
+        #notebook.connect( 'switch-page', self.on_switch_page )
         return notebook
     
     def updateLabel(self, quantity, text ):
         def callback(): 
-            self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' ' + text )
+            self.label.set_markup( self.label.get_label() + ' ' + text )
             return False
         GLib.idle_add(callback)
 
@@ -365,9 +372,9 @@ class MonitorViewer(Gtk.Window):
         def callback():
             percentage = self.percentage_done[quantity]
             if percentage is None:
-                self.labels[quantity].set_markup( '<span color="blue">%s</span>'%(quantity) )
+                self.label.set_markup( '<span color="blue">%s</span>'%(quantity) )
                 return
-            self.labels[quantity].set_markup( '<span color="blue">%s(-%d)</span>'%(quantity, int(self.percentage_done[quantity]) ) )
+            self.label.set_markup( '<span color="blue">%s(-%d)</span>'%(quantity, int(self.percentage_done[quantity]) ) )
             return False
         GLib.idle_add( callback )
 
@@ -423,7 +430,7 @@ class MonitorViewer(Gtk.Window):
         button.set_sensitive(False)
         while Gtk.events_pending():
             Gtk.main_iteration()
-        self.plot_table( self.currentPageLabel )
+        self.plot_table( self.get_active_quantity() )
         button.set_sensitive(True)
         #while Gtk.events_pending():
             #Gtk.main_iteration()
@@ -443,7 +450,7 @@ class MonitorViewer(Gtk.Window):
             print 'removeLock created in thread %s %s'%( threading.currentThread().getName(), quantity )
             removeLockButton = Gtk.Button()
             removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
-            self.subHeader[quantity].pack_start( removeLockButton, False, False, 0 )
+            self.subHeader.pack_start( removeLockButton, False, False, 0 )
             removeLockButton.connect('clicked', self.manually_remove_lock, quantity )
             removeLockButton.show()
             return False
@@ -531,7 +538,7 @@ class MonitorViewer(Gtk.Window):
             estimateEnd = np.mean( self.eta ) * len(runIDs_todo)
             self.updateLabel(quantity,'ETA <b>%s</b>'%( time.ctime( estimateEnd + time.time() ) ) )
         
-        if self.currentPageLabel == quantity:
+        if self.get_active_quantity == quantity:
             self.plot_table( quantity )
         print 'finished %s runID %s in thread %s'%( quantity, runID, threading.currentThread().getName() )
         return False
@@ -677,23 +684,26 @@ class MonitorViewer(Gtk.Window):
             #print 'should get runID', runID, 'ohdu', ohdu
             #open_imageViewer( runID, ohdu )
     
-    def on_switch_page( self, notebook, page, page_num ):
-        self.currentPageLabel = notebook.get_tab_label_text(page)
-        print
-        print 'active notebook', self.currentPageLabel
-        self.plot_table( self.currentPageLabel )
+    #def on_switch_page( self, notebook, page, page_num ):
+        #self.currentPageLabel = notebook.get_tab_label_text(page)
+        #print
+        #print 'active notebook', self.currentPageLabel
+        #self.plot_table( self.currentPageLabel )
         
-    def on_mouse_move( self, window, event ):
-        canvasSize = self.imageCanvases[self.currentPageLabel].get_allocation()
-        print 'canvas size', canvasSize.x, canvasSize.y, canvasSize.width, canvasSize.height
-        print 'mouse event fig.canvas', (event.x, event.y)
-        print 'axes position', self.grid[0].get_window_extent()
+    #def on_mouse_move( self, window, event ):
+        #canvasSize = self.imageCanvases[self.currentPageLabel].get_allocation()
+        #print 'canvas size', canvasSize.x, canvasSize.y, canvasSize.width, canvasSize.height
+        #print 'mouse event fig.canvas', (event.x, event.y)
+        #print 'axes position', self.grid[0].get_window_extent()
     
     def get_active_ohdus(self):
         return [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
 
     def get_active_yrange(self):
         return [ button.get_label() for button in self.yrangeBox.get_children() if button.get_active() ][0]
+    
+    def get_active_quantity(self):
+        return [ button.get_label() for button in self.quantitySelector if button.get_active() ][0]
     
     def plot_table( self, quantity, max_per_subplot=4 ):
         '''
@@ -705,11 +715,11 @@ class MonitorViewer(Gtk.Window):
         startTime = time.time()
         
         print 'plotting image'
-        allocation = self.imageCanvases[quantity].get_allocation()
+        allocation = self.imageCanvas.get_allocation()
         print 'allocated size', allocation.width, allocation.height
         
-        self.fig[quantity] = plt.figure( figsize=(allocation.width/100., allocation.height/100.), dpi=100)
-        self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( '/home/mota/public/gui/loading.gif' ) )
+        self.fig = plt.figure( figsize=(allocation.width/100., allocation.height/100.), dpi=100)
+        self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( '/home/mota/public/gui/loading.gif' ) )
         
         if not os.path.exists( self.tablePaths[quantity] ): return
         data = np.genfromtxt(  self.tablePaths[quantity], names=True )
@@ -760,7 +770,7 @@ class MonitorViewer(Gtk.Window):
         ohdus_ranges = []
         for i in range(m):
             share = None if self.grid == [] else self.grid[0]
-            self.grid.append( self.fig[quantity].add_subplot(m,1,i+1, sharex=share, sharey=share ) )
+            self.grid.append( self.fig.add_subplot(m,1,i+1, sharex=share, sharey=share ) )
             plt.setp( self.grid[i].get_xticklabels(), visible=False )
             ohdus_ranges.append( ohdus[ int(i*n) : int( (i+1)*n ) ] )
 
@@ -815,19 +825,19 @@ class MonitorViewer(Gtk.Window):
             if m>1:
                 self.grid[i].set_ylim(( (1-.05)*np.nanmin(ycum), val_max ))
 
-        self.fig[quantity].tight_layout(rect=(0, 0, .875, 1))
-        self.fig[quantity].subplots_adjust( hspace = 0.05 )
+        self.fig.tight_layout(rect=(0, 0, .875, 1))
+        self.fig.subplots_adjust( hspace = 0.05 )
         
         print 'plotting path', self.imagePaths[quantity]
-        self.fig[quantity].savefig( self.imagePaths[quantity] )
+        self.fig.savefig( self.imagePaths[quantity] )
         plt.close()
         
         #self.updateLabel(quantity, ' <span color="green">plot done (%ds)</span>'%(time.time()-startTime) )
         
         def callback():
             print 'plotting image callback'
-            self.imageCanvases[quantity].set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
-            self.imageCanvases[quantity].show()
+            self.imageCanvas.set_from_pixbuf( GdkPixbuf.Pixbuf.new_from_file( self.imagePaths[quantity] ) )
+            self.imageCanvas.show()
             return False
         
         GLib.idle_add(callback)
