@@ -351,7 +351,8 @@ class MonitorViewer(Gtk.Window):
         def callback(): 
             self.labels[quantity].set_markup( self.labels[quantity].get_label() + ' ' + text )
             return False
-        GLib.idle_add(callback)
+        #GLib.idle_add(callback)
+        callback()
 
     def should_quit(self):
         return self.quit
