@@ -169,6 +169,9 @@ class MonitorViewer(Gtk.Window):
         self.quit = False
         self.parallel = False
 
+        #self.plot_table( self.get_active_quantity() )
+        self.on_refreshButton_clicked(None)
+        
         if self.parallel:
             for quantity in self.quantities:
                 print 'request thread for %s %s'%(quantity, threading.active_count())
@@ -222,8 +225,8 @@ class MonitorViewer(Gtk.Window):
     def build_header(self):
         subbox = Gtk.HBox()
 
-        subbox.pack_start( Gtk.Label('Dark Current and Readout Noise'), expand=True, fill=True, padding=5 )
-        subbox.pack_start( Gtk.Label('runIDs'), expand=False, fill=False, padding=1 )
+        subbox.pack_start( Gtk.Label( label = 'Dark Current and Readout Noise'), expand=True, fill=True, padding=5 )
+        subbox.pack_start( Gtk.Label( label = 'runIDs'), expand=False, fill=False, padding=1 )
 
         self.runIDRangeEntry = Gtk.Entry()
         if self.range_ is None:
@@ -233,24 +236,24 @@ class MonitorViewer(Gtk.Window):
         self.runIDRangeEntry.set_width_chars(len(' auto: auto'))
         subbox.pack_start( self.runIDRangeEntry, expand=False, fill=False, padding=1 )
 
-        ypopover = Gtk.Popover( modal = True, position = Gtk.PositionType.BOTTOM )
+        ypopover = Gtk.Popover( modal = False, position = Gtk.PositionType.BOTTOM )
         ypopover.add( self.build_yrange_box() )
-        self.yrangeButton = Gtk.Button( label='yrange', relief = Gtk.ReliefStyle.NONE )
-        self.yrangeButton.connect('clicked', lambda _: self.show_popover(_, ypopover) )
+        self.yrangeButton = Gtk.ToggleButton( label='yrange', relief = Gtk.ReliefStyle.NONE )
+        self.yrangeButton.connect('toggled', lambda _: self.show_popover(_, ypopover) )
         
         subbox.pack_start( self.yrangeButton, expand=False, fill=False, padding=1 )
         
-        popover = Gtk.Popover( modal = True, position = Gtk.PositionType.BOTTOM )
+        popover = Gtk.Popover( modal = False, position = Gtk.PositionType.BOTTOM )
         popover.add( self.build_ohdu_box() )
-        ohduButton = Gtk.Button( label='ohdus', relief = Gtk.ReliefStyle.NONE )
-        ohduButton.connect('clicked', lambda _: self.show_popover(_, popover) )
+        ohduButton = Gtk.ToggleButton( label='ohdus', relief = Gtk.ReliefStyle.NONE )
+        ohduButton.connect('toggled', lambda _: self.show_popover(_, popover) )
 
         subbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
 
-        qpopover = Gtk.Popover( modal = True, position = Gtk.PositionType.BOTTOM )
+        qpopover = Gtk.Popover( modal = False, position = Gtk.PositionType.BOTTOM )
         qpopover.add( self.build_quantity_box() )
-        quantityButton = Gtk.Button( label='quantity', relief = Gtk.ReliefStyle.NONE )
-        quantityButton.connect('clicked', lambda _: self.show_popover(_, qpopover) )
+        quantityButton = Gtk.ToggleButton( label='quantity', relief = Gtk.ReliefStyle.NONE )
+        quantityButton.connect('toggled', lambda _: self.show_popover(_, qpopover) )
 
         subbox.pack_start( quantityButton, expand=False, fill=False, padding=1 )
         
@@ -260,19 +263,23 @@ class MonitorViewer(Gtk.Window):
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
         return subbox
     
-    def show_popover( self, widget, popover ):
-        popover.set_relative_to(widget)
-        popover.show_all()
-        popover.popup()
+    def show_popover( self, widget, popover, ref=None ):
+        if ref is None: ref = widget
+        if widget.get_active():
+            popover.set_relative_to(ref)
+            popover.show_all()
+            popover.popup()
+        else:
+            popover.hide()
         return
     
     def build_explanation_popover( self, widget, ref, quantity ):
-        popover = Gtk.Popover( modal = True, position = Gtk.PositionType.LEFT )
+        popover = Gtk.Popover( modal = False, position = Gtk.PositionType.LEFT )
         markup = '<span color="blue">%s</span>' % quantity
         label = Gtk.Label()
         popover.add( label )
         label.set_markup( markup )
-        widget.connect( 'clicked', lambda _: self.show_popover( ref, popover) )
+        widget.connect( 'toggled', lambda _: self.show_popover( widget, popover, ref=ref) )
         return popover
 
     def build_quantity_box(self):
@@ -286,7 +293,7 @@ class MonitorViewer(Gtk.Window):
             self.quantitySelector.append( btn )
             line = Gtk.HBox()
             line.pack_start( btn, expand=False, fill=True, padding=0)
-            explanationButton = Gtk.Button('?', relief = Gtk.ReliefStyle.NONE)
+            explanationButton = Gtk.ToggleButton( label = '?', relief = Gtk.ReliefStyle.NONE)
             popover = self.build_explanation_popover( explanationButton, btn, quantity )
             line.pack_end( explanationButton, expand=False, fill=True, padding=0)
             vbox.pack_start( line, expand=False, fill=False, padding=0)
@@ -316,7 +323,7 @@ class MonitorViewer(Gtk.Window):
         box.pack_start(self.imageCanvas, expand=True, fill=True, padding=0)
         self.label = Gtk.Label()
         self.subHeader = Gtk.HBox()
-        self.subHeader.pack_start( self.label, expand=False, fill=False, padding=0 )
+        self.subHeader.pack_start( self.label, expand=False, fill=True, padding=0 )
         box.pack_start(self.subHeader, expand=False, fill=False, padding=0)
         return box
     
@@ -381,7 +388,6 @@ class MonitorViewer(Gtk.Window):
 
     def remove_lock(self, quantity ):
         os.remove( '%s%s.lock'%(self.tablePaths[quantity],self.id) )
-        #print 'removing lock', quantity
 
     def remove_all_locks(self, quantity ):
         locks =  glob.glob('%s*.lock'%(self.tablePaths[quantity]) )
@@ -415,12 +421,13 @@ class MonitorViewer(Gtk.Window):
         hours = minutes/60
         string = '%sm'%minutes if hours == 0 else '%sh%sm'%(hours, minutes)
         self.resetLabel( quantity )
-        self.updateLabel(quantity, '<span color="red"><b>is locked by %s for %s</b> will check again soon</span>'%( ','.join(lock_users), string ) )
+        self.updateLabel(quantity, 
+                         '<span color="red"><b>is locked by %s for %s</b> will check again soon</span>'%( ','.join(lock_users), string ) )
 
         if elapsed_time > 5*60 and not self.has_remove_lock_button[quantity]:
             self.has_remove_lock_button[quantity] = True
             print 'should create remove lock button in thread %s %s'%( threading.currentThread().getName(), quantity )
-            self.create_remove_lock_button( quantity )
+            self.create_remove_lock_button( quantity, ', '.join(lock_users) )
         return True
     
     def start_thread(self, callback, quantity):
@@ -428,30 +435,21 @@ class MonitorViewer(Gtk.Window):
         self.thread[quantity].start()
         
     def on_refreshButton_clicked( self, button ):
-        button.set_sensitive(False)
+        #button.set_sensitive(False)
         while Gtk.events_pending():
             Gtk.main_iteration()
         self.plot_table( self.get_active_quantity() )
-        button.set_sensitive(True)
+        #button.set_sensitive(True)
         #while Gtk.events_pending():
             #Gtk.main_iteration()
         return
         
-    def on_interactivePlotButton_clicked( self, button ):
-        print 'interactive toggled %s'%button.get_active()
-        button.set_sensitive(False)
-        while Gtk.events_pending():
-            Gtk.main_iteration()
-        #self.plot_table( self.currentPageLabel )
-        button.set_sensitive(True)
-        return
-    
-    def create_remove_lock_button( self, quantity ):
+    def create_remove_lock_button( self, quantity, users ):
         def callback():
             print 'removeLock created in thread %s %s'%( threading.currentThread().getName(), quantity )
-            removeLockButton = Gtk.Button()
-            removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
-            self.subHeader.pack_start( removeLockButton, False, False, 0 )
+            removeLockButton = Gtk.Button( label='remove %s lock @%s' % (quantity,users) )
+            #removeLockButton.set_label('manually remove all %s locks (use with caution)'%(quantity))
+            self.subHeader.pack_end( removeLockButton, expand=False, fill=False, padding=0 )
             removeLockButton.connect('clicked', self.manually_remove_lock, quantity )
             removeLockButton.show()
             return False
@@ -539,8 +537,7 @@ class MonitorViewer(Gtk.Window):
             estimateEnd = np.mean( self.eta ) * len(runIDs_todo)
             self.updateLabel(quantity,'ETA <b>%s</b>'%( time.ctime( estimateEnd + time.time() ) ) )
         
-        if self.get_active_quantity == quantity:
-            self.plot_table( quantity )
+        if self.get_active_quantity() == quantity: self.plot_table( quantity )
         print 'finished %s runID %s in thread %s'%( quantity, runID, threading.currentThread().getName() )
         return False
     
@@ -650,52 +647,8 @@ class MonitorViewer(Gtk.Window):
             data = np.genfromtxt( self.tablePaths[quantity], names=True )
         else:
             return None
-        #print '(update_table)', data['runID']
         runIDs = list(set([ int(i) for i in data['runID'] ]))
-        #print '(update_table)', runIDs
         return runIDs
-    
-    #def onclick(self, event):
-        ##print 'onclik signal'
-        #print 'onclick', (event.x, event.y)
-        #try:
-            #ax = event.inaxes
-        #except:
-            #return
-        #lines_points = [ (int(line.get_label()), ax.transData.transform((x,y))) for line in ax.get_lines() for x, y in zip(line.get_xdata(),line.get_ydata()) ]
-        ##print 'points', points
-        #picked = [ ( l, ax.transData.inverted().transform((x,y)) ) for l,(x,y) in lines_points if (x-event.x)**2+(y-event.y)**2 < 5**2 ]
-        #print 'picked', picked
-        #if len(picked) > 1:
-            #ohdus = np.unique([ l for l,(x,y) in picked ])
-            #print 'ohdus', ohdus
-            #picked_runIDs = [ x for l,(x,y) in picked ]
-            #runIDmin = min( picked_runIDs )
-            #runIDmax = max( picked_runIDs )
-            #self.runIDRangeEntry.set_text( '%d:%d'%( runIDmin, runIDmax ) )
-            #for button in self.ohdusBox.get_children():
-                #if not int(button.get_label()) in ohdus: 
-                    #button.set_active(False)
-                #else: 
-                    #button.set_active(True)
-            #self.plot_table( self.currentPageLabel, max_per_subplot=len(ohdus))
-        #elif len(picked) == 1:
-            #runID = int(picked[0][1][0])
-            #ohdu = int(picked[0][0])
-            #print 'should get runID', runID, 'ohdu', ohdu
-            #open_imageViewer( runID, ohdu )
-    
-    #def on_switch_page( self, notebook, page, page_num ):
-        #self.currentPageLabel = notebook.get_tab_label_text(page)
-        #print
-        #print 'active notebook', self.currentPageLabel
-        #self.plot_table( self.currentPageLabel )
-        
-    #def on_mouse_move( self, window, event ):
-        #canvasSize = self.imageCanvases[self.currentPageLabel].get_allocation()
-        #print 'canvas size', canvasSize.x, canvasSize.y, canvasSize.width, canvasSize.height
-        #print 'mouse event fig.canvas', (event.x, event.y)
-        #print 'axes position', self.grid[0].get_window_extent()
     
     def get_active_ohdus(self):
         return [ int(button.get_label()) for button in self.ohdusBox.get_children() if button.get_active() ]
@@ -827,7 +780,10 @@ class MonitorViewer(Gtk.Window):
             if m>1:
                 self.grid[i].set_ylim(( (1-.05)*np.nanmin(ycum), val_max ))
 
-        self.fig.tight_layout(rect=(0, 0, .875, .95))
+        try:
+            self.fig.tight_layout(rect=(0, 0, .875, .95))
+        except:
+            print 'could not adjust, please refreh'
         self.fig.subplots_adjust( hspace = 0.05 )
         
         print 'plotting path', self.imagePaths[quantity]

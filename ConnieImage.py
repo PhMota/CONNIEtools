@@ -843,7 +843,29 @@ class ActiveImage( ImageBase ):
 
     def median2( self, axis=1 ):
         return np.median( self.image[:,-self.width/2:], axis=axis )
-    
+
+def split_image_half( image, axis=0 ):
+    half = image.shape[axis]/2
+    if axis == 0:
+        return image[ 0:half, :], image[ half:, :]
+    elif axis == 1:
+        return image[:, 0:half], image[:, half:]
+
+def generate_line_correction( reference ):
+    return np.nanmedian( reference, axis=1 )
+
+def generate_line_corrected_image( image, reference ):
+    correction = generate_line_correction( reference )[:,None]
+    return image - correction, reference - correction
+
+def set_above_threshold_to_nan( image, thr, radius ):
+    imagecopy = np.array(image)
+    s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    clusters = scipy.ndimage.label( imagecopy >= thr, structure=s33 )[0]
+    distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+    imagecopy[ distance_from_thr < radius ] = np.nan
+    return imagecopy
+
 class SideImage(ImageBase):
     def __init__( self, image, name=None ):
         ImageBase.__init__(self,image)
@@ -869,13 +891,24 @@ class SideImage(ImageBase):
         self.os = np.s_[:,-self.overscanWidth:]
         self.ac = np.s_[:,:-self.overscanWidth]
     
-        
     def active( self ):
         return ActiveImage( self.image[self.ac] )
     
     def overscan( self ):
         return OverScanImage( self.image[self.os] )
 
+    def get_active_image( self ):
+        return self.image[:,:-self.overscanWidth ]
+
+    def get_rightmost_half_active_image( self ):
+        return 
+    
+    def get_overscan_image( self ):
+        return self.image[:,-self.overscanWidth: ]
+
+    def get_active_and_overscan_images( self ):
+        return get_active_image(), get_overscan_image()
+    
     def diffMAD( self ):
         image = self.active().image - self.active().v_medians()[None:]
         std = np.mean( stats.MAD( image, axis=1 ) )
@@ -915,7 +948,8 @@ class SideImage(ImageBase):
         return std
     
     def lambdaBGbin( self, sigma, gain, thr=15, osi=False ):
-        #print '(SideImage.lambdaBGbin)sigma=', sigma, 'gain=', gain, 'thr=', 15
+        #ac, os = generate_line_corrected_image( *self.get_active_and_overscan_images() )
+        #ac = split_image_half( ac, axis=1 )[1]
         
         subimage = self.image[:,:-self.overscanWidth ]
         shape = subimage.shape
@@ -960,7 +994,8 @@ class SideImage(ImageBase):
 
         p0OS = [np.sum(histOS[maskCountOS]),0., 1.]
         paramsOS = scipy.optimize.curve_fit( fit_funcOS, xOS[maskCountOS], histOS[maskCountOS], p0=p0OS )[0]
-        #print '(SideImage.lambdaBGbin)paramsOS=', paramsOS
+        print '(SideImage.lambdaBGbin)paramsOS=', paramsOS
+        print '(SideImage.lambdaBGbin)paramsOSMLE=', stats.maxloglikelyhood( scipy.stats.norm.pdf, dataOS, p0=[0.,1.], bounds=[(-np.inf,0), (np.inf, np.inf)] )
         #ax.step( xOS[maskCountOS], histOS[maskCountOS], where='mid' )
         #ax.step( xOS[maskCountOS], paramsOS[0]*scipy.stats.norm.pdf(xOS[maskCountOS],paramsOS[1],paramsOS[2]), where='mid' )
 
