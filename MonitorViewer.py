@@ -327,46 +327,6 @@ class MonitorViewer(Gtk.Window):
         box.pack_start(self.subHeader, expand=False, fill=False, padding=0)
         return box
     
-        #notebook = Gtk.Notebook()        
-        #notebook.set_scrollable(True)
-        #notebook.popup_enable()
-        #self.currentPageLabel = None
-        #self.labels = {}
-        #self.fig = {}
-        #self.subHeader = {}
-        #self.imageCanvases = {}
-        #self.toolbar = {}
-        #for quantity in self.quantities:
-            #box = Gtk.VBox()
-            ##vbox.pack_start( box, True, True, 0)
-
-            #self.labels[quantity] = Gtk.Label()
-            #self.labels[quantity].set_justify(Gtk.Justification.LEFT)
-            #self.subHeader[quantity] = Gtk.HBox()
-            #self.resetLabel(quantity)
-            #self.subHeader[quantity].pack_start( self.labels[quantity], expand=False, fill=False, padding=0 )
-            #self.fig[quantity] = Figure(dpi=100)
-            ##self.fig[quantity].canvas.mpl_connect('button_press_event', self.onclick )
-            ##if self.interactivePlotButton.get_active():
-                ##self.imageCanvases[quantity] = FigureCanvas(self.fig[quantity])
-            ##else:
-                ##self.imageCanvases[quantity] = Gtk.Image()
-            #self.imageCanvases[quantity] = Gtk.Image()
-            
-            #self.imageCanvases[quantity].set_property('height-request', 500)
-            ##self.toolbar[quantity] = NavigationToolbar( self.imageCanvases[quantity], self )
-            ##children = self.toolbar[quantity].get_children()
-            ##for i in range(len(children)-3):
-                ##children[i].destroy()
-            
-            #box.pack_start(self.imageCanvases[quantity], expand=True, fill=True, padding=0)
-            #box.pack_start(self.subHeader[quantity], expand=False, fill=False, padding=0)
-            ##box.pack_start(self.toolbar[quantity], False, False, 0)
-            
-            #notebook.append_page( box, Gtk.Label(label=quantity) )
-        #notebook.connect( 'switch-page', self.on_switch_page )
-        #return notebook
-    
     def updateLabel(self, quantity, text ):
         def callback(): 
             self.label.set_markup( self.label.get_label() + ' ' + text )
@@ -462,7 +422,7 @@ class MonitorViewer(Gtk.Window):
         self.has_remove_lock_button[quantity] = False
         self.resetLabel(quantity)
         GLib.idle_add( button.destroy )
-        
+    
     def update_table(self, quantity ):
         '''
         computes an entry for the type specified, reads the previous table and appends to it. During its execution the table file is locked to avoid other instances of the code to modify the file
@@ -475,16 +435,12 @@ class MonitorViewer(Gtk.Window):
         self.create_lock( quantity )
         
         if quantity in ['sigmaOS', 'sigmaOSbin', 'sigmaOSMAD', 'sigmaOSMAD2', 'gainCu']:
-            #all_runIDs_reversed = range(6322, 6521+1)[::-1]
             all_runIDs_reversed = ConniePaths.runIDProcessed_v3()[::-1]
-            #print '(update_table)', all_runIDs_reversed
         elif quantity in ['lambdaBGbin', 'lambdaBGbinRAW']:
-            #all_runIDs_reversed = extraGainRanges[-1]
-            #all_runIDs_reversed.extend( self.read_from_table_runIDs( quantity='gainCu' )[::-1] )
             all_runIDs_reversed = self.read_from_table_runIDs( quantity='gainCu' )[::-1]
         else:
             all_runIDs_reversed = ConniePaths.runID()[::-1]
-            #all_runIDs_reversed = range(6322, 6522+1)
+
         if os.path.exists( self.tablePaths[quantity] ):
             data = np.genfromtxt( self.tablePaths[quantity], names=True )
             data = data.tolist()
