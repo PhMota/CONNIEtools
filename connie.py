@@ -3662,6 +3662,14 @@ class Callable:
         Gtk.main()
 
     @staticmethod
+    def MonitorViewer( **kwargs ):
+        Callable.monitorViewer( **kwargs )
+
+    @staticmethod
+    def monitorviewer( **kwargs ):
+        Callable.monitorViewer( **kwargs )
+
+    @staticmethod
     def monitorViewer( **kwargs ):
         win = MonitorViewer.MonitorViewer( **kwargs )
         try:

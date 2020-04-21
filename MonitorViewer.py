@@ -111,14 +111,14 @@ class MonitorViewer(Gtk.Window):
         
         self.log_file = '/home/mota/public/gui/%s.log'%self.id
         self.quantities = [
+            'darkCurrent', 
+            'readoutNoise', 
             #'lambdaBGbin',
             'lambdaBGbinRAW',
             #'gainElectronbin',
             'gainElectronMAD',
             'gainElectron',
             'diffMedianBG',
-            'darkCurrent', 
-            'readoutNoise', 
             'diffMADSqr', 
             'sigmaOS', 
             'sigmaOSMAD', 
@@ -257,7 +257,7 @@ class MonitorViewer(Gtk.Window):
 
         subbox.pack_start( quantityButton, expand=False, fill=False, padding=1 )
         
-        refreshButton = Gtk.Button(label='refresh')
+        refreshButton = Gtk.Button( label = 'plot' )
         refreshButton.connect('clicked', self.on_refreshButton_clicked )
 
         subbox.pack_start(refreshButton, expand=False, fill=False, padding=1)
@@ -699,7 +699,7 @@ class MonitorViewer(Gtk.Window):
                 x = data['runID'][ohduMask]
                 self.lines[ohdu], = self.grid[i].plot( x, y, '.', ms=3., 
                         label = r'${\bf %02d}$ $\mu%.2f$ $\sigma%.2f$' % ( ohdu, np.mean(y), np.std(y) ) )#, rasterized=True )
-                self.grid[i].hlines( np.mean(y), min(x), max(x), color=self.lines[ohdu].get_color() )
+                self.grid[i].hlines( np.mean(y), min(x), max(x), color=self.lines[ohdu].get_color(), linewidth = .5 )
         
         #print 'lines data', lines[2][0].get_xdata()
         ax = self.grid[0].twiny()
