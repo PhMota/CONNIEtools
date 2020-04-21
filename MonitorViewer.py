@@ -245,17 +245,17 @@ class MonitorViewer(Gtk.Window):
         
         popover = Gtk.Popover( modal = False, position = Gtk.PositionType.BOTTOM )
         popover.add( self.build_ohdu_box() )
-        ohduButton = Gtk.ToggleButton( label='ohdus', relief = Gtk.ReliefStyle.NONE )
-        ohduButton.connect('toggled', lambda _: self.show_popover(_, popover) )
+        self.ohduButton = Gtk.ToggleButton( label='ohdus', relief = Gtk.ReliefStyle.NONE )
+        self.ohduButton.connect('toggled', lambda _: self.show_popover(_, popover) )
 
-        subbox.pack_start(ohduButton, expand=False, fill=False, padding=1 )
+        subbox.pack_start(self.ohduButton, expand=False, fill=False, padding=1 )
 
         qpopover = Gtk.Popover( modal = False, position = Gtk.PositionType.BOTTOM )
         qpopover.add( self.build_quantity_box() )
-        quantityButton = Gtk.ToggleButton( label='quantity', relief = Gtk.ReliefStyle.NONE )
-        quantityButton.connect('toggled', lambda _: self.show_popover(_, qpopover) )
+        self.quantityButton = Gtk.ToggleButton( label='quantity', relief = Gtk.ReliefStyle.NONE )
+        self.quantityButton.connect('toggled', lambda _: self.show_popover(_, qpopover) )
 
-        subbox.pack_start( quantityButton, expand=False, fill=False, padding=1 )
+        subbox.pack_start( self.quantityButton, expand=False, fill=False, padding=1 )
         
         refreshButton = Gtk.Button( label = 'plot' )
         refreshButton.connect('clicked', self.on_refreshButton_clicked )
@@ -396,6 +396,9 @@ class MonitorViewer(Gtk.Window):
         
     def on_refreshButton_clicked( self, button ):
         #button.set_sensitive(False)
+        self.yrangeButton.set_active(False)
+        self.ohduButton.set_active(False)
+        self.quantityButton.set_active(False)
         while Gtk.events_pending():
             Gtk.main_iteration()
         self.plot_table( self.get_active_quantity() )
@@ -709,17 +712,12 @@ class MonitorViewer(Gtk.Window):
         ax.set_zorder(-100)
 
         val_max = 1
-        if len(ycum) > 1:
-            if len(ycum[0]) > 0:
-                yrange = self.get_active_yrange()
-                #print 
-                #print yrange
-                #print self.yrangeBox.get_children()[0].get_label()
-                if yrange == self.yrangeBox.get_children()[0].get_label():
-                    val_max = 1.05 * np.nanmax( ycum )
-                elif yrange == self.yrangeBox.get_children()[1].get_label():
-                    medians = np.nanmedian(ycum, axis=1)
-                    val_max = 2 * np.nanmax( medians )
+        yrange = self.get_active_yrange()
+        if yrange == self.yrangeBox.get_children()[0].get_label():
+            val_max = 1.05 * np.nanmax( ycum )
+        elif yrange == self.yrangeBox.get_children()[1].get_label():
+            medians = np.nanmedian(ycum, axis=1)
+            val_max = 2 * np.nanmax( medians )
         
         self.grid[-1].set_xlabel('runID')
         plt.setp(self.grid[-1].get_xticklabels(), visible=True)
