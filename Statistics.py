@@ -62,10 +62,9 @@ class poisson_norm:
     @classmethod
     def pdf2(cls, x, loc = 0, scale = 1, g = 1, mu = 1, tol=1e-8 ):
         result = np.zeros_like(x).astype(float)
-        mu = abs(mu)
-        scale = abs(scale)
-        g = abs(g)
-        #loc = loc + g*mu**2
+        if scale < 0: raise Exception( 'scale is negative' )
+        if mu < 0: raise Exception( 'mu is negative' )
+        if g < 0: raise Exception( 'g is negative' )
         
         k = 0
         poisson_sum = 0
@@ -75,13 +74,7 @@ class poisson_norm:
             poisson_weights.append( poisson.pmf( k, mu=mu ) )
             poisson_sum += poisson_weights[-1]
             if poisson_weights[-1]/poisson_sum < tol: break
-        res = np.sum([ w*norm.pdf( x, loc = loc + g*k*mu, scale = scale ) for k, w in enumerate(poisson_weights) ])
-        #while True:
-            #poisson_weight = poisson.pmf( k, mu=mu )
-            #poisson_sum += poisson_weight
-            #result += poisson_weight * norm.pdf( x, loc = loc + g*k*mu, scale = scale )
-            #if poisson_weight/poisson_sum < tol: break
-            #k += 1
+        res = np.sum([ w*norm.pdf( x, loc = loc + g*k, scale = scale ) for k, w in enumerate(poisson_weights) ])
         if cls.verbose: print 'took', len(poisson_weights), 'iteractions'
         return result
 
@@ -92,8 +85,8 @@ class poisson_norm:
         if g < 0: raise Exception( 'g is negative' )
         
         result = np.zeros_like(x).astype(float)
-        if fix_loc:
-            loc = loc - g*mu
+        #if fix_loc:
+            #loc = loc - g*mu
         
         k = 0
         poisson_sum = 0
@@ -159,7 +152,6 @@ def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
 
 def negloglikelihood( pdf, params, X ):
     res = -np.sum( np.log( pdf( X, *params )) )
-    #print 'params', params, res
     return res
 
 def maxloglikelihood( pdf, X, p0, jac=False, bounds=None ):

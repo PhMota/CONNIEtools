@@ -3429,8 +3429,9 @@ class NormRVS:
         self.mean = np.mean( self.pos, axis=0 )
         self.var = np.var( self.pos, axis=0 )
         self.std = np.sqrt( self.var )
-        self.fitted = NormFitted( self.x, self.y, self.mean, np.sqrt(self.var) )
+        #self.fitted = NormFitted( self.x, self.y, self.mean, np.sqrt(self.var) )
         self.pixelated = Pixelated( self.x, self.y )
+        self.pixelated5 = Pixelated( self.x, self.y, rebin=(1,5) )
 
     def plot( self, ax, **kwargs ):
         ax.grid(True)
@@ -3444,7 +3445,7 @@ class NormRVS:
         return ax
         
 class NormFitted:
-    def __init__( self, x, y, mean, std, indep=True ):
+    def __init__( self, x, y, mean, std ):
         self.x = x
         self.y = y
         self.mu = [0,0]
@@ -3452,14 +3453,15 @@ class NormFitted:
 
         self.mu[0], self.mu[1], self.sigma = scipy.optimize.minimize( 
             fun = self.negloglikelihood,
-            x0 = [ mean[0], mean[1], std ]
+            x0 = [ mean[0], mean[1], std[0] ]
             ).x
         
     def pdf( self, x, y, p ):
         return scipy.stats.norm.pdf( x, p[0], p[2] )*scipy.stats.norm.pdf( y, p[1], p[2] )
 
     def negloglikelihood( self, p ):
-        return -np.sum( np.log( self.pdf( self.x, self.y, p ) ) )
+        pdf = self.pdf( self.x, self.y, p )
+        return -np.nansum( np.log( pdf ) )
     
     def plot(self, ax, show_original=False ):
         ax.grid(True)
@@ -3477,30 +3479,24 @@ class NormFitted:
             
         
 class Pixelated:
-    def __init__( self, x, y ):
-        self.x, self.y = x, y
-        self.xpix = np.floor(x).astype(int)
-        self.ypix = np.floor(y).astype(int)
-
+    def __init__( self, x, y, rebin=(1,1) ):
+        self.x, self.y = x/rebin[0], y/rebin[1]
+        self.xpix = np.floor(self.x).astype(int)
+        self.ypix = np.floor(self.y).astype(int)
+        
         self.pix, self.pix_count = np.unique( zip(self.xpix, self.ypix), axis=0, return_counts=True )
         self.pixs_x, self.pixs_y = self.pix.T
-        #print self.pix
-        #print self.pix_count
         
-        xbins = np.arange( self.xpix.min(), self.xpix.max()+1, 1)
-        ybins = np.arange( self.ypix.min(), self.ypix.max()+1, 1)
-        self.H, self.xedges, self.yedges = np.histogram2d( self.xpix, self.ypix, bins=[xbins,ybins] )
-        #print self.H
-        #print self.xedges
-        #print self.yedges
+        #xbins = np.arange( self.xpix.min(), self.xpix.max()+1, 1)
+        #ybins = np.arange( self.ypix.min(), self.ypix.max()+1, 1)
+        #self.H, self.xedges, self.yedges = np.histogram2d( self.xpix, self.ypix, bins=[xbins,ybins] )
 
         self.meanxpix, self.meanypix = np.average( self.pix+.5, weights=self.pix_count, axis=0 )
-        self.varxpix, self.varypix = self.var_weighted( self.pix+.5, self.pix_count )
+        self.stdx, self.stdy = np.sqrt( self.var_weighted( self.pix+.5, self.pix_count ) )
+        self.avestd = np.mean([self.stdx, self.stdy])
         
-        self.varpix = np.mean( [self.varxpix, self.varypix] )
-        self.std = np.sqrt(self.varpix)
-        
-        self.fitted = PixelatedNormFitted( self.pixs_x, self.pixs_y, self.pix_count, (self.meanxpix, self.meanypix), self.std, len(self.xpix) )
+        self.fitted = PixelatedNormFitted( self.pixs_x, self.pixs_y, self.pix_count, (self.meanxpix, self.meanypix), (self.avestd, self.avestd), len(self.xpix), fixed_aspect=True )
+        self.fittedx = PixelatedNormFitted( self.pixs_x, self.pixs_y, self.pix_count, (self.meanxpix, self.meanypix), (self.stdx, self.stdy), len(self.xpix) )
 
     def var_weighted( self, x, w ):
         return np.average( x**2, weights=w, axis=0 ) - np.average( x, weights=w, axis=0 )**2
@@ -3526,7 +3522,8 @@ class Pixelated:
         return ax
         
 class PixelatedNormFitted:
-    def __init__( self, pixs_x, pixs_y, pix_count, mean, std, N ):
+    def __init__( self, pixs_x, pixs_y, pix_count, mean, std, N, fixed_aspect = False ):
+        self.fixed_aspect = fixed_aspect
         self.pixs_x = pixs_x
         self.pixs_y = pixs_y
         self.pix_count = pix_count
@@ -3534,23 +3531,26 @@ class PixelatedNormFitted:
         self.std = std
         self.N = N
         self.mu = [0,0]
-        self.mu[0], self.mu[1], self.sigma = scipy.optimize.minimize(
+        self.sigma = [0,0]
+        self.mu[0], self.mu[1], self.sigma[0], self.sigma[1] = scipy.optimize.minimize(
             fun = self.negloglikelihood,
-            x0 = [ self.mean[0], self.mean[1], self.std ],
-            bounds = [(-np.inf,np.inf), (-np.inf, np.inf), (0.1, np.inf)] ).x
+            x0 = [ self.mean[0], self.mean[1], self.std[0], self.std[1] ],
+            bounds = [(-np.inf,np.inf), (-np.inf, np.inf), (0, np.inf), (0, np.inf)] ).x
         
     def integral_norm_pixel( self, xpix, mu, sigma ):
         sqrt2 = np.sqrt(2.)
         return -.5*( scipy.special.erf( -( xpix+1 - mu)/( sqrt2*sigma )) - scipy.special.erf( -( xpix - mu )/( sqrt2*sigma ) ) )
     
     def probability_pixel( self, x, y, p ):
-        return self.integral_norm_pixel( x, mu = p[0], sigma = p[2] ) * self.integral_norm_pixel( y, mu = p[1], sigma = p[2] )
+        if self.fixed_aspect: p[3] = p[2]
+        return self.integral_norm_pixel( x, mu = p[0], sigma = p[2] ) * self.integral_norm_pixel( y, mu = p[1], sigma = p[3] )
     
     def pdf( self, p ):
         return scipy.stats.binom.pmf( self.pix_count, self.N, self.probability_pixel( self.pixs_x, self.pixs_y, p ))
     
     def negloglikelihood( self, p ):
-        return -np.sum( np.log( self.pdf( p ) ) )
+        pdf = self.pdf( p )
+        return -np.nansum( np.log( pdf ) )
 
     def plot( self, ax, show_original = False, **kwargs ):
         ax.grid(True)
@@ -3584,47 +3584,126 @@ class PixelatedNormFitted:
         
 
 class RandomSamplingFit:
-    def __init__(self, number_events):
+    
+    def __init__(self, N_min = 5, N_max = 2000, sigma_max = 1.2):
+        self.N_min = N_min
+        self.N_max = N_max
+        self.sigma_max = sigma_max
+        
+    def generate_events(self, number_events):
         self.values = {}
-        self.values[r'$N$'] = np.random.randint( 5, 2000, size=number_events)
+        self.values[r'$N$'] = np.random.randint( self.N_min, self.N_max, size=number_events)
         self.values[r'$\mu$'] = np.random.random( size=(number_events, 2) )
-        self.values[r'$\sigma$'] = np.random.random( size=number_events )*1.2
+        self.values[r'$\sigma$'] = np.random.random( size=number_events ) * self.sigma_max
 
         self.norm_rvs = [ NormRVS( mu, sigma, N ) for mu, sigma, N in zip(self.values[r'$\mu$'], self.values[r'$\sigma$'], self.values[r'$N$']) ]
-        self.values[r'${\rm std}_{\rm pix}$'] = [ event.pixelated.std for event in self.norm_rvs ]
-        self.values[r'$\sigma_{\rm pix}$'] = [ event.pixelated.fitted.sigma for event in self.norm_rvs ]
+        self.values[r'$\sigma_{\rm pix}$'] = [ event.pixelated.fitted.sigma[0] for event in self.norm_rvs ]
+        self.values[r'$\sigma_{x\rm pix}$'] = [ event.pixelated.fittedx.sigma[0] for event in self.norm_rvs ]
+        self.values[r'$\sigma_{\rm pix5}$'] = [ event.pixelated5.fitted.sigma[0] for event in self.norm_rvs ]
+        self.values[r'$\sigma_{x\rm pix5}$'] = [ event.pixelated5.fittedx.sigma[0] for event in self.norm_rvs ]
+    
+    reconstruction_file = 'reconstruction.csv'
+    def make_table_reconstruction( self, xlabel, ylabels ):
+        table = np.array([ self.values[xlabel] ] + [ self.values[ylabel] for ylabel in ylabels ]).T
+        print 'data.shape', table.shape
+        print table[0]
+        np.savetxt( self.reconstruction_file, table, header = ', '.join([xlabel] + ylabels), delimiter=', ' )
+    
+    @classmethod
+    def plot_reconstruction( cls, ax, bins = None, show_data = True, ylabels = None ):
+        data = np.genfromtxt( cls.reconstruction_file, names = True, delimiter=',', deletechars='', replace_space=' ' )
+        labels = data.dtype.names
+        print 'found labels', labels
+        if ylabels:
+            print 'ylabels', ylabels
+            labels = [labels[0]] + [ label for label in labels[1:] if label in ylabels] 
+        print 'labels', labels
+        if len(labels) == 1:
+            raise Exception('no labels to plot')
+        ax.set_xlabel( labels[0] )
+        ax.set_aspect( aspect = 1 )
 
-    def plot( self, ax, xlabel, ylabel, y2label = False, equal = False, relative_error=False, **kwargs ):
+        inds = None
+        center_bins = None
+        width_bins = None
+        if not bins is None:
+            center_bins = np.mean( [bins[:-1], bins[1:]], axis=0 )
+            width_bins = (bins[:-1] - bins[1:])/2
+            inds = np.digitize( data[labels[0]], bins )
+        if show_data:
+            for label in labels[1:]:
+                ax.plot( data[labels[0]], data[label], '.', ms=1, label = label )
+        
+        if not inds is None:
+            for label in labels[1:]:
+                mean = [ np.mean( np.array( data[label] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                std = [ np.std( np.array( data[label] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                ax.errorbar( center_bins, mean, xerr = width_bins, yerr = std, fmt='.', label = label )
+
+        line = matplotlib.lines.Line2D( ax.get_xlim(), ax.get_xlim(), color='black', linestyle=':')
+        ax.add_line( line )                
+        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
+        return (legend, )
+        
+    def plot( self, ax, xlabel, ylabel, y2label = False, equal = False, relative_error = False, hist = False, bins = None, efficiency = False, **kwargs ):
+        ax.set_xlabel( xlabel )
+        x = np.array( self.values[xlabel] )
+        if not isinstance(ylabel, list):
+            ylabel = [ylabel]
+
         if relative_error:
-            x = self.values[xlabel]
             y = self.values[ylabel]
             y2 = self.values[y2label]
             relerr = lambda a, b: 2.*(np.array(a)-np.array(b))/(np.array(a)+np.array(b))
             z = relerr(y,y2)
             
-            ax.set_xlabel( xlabel ), ax.set_ylabel( r'errRel(%s, %s)'%(ylabel, y2label) )
-            #ax.plot( x, z, '.' )
-            ax.hist2d( x, z, bins=100 )
-            ax.plot( [min(x),max(x)], [0,0], 'k:' )
+            ax.set_ylabel( r'errRel(%s, %s)'%(ylabel, y2label) )
+            if hist:
+                ax.hist2d( x, z, bins=100 )
+            else:
+                dx = .5
+                x = np.floor(x/dx).astype(int)
+            
+            line = matplotlib.lines.Line2D( ax.get_xlim(), (0,0), color='black', linestyle=':')
+            ax.add_line( line )
+        elif efficiency:
+            center_bins = np.mean( [bins[:-1], bins[1:]], axis=0 )
+            width_bins = (bins[:-1] - bins[1:])/2
+            inds = np.digitize( x, bins )
+            for ylabel_ in ylabel:
+                mean = [ np.mean( np.array(self.values[ylabel_])[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                std = [ np.std( np.array(self.values[ylabel_])[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                prob = [ scipy.stats.norm.pdf( 0, loc = mean[i]-center_bins[i], scale=std[i] ) for i,_ in enumerate(center_bins)  ]
+                ax.errorbar( center_bins, prob, xerr = width_bins, fmt='.', label = ylabel_ )
         else:
             ax.set_aspect(aspect=1)
-            ax.set_xlabel( xlabel ), ax.set_ylabel( ylabel )
-            ax.plot( self.values[xlabel], self.values[ylabel], '.' )
+            inds = None
+            center_bins = None
+            width_bins = None
+            if not bins is None:
+                center_bins = np.mean( [bins[:-1], bins[1:]], axis=0 )
+                width_bins = (bins[:-1] - bins[1:])/2
+                inds = np.digitize( x, bins )
+            for ylabel_ in ylabel:
+                ax.plot( x, self.values[ylabel_], '.', ms=1, label = ylabel_ )
+            if not inds is None:
+                for ylabel_ in ylabel:
+                    mean = [ np.mean( np.array(self.values[ylabel_])[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                    std = [ np.std( np.array(self.values[ylabel_])[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                    ax.errorbar( center_bins, mean, xerr = width_bins, yerr = std, fmt='.', label = ylabel_ )
             if equal:
-                xmin = min(self.values[xlabel])
-                xmax = max(self.values[xlabel])
-                ymin = min(self.values[ylabel])
-                ymax = max(self.values[ylabel])
+                line = matplotlib.lines.Line2D( ax.get_xlim(), ax.get_xlim(), color='black', linestyle=':')
+                ax.add_line( line )
                 
-                min_ = max(xmin,ymin)
-                max_ = min(xmax,ymax)
-                ax.plot( [min_,max_], [min_,max_], 'k:' )
+        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
+        return (legend, )
 
 def plot2file( file, plotfun, **kwargs ):
     fig = plt.figure()
+    extra_artists = None
     if not isinstance( plotfun, list ):
-        plotfun( fig.add_subplot(111), **kwargs )
-    fig.savefig(file)
+        extra_artists = plotfun( fig.add_subplot(111), **kwargs )
+    fig.savefig(file, bbox_extra_artists = extra_artists, bbox_inches='tight')
     print 'saved plot', file
     return
 
@@ -3632,20 +3711,66 @@ class Callable:
     @staticmethod
     def size_like( **kwargs ):
         print 'size_like function'
-        N = 100
-        mux = 0
-        muy = 0
-        sigma = 1.
+        generate_events = False
+        if generate_events:
+            number_events = 10000
+            randomSamplingFit = RandomSamplingFit()
+            randomSamplingFit.generate_events( number_events )
+            randomSamplingFit.make_table_reconstruction(
+                xlabel = r'$\sigma$', 
+                ylabels = [r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$']
+                )
+        else:
+            sets = (
+                (r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$'),
+                (r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$')
+                )
+            for i, ylabels in enumerate(sets):
+                print ylabels
+                plot2file(
+                    'reconstruction%d.png'%i, 
+                    RandomSamplingFit.plot_reconstruction,
+                    ylabels = ylabels
+                    )
+                plot2file(
+                    'reconstructionBin%d.png'%i, 
+                    RandomSamplingFit.plot_reconstruction,
+                    ylabels = ylabels,
+                    show_data = False,
+                    bins = np.arange( 0, 1.21, .1 )
+                    )
         
-        matplotlib.rcParams['text.usetex'] = True
-        matplotlib.rcParams['font.sans-serif'] = 'Helvetica'
-        
-        randomSamplingFit = RandomSamplingFit(10000)
-        plot2file('sigma_vs_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix}$', equal=True )
-        plot2file('stdPix_vs_sigmaPix.png', randomSamplingFit.plot, xlabel=r'${\rm std}_{\rm pix}$', ylabel=r'$\sigma_{\rm pix}$', equal=True )
-        plot2file('sigma_vs_err_sigma_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix}$', y2label=r'$\sigma$', relative_error=True )
-        plot2file('sigmaPix_vs_err_sigma_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$\sigma_{\rm pix}$', ylabel=r'$\sigma_{\rm pix}$', y2label=r'$\sigma$', relative_error=True )
-        plot2file('N_vs_err_sigma_sigmaPix.png', randomSamplingFit.plot, xlabel=r'$N$', ylabel=r'$\sigma_{\rm pix}$', y2label=r'$\sigma$', relative_error=True )
+        #plot2file('sigma_vs_sigmaPix.png', 
+                  #randomSamplingFit.plot, 
+                  #xlabel = r'$\sigma$', 
+                  #ylabel = [r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$'], 
+                  #equal = True,
+                  #bins = np.arange( 0, 1.21, .1 ) 
+                  #)
+        #plot2file('sigma_vs_sigmaPix_efficiency.png', 
+                  #randomSamplingFit.plot, 
+                  #xlabel = r'$\sigma$', 
+                  #ylabel = [r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$'], 
+                  #bins = np.arange( 0, 1.21, .1 ),
+                  #efficiency = True 
+                  #)
+        #plot2file('sigmaPix_vs_err_sigma_sigmaPix.png', 
+                  #randomSamplingFit.plot, 
+                  #xlabel=r'$\sigma_{\rm pix}$', 
+                  #ylabel=r'$\sigma_{\rm pix}$', 
+                  #y2label=r'$\sigma$', 
+                  #relative_error=True )
+
+        #plot2file('sigma_vs_sigmaPixX.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{x\rm pix}$', equal=True )
+        ##plot2file('sigmaPixX_vs_err_sigma_sigmaPixX.png', randomSamplingFit.plot, xlabel=r'$\sigma_{x\rm pix}$', ylabel=r'$\sigma_{x\rm pix}$', y2label=r'$\sigma$', relative_error=True )
+
+        #plot2file('sigma_vs_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix5}$', equal=True )
+        ##plot2file('sigma_vs_err_sigma_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
+        ##plot2file('sigmaPix5_vs_err_sigma_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma_{\rm pix5}$', ylabel=r'$\sigma_{\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
+
+        #plot2file('sigma_vs_sigmaPix5X.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{x\rm pix5}$', equal=True )
+        ##plot2file('sigma_vs_err_sigma_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
+        ##plot2file('sigmaPix5X_vs_err_sigma_sigmaPix5X.png', randomSamplingFit.plot, xlabel=r'$\sigma_{x\rm pix5}$', ylabel=r'$\sigma_{x\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
         exit(0)
         
         return

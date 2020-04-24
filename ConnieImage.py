@@ -847,9 +847,9 @@ class ActiveImage( ImageBase ):
 def split_image_half( image, axis=0 ):
     half = image.shape[axis]/2
     if axis == 0:
-        return image[ 0:half, :], image[ half:, :]
+        return image[ :half, :], image[ half:, :]
     elif axis == 1:
-        return image[:, 0:half], image[:, half:]
+        return image[:, :half], image[:, half:]
 
 def generate_line_correction( reference ):
     return np.nanmedian( reference, axis=1 )
@@ -859,7 +859,7 @@ def generate_line_corrected_image( image, reference ):
     return image - correction, reference - correction
 
 def set_above_threshold_to_nan( image, thr, radius ):
-    imagecopy = np.array(image)
+    imagecopy = image.copy()
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
     clusters = scipy.ndimage.label( imagecopy >= thr, structure=s33 )[0]
     distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
@@ -948,29 +948,18 @@ class SideImage(ImageBase):
         return std
     
     def lambdaBGbin( self, sigma, gain, thr=15, osi=False ):
-        #ac, os = generate_line_corrected_image( *self.get_active_and_overscan_images() )
-        #ac = split_image_half( ac, axis=1 )[1]
-        
-        subimage = self.image[:,:-self.overscanWidth ]
+        subimage = self.active().image
         shape = subimage.shape
         subimage = subimage[:,shape[1]/2:]
         if osi: 
-            osicorrection = np.median( self.image[:,self.overscanWidth:], axis=1 )
-            #print '(lambdaBGbin)shapeOSI=', osicorrection.shape
+            osicorrection = np.median( self.overscan().image, axis=1 )
             subimage -= osicorrection[:,None]
-        #print '(lambdaBGbin)shape=', shape, subimage.shape, 
-
-        s33 = [[1,1,1], [1,1,1], [1,1,1]]
-        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
-        #print 'clusters shape', clusters.shape
-        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
-        x, y = np.unravel_index( np.argmax( distance_from_thr ), subimage.shape )
-        #print 'void max dist', distance_from_thr[ x, y ]
-        data = subimage[ distance_from_thr >= 3 ]
-        if data.size == 0:
-            return None
-        #print '(SideImage.lambdaBGbin)data.size=', data.size, 'subimage.size=', subimage.size, '%.2f' % (float(data.size)/subimage.size)
+        print 'mean', np.mean(subimage), subimage.max()
         
+        image = set_above_threshold_to_nan(subimage, thr*4, 3)
+        
+        data = image[ image == image]
+        print '(lambdaBGbin)datashape=', data.shape, 
         bins = np.arange(data.min(), data.max(), 1)
         x = .5*(bins[:-1] + bins[1:])
         hist, _ = np.histogram(data, bins)
@@ -995,16 +984,10 @@ class SideImage(ImageBase):
         p0OS = [np.sum(histOS[maskCountOS]),0., 1.]
         paramsOS = scipy.optimize.curve_fit( fit_funcOS, xOS[maskCountOS], histOS[maskCountOS], p0=p0OS )[0]
         print '(SideImage.lambdaBGbin)paramsOS=', paramsOS
-        print '(SideImage.lambdaBGbin)paramsOSMLE=', stats.maxloglikelyhood( scipy.stats.norm.pdf, dataOS, p0=[0.,1.], bounds=[(-np.inf,0), (np.inf, np.inf)] )
-        #ax.step( xOS[maskCountOS], histOS[maskCountOS], where='mid' )
-        #ax.step( xOS[maskCountOS], paramsOS[0]*scipy.stats.norm.pdf(xOS[maskCountOS],paramsOS[1],paramsOS[2]), where='mid' )
+        #print '(SideImage.lambdaBGbin)paramsOSMLE=', \
+            #stats.maxloglikelihood( scipy.stats.norm.pdf, dataOS, p0=[0.,1.], bounds=[(-np.inf,0), (np.inf, np.inf)] ).x
 
-        #ax = fig.add_subplot(212, sharex=ax )
-        #ax.step( x[maskCount], hist[maskCount], where='mid' )
         A = float( np.sum(hist[maskCount]) )/np.sum(histOS[maskCountOS]) * paramsOS[0]
-        #ax.step( x[maskCount], A * scipy.stats.norm.pdf( x[maskCount], paramsOS[1], paramsOS[2] ), where='mid' )
-        #fig.savefig('lambdBGbin.png')
-        #print '(SideImage.lambdaBGbin)image saved'
         
         fit_func = lambda x,A,loc,mu: A*stats.poisson_norm.pdf(x, loc, paramsOS[2], gain, mu )
         p0 = [A, paramsOS[1], .001]
@@ -1014,6 +997,46 @@ class SideImage(ImageBase):
             print '(SideImage.lambdaBGbin)params=', params
         except:
             print 'error in lambdaBGbin'
+            return None
+        
+        return params[-1]
+
+    def lambdaBGbinBorder( self, sigma, gain, thr=15, border = True ):
+        overscan, active = self.get_overscan_image(), self.get_active_image()
+        active = split_image_half(active, axis=1)[1]
+        active, overscan = generate_line_corrected_image( active, overscan )
+        print 'mean', np.mean(active), active.max()
+        active = set_above_threshold_to_nan(active, thr*4, 3)
+        if border:
+            active = active[100:-100, :-150]
+            overscan = overscan[100:-100,:]
+        
+        dataOS = overscan[ overscan == overscan ]
+        binsOS = np.arange(dataOS.min(), dataOS.max(), 1)
+        histOS, _ = np.histogram(dataOS, binsOS)
+        xOS = .5*(binsOS[:-1] + binsOS[1:])
+        maskCountOS = histOS > 10
+        fit_funcOS = lambda x,A,mu,sig: A*scipy.stats.norm.pdf(x, mu, sig)
+        p0OS = [np.sum(histOS[maskCountOS]),0., 1.]
+        paramsOS = scipy.optimize.curve_fit( fit_funcOS, xOS[maskCountOS], histOS[maskCountOS], p0=p0OS )[0]
+        print '(SideImage.lambdaBGbinBorder)paramsOS=', paramsOS
+        
+        data = active[ active == active ]
+        print '(lambdaBGbin)datashape=', data.shape, 
+        bins = np.arange(data.min(), data.max(), 1)
+        x = .5*(bins[:-1] + bins[1:])
+        hist, _ = np.histogram(data, bins)
+        maskCount = hist > 10
+
+        A = float( np.sum(hist[maskCount]) )/np.sum(histOS[maskCountOS]) * paramsOS[0]
+        fit_func = lambda x,A,loc,mu: A*stats.poisson_norm.pdf(x, loc=loc, scale=paramsOS[2], g=gain, mu=mu )
+        p0 = [A, paramsOS[1], 1.]
+        print '(SideImage.lambdaBGbinBorder)fitting'
+        try:
+            params = scipy.optimize.curve_fit( fit_func, x[maskCount], hist[maskCount], p0=p0, bounds=[(0,-np.inf,0), (np.inf, np.inf, np.inf)] )[0]
+            print '(SideImage.lambdaBGbinBorder)params=', params
+        except:
+            print 'error in lambdaBGbinBorder'
             return None
         
         return params[-1]

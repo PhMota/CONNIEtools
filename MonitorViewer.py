@@ -111,19 +111,20 @@ class MonitorViewer(Gtk.Window):
         
         self.log_file = '/home/mota/public/gui/%s.log'%self.id
         self.quantities = [
+            'lambdaBGbinBorderRAW',
             'darkCurrent', 
             'readoutNoise', 
             #'lambdaBGbin',
             'lambdaBGbinRAW',
             #'gainElectronbin',
-            'gainElectronMAD',
-            'gainElectron',
-            'diffMedianBG',
-            'diffMADSqr', 
-            'sigmaOS', 
-            'sigmaOSMAD', 
-            'sigmaOSMAD2', 
-            'sigmaOSbin',
+            #'gainElectronMAD',
+            #'gainElectron',
+            #'diffMedianBG',
+            #'diffMADSqr', 
+            #'sigmaOS', 
+            #'sigmaOSMAD', 
+            #'sigmaOSMAD2', 
+            #'sigmaOSbin',
             'gainCu',
             ]
         
@@ -439,7 +440,7 @@ class MonitorViewer(Gtk.Window):
         
         if quantity in ['sigmaOS', 'sigmaOSbin', 'sigmaOSMAD', 'sigmaOSMAD2', 'gainCu']:
             all_runIDs_reversed = ConniePaths.runIDProcessed_v3()[::-1]
-        elif quantity in ['lambdaBGbin', 'lambdaBGbinRAW']:
+        elif quantity in ['lambdaBGbin', 'lambdaBGbinRAW', 'lambdaBGbinBorderRAW' ]:
             all_runIDs_reversed = self.read_from_table_runIDs( quantity='gainCu' )[::-1]
         else:
             all_runIDs_reversed = ConniePaths.runID()[::-1]
@@ -571,18 +572,23 @@ class MonitorViewer(Gtk.Window):
         elif quantity == 'lambdaBGbinRAW':
             print 'lambdaBGbin', 'runID=', runID, 'ohud=', ohdu
             gainCu = None
-            #for index, extraGainRange in enumerate(extraGainRanges):
-                #if runID in extraGainRange:
-                    #gainCu = extraGainValues[index][ohdu]
-                    #if gainCu is None: return None
-                    #if gainCu == 0: return None
-                    #break
             if gainCu is None and 'gainCu' in self.quantities: gainCu = self.read_from_table( runID=runID, ohdu=ohdu, quantity='gainCu' )
             if gainCu is None or gainCu == 0: return None
             gain = gainCu * 3.745e-3 #ADU/keV * keV/e-
 
             lambdaBGbinRAW = ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).lambdaBGbin( sigma=None, gain=gain, osi=True )
             return lambdaBGbinRAW
+        elif quantity == 'lambdaBGbinBorderRAW':
+            gainCu = None
+            if gainCu is None and 'gainCu' in self.quantities: gainCu = self.read_from_table( runID=runID, ohdu=ohdu, quantity='gainCu' )
+            if gainCu is None or gainCu == 0: return None
+            gain = gainCu * 3.745e-3 #ADU/keV * keV/e-
+            
+            lambdaBGbinBorderRAW = ConnieImage\
+                .FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug )\
+                    .left()\
+                        .lambdaBGbinBorder( sigma=None, gain=gain )
+            return lambdaBGbinBorderRAW
         else:
             print 'unpredicted quantity', quantity
             exit(1)
@@ -722,7 +728,6 @@ class MonitorViewer(Gtk.Window):
         self.grid[-1].set_xlabel('runID')
         plt.setp(self.grid[-1].get_xticklabels(), visible=True)
         for i in range(m):
-            #box = grid[i].get_position()
             self.grid[i].grid(True)
             if quantity == 'darkCurrent':
                 self.grid[i].set_ylabel(r'm-m$_{os}$')
