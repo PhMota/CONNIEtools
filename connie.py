@@ -3486,7 +3486,7 @@ class Pixelated:
         
         self.pix, self.pix_count = np.unique( zip(self.xpix, self.ypix), axis=0, return_counts=True )
         self.pixs_x, self.pixs_y = self.pix.T
-        
+        self.n_y = self.pixs_y.max() - self.pixs_y.min() + 1
         #xbins = np.arange( self.xpix.min(), self.xpix.max()+1, 1)
         #ybins = np.arange( self.ypix.min(), self.ypix.max()+1, 1)
         #self.H, self.xedges, self.yedges = np.histogram2d( self.xpix, self.ypix, bins=[xbins,ybins] )
@@ -3592,22 +3592,23 @@ class RandomSamplingFit:
         
     def generate_events(self, number_events):
         self.values = {}
-        self.values[r'$N$'] = np.random.randint( self.N_min, self.N_max, size=number_events)
+        self.values[r'$N_{\rm e}$'] = np.random.randint( self.N_min, self.N_max, size=number_events)
         self.values[r'$\mu$'] = np.random.random( size=(number_events, 2) )
         self.values[r'$\sigma$'] = np.random.random( size=number_events ) * self.sigma_max
 
-        self.norm_rvs = [ NormRVS( mu, sigma, N ) for mu, sigma, N in zip(self.values[r'$\mu$'], self.values[r'$\sigma$'], self.values[r'$N$']) ]
+        self.norm_rvs = [ NormRVS( mu, sigma, N ) for mu, sigma, N in zip(self.values[r'$\mu$'], self.values[r'$\sigma$'], self.values[r'$N_{\rm e}$']) ]
+        self.values[r'$N_{y\rm pix}$'] = [ event.pixelated.n_y for event in self.norm_rvs ]
         self.values[r'$\sigma_{\rm pix}$'] = [ event.pixelated.fitted.sigma[0] for event in self.norm_rvs ]
         self.values[r'$\sigma_{x\rm pix}$'] = [ event.pixelated.fittedx.sigma[0] for event in self.norm_rvs ]
         self.values[r'$\sigma_{\rm pix5}$'] = [ event.pixelated5.fitted.sigma[0] for event in self.norm_rvs ]
         self.values[r'$\sigma_{x\rm pix5}$'] = [ event.pixelated5.fittedx.sigma[0] for event in self.norm_rvs ]
+        self.values[r'$N_{y\rm pix5}$'] = [ event.pixelated5.n_y for event in self.norm_rvs ]
     
     reconstruction_file = 'reconstruction.csv'
-    def make_table_reconstruction( self, xlabel, ylabels ):
-        table = np.array([ self.values[xlabel] ] + [ self.values[ylabel] for ylabel in ylabels ]).T
+    def make_table_reconstruction( self, labels ):
+        table = np.array([ self.values[label] for label in labels ]).T
         print 'data.shape', table.shape
-        print table[0]
-        np.savetxt( self.reconstruction_file, table, header = ', '.join([xlabel] + ylabels), delimiter=', ' )
+        np.savetxt( self.reconstruction_file, table, header = ', '.join(labels), delimiter=', ' )
     
     @classmethod
     def plot_reconstruction( cls, ax, bins = None, show_data = True, ylabels = None ):
@@ -3711,14 +3712,13 @@ class Callable:
     @staticmethod
     def size_like( **kwargs ):
         print 'size_like function'
-        generate_events = False
+        generate_events = True
         if generate_events:
             number_events = 10000
             randomSamplingFit = RandomSamplingFit()
             randomSamplingFit.generate_events( number_events )
             randomSamplingFit.make_table_reconstruction(
-                xlabel = r'$\sigma$', 
-                ylabels = [r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$']
+                labels = [r'$\sigma$', r'$N_{\rm e}$', r'$N_{y\rm pix}$', r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$N_{y\rm pix5}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$']
                 )
         else:
             sets = (
