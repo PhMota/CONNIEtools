@@ -3487,9 +3487,9 @@ class Pixelated:
         self.pix, self.pix_count = np.unique( zip(self.xpix, self.ypix), axis=0, return_counts=True )
         self.pixs_x, self.pixs_y = self.pix.T
         self.n_y = self.pixs_y.max() - self.pixs_y.min() + 1
-        #xbins = np.arange( self.xpix.min(), self.xpix.max()+1, 1)
-        #ybins = np.arange( self.ypix.min(), self.ypix.max()+1, 1)
-        #self.H, self.xedges, self.yedges = np.histogram2d( self.xpix, self.ypix, bins=[xbins,ybins] )
+        xbins = np.arange( self.xpix.min(), self.xpix.max()+1.1, 1)
+        ybins = np.arange( self.ypix.min(), self.ypix.max()+1.1, 1)
+        self.hist, self.xedges, self.yedges = np.histogram2d( self.xpix, self.ypix, bins=[xbins,ybins] )
 
         self.meanxpix, self.meanypix = np.average( self.pix+.5, weights=self.pix_count, axis=0 )
         self.stdx, self.stdy = np.sqrt( self.var_weighted( self.pix+.5, self.pix_count ) )
@@ -3518,8 +3518,28 @@ class Pixelated:
         
         if show_original:
             ax.scatter(self.x, self.y, s=.1, c='k' )
-        ax.set_title(r'${\rm mean}=(%.3f,%.3f)\quad{\rm std}=%.3f$' %( self.meanxpix, self.meanypix, self.std ) )
+        ax.set_title(r'${\rm mean}=(%.3f,%.3f)\quad{\rm std}=(%.3f,%.3f)$' %( self.meanxpix, self.meanypix, self.stdx, self,stdy ) )
         return ax
+
+    def plot_hist(self, ax, show_original = False, **kwargs):
+        ax.grid(True)
+        ax.set_aspect(aspect=1)
+        ax.set_xlabel(r'$x[{\rm pix}]$')
+        ax.set_ylabel(r'$y[{\rm pix}]$')
+        H = self.hist.T/float(self.hist.max())
+        ax.imshow( 
+            np.sqrt(H), 
+            aspect='equal', 
+            alpha=.5, 
+            origin='lower', 
+            extent=(self.xedges.min(), self.xedges.max(), self.yedges.min(), self.yedges.max()),
+            cmap='Blues'
+            )
+        ax.set_xticks(self.xedges)
+        ax.set_yticks(self.yedges)
+        if show_original: ax.scatter(self.x, self.y, s=.1, c='k' )
+        ax.set_title(r'${\rm mean}=(%.3f,%.3f)\quad{\rm std}=(%.3f,%.3f)$' %( self.meanxpix, self.meanypix, self.stdx, self.stdy ) )
+        return #ax
         
 class PixelatedNormFitted:
     def __init__( self, pixs_x, pixs_y, pix_count, mean, std, N, fixed_aspect = False ):
@@ -3595,8 +3615,9 @@ class RandomSamplingFit:
         self.values[r'$N_{\rm e}$'] = np.random.randint( self.N_min, self.N_max, size=number_events)
         self.values[r'$\mu$'] = np.random.random( size=(number_events, 2) )
         self.values[r'$\sigma$'] = np.random.random( size=number_events ) * self.sigma_max
-
+        
         self.norm_rvs = [ NormRVS( mu, sigma, N ) for mu, sigma, N in zip(self.values[r'$\mu$'], self.values[r'$\sigma$'], self.values[r'$N_{\rm e}$']) ]
+        
         self.values[r'$N_{y\rm pix}$'] = [ event.pixelated.n_y for event in self.norm_rvs ]
         self.values[r'$\sigma_{\rm pix}$'] = [ event.pixelated.fitted.sigma[0] for event in self.norm_rvs ]
         self.values[r'$\sigma_{x\rm pix}$'] = [ event.pixelated.fittedx.sigma[0] for event in self.norm_rvs ]
@@ -3609,7 +3630,7 @@ class RandomSamplingFit:
         table = np.array([ self.values[label] for label in labels ]).T
         print 'data.shape', table.shape
         np.savetxt( self.reconstruction_file, table, header = ', '.join(labels), delimiter=', ' )
-    
+        
     @classmethod
     def plot_reconstruction( cls, ax, bins = None, show_data = True, ylabels = None ):
         data = np.genfromtxt( cls.reconstruction_file, names = True, delimiter=',', deletechars='', replace_space=' ' )
@@ -3640,6 +3661,50 @@ class RandomSamplingFit:
                 mean = [ np.mean( np.array( data[label] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
                 std = [ np.std( np.array( data[label] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
                 ax.errorbar( center_bins, mean, xerr = width_bins, yerr = std, fmt='.', label = label )
+
+        line = matplotlib.lines.Line2D( ax.get_xlim(), ax.get_xlim(), color='black', linestyle=':')
+        ax.add_line( line )                
+        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
+        return (legend, )
+
+    @classmethod
+    def plot_reconstruction_ny( cls, ax, bins = None, show_data = True, ylabels = None ):
+        data = np.genfromtxt( cls.reconstruction_file, names = True, delimiter=',', deletechars='', replace_space=' ' )
+        labels = data.dtype.names
+        print data.dtype
+        selections = [ 
+            #(r' $N_{y\rm pix5}=1$', data[r'$N_{y\rm pix5}$'] == 1),
+            (r' $N_{y\rm pix5}>1$', data[r'$N_{y\rm pix5}$'] > 1)
+            ]
+
+        if ylabels:
+            print 'ylabels', ylabels
+            labels = [labels[0]] + [ label for label in labels[1:] if label in ylabels] 
+        print 'labels', labels, data.dtype.names
+        if len(labels) == 1:
+            raise Exception('no labels to plot')
+        ax.set_xlabel( labels[0] )
+        ax.set_aspect( aspect = 1 )
+
+        inds = None
+        center_bins = None
+        width_bins = None
+        if show_data:
+            for label in labels[1:]:
+                for selection in selections:
+                    mask = selection[1]
+                    ax.plot( data[labels[0]][mask], data[label][mask], '.', ms=1, label = label + selection[0] )
+        
+        for selection in selections:
+            mask = selection[1]
+            if not bins is None:
+                center_bins = np.mean( [bins[:-1], bins[1:]], axis=0 )
+                width_bins = (bins[:-1] - bins[1:])/2
+                inds = np.digitize( data[labels[0]][mask], bins )
+                for label in labels[1:]:
+                    mean = [ np.mean( np.array( data[label][mask] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                    std = [ np.std( np.array( data[label][mask] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                    ax.errorbar( center_bins, mean, xerr = width_bins, yerr = std, fmt='.', label = label + selection[0] )
 
         line = matplotlib.lines.Line2D( ax.get_xlim(), ax.get_xlim(), color='black', linestyle=':')
         ax.add_line( line )                
@@ -3712,7 +3777,7 @@ class Callable:
     @staticmethod
     def size_like( **kwargs ):
         print 'size_like function'
-        generate_events = True
+        generate_events = False
         if generate_events:
             number_events = 10000
             randomSamplingFit = RandomSamplingFit()
@@ -3721,6 +3786,29 @@ class Callable:
                 labels = [r'$\sigma$', r'$N_{\rm e}$', r'$N_{y\rm pix}$', r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$N_{y\rm pix5}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$']
                 )
         else:
+            event = NormRVS( (.5,.5), 1, 100)
+            plot2file(
+                'pixelated.png',
+                event.pixelated.plot_hist,
+                show_original = True
+                )
+            plot2file(
+                'pixelated5.png',
+                event.pixelated5.plot_hist,
+                show_original = True
+                )
+            event = NormRVS( (0,0), .5, 500)
+            plot2file(
+                'pixelatedA.png',
+                event.pixelated.plot_hist,
+                show_original = True
+                )
+            plot2file(
+                'pixelatedA5.png',
+                event.pixelated5.plot_hist,
+                show_original = True
+                )
+            exit(0)
             sets = (
                 (r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$'),
                 (r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$')
@@ -3728,49 +3816,30 @@ class Callable:
             for i, ylabels in enumerate(sets):
                 print ylabels
                 plot2file(
-                    'reconstruction%d.png'%i, 
-                    RandomSamplingFit.plot_reconstruction,
+                    'reconstructionNy%d.png'%i, 
+                    RandomSamplingFit.plot_reconstruction_ny,
                     ylabels = ylabels
                     )
                 plot2file(
-                    'reconstructionBin%d.png'%i, 
-                    RandomSamplingFit.plot_reconstruction,
+                    'reconstructionBinNy%d.png'%i, 
+                    RandomSamplingFit.plot_reconstruction_ny,
                     ylabels = ylabels,
                     show_data = False,
                     bins = np.arange( 0, 1.21, .1 )
                     )
+                #plot2file(
+                    #'reconstruction%d.png'%i, 
+                    #RandomSamplingFit.plot_reconstruction,
+                    #ylabels = ylabels
+                    #)
+                #plot2file(
+                    #'reconstructionBin%d.png'%i, 
+                    #RandomSamplingFit.plot_reconstruction,
+                    #ylabels = ylabels,
+                    #show_data = False,
+                    #bins = np.arange( 0, 1.21, .1 )
+                    #)
         
-        #plot2file('sigma_vs_sigmaPix.png', 
-                  #randomSamplingFit.plot, 
-                  #xlabel = r'$\sigma$', 
-                  #ylabel = [r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$'], 
-                  #equal = True,
-                  #bins = np.arange( 0, 1.21, .1 ) 
-                  #)
-        #plot2file('sigma_vs_sigmaPix_efficiency.png', 
-                  #randomSamplingFit.plot, 
-                  #xlabel = r'$\sigma$', 
-                  #ylabel = [r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$'], 
-                  #bins = np.arange( 0, 1.21, .1 ),
-                  #efficiency = True 
-                  #)
-        #plot2file('sigmaPix_vs_err_sigma_sigmaPix.png', 
-                  #randomSamplingFit.plot, 
-                  #xlabel=r'$\sigma_{\rm pix}$', 
-                  #ylabel=r'$\sigma_{\rm pix}$', 
-                  #y2label=r'$\sigma$', 
-                  #relative_error=True )
-
-        #plot2file('sigma_vs_sigmaPixX.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{x\rm pix}$', equal=True )
-        ##plot2file('sigmaPixX_vs_err_sigma_sigmaPixX.png', randomSamplingFit.plot, xlabel=r'$\sigma_{x\rm pix}$', ylabel=r'$\sigma_{x\rm pix}$', y2label=r'$\sigma$', relative_error=True )
-
-        #plot2file('sigma_vs_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix5}$', equal=True )
-        ##plot2file('sigma_vs_err_sigma_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
-        ##plot2file('sigmaPix5_vs_err_sigma_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma_{\rm pix5}$', ylabel=r'$\sigma_{\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
-
-        #plot2file('sigma_vs_sigmaPix5X.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{x\rm pix5}$', equal=True )
-        ##plot2file('sigma_vs_err_sigma_sigmaPix5.png', randomSamplingFit.plot, xlabel=r'$\sigma$', ylabel=r'$\sigma_{\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
-        ##plot2file('sigmaPix5X_vs_err_sigma_sigmaPix5X.png', randomSamplingFit.plot, xlabel=r'$\sigma_{x\rm pix5}$', ylabel=r'$\sigma_{x\rm pix5}$', y2label=r'$\sigma$', relative_error=True )
         exit(0)
         
         return

@@ -85,6 +85,21 @@ extraGainValues = [
     [0, 0, 1530.48, 750.294, 1653.49, 1717.29, 1675.27, 1506.53, 1886.35, 1956.81, 1577.76, 0, 0, 2207.73, 1929.47, 1785.21]
     ]
 
+gainAverages = {
+    2: 1526,
+    3: 1915,
+    4: 1637,
+    5: 1710,
+    6: 1648,
+    7: 1498,
+    8: 1878,
+    9: 1957,
+    10: 1810,
+    13: 2179,
+    14: 1923
+    }
+
+
 
 class MonitorViewer(Gtk.Window):
     
@@ -431,7 +446,7 @@ class MonitorViewer(Gtk.Window):
         '''
         computes an entry for the type specified, reads the previous table and appends to it. During its execution the table file is locked to avoid other instances of the code to modify the file
         '''
-        
+
         if self.is_locked( quantity ): 
             self.wait[quantity] = 5
             return False
@@ -440,7 +455,7 @@ class MonitorViewer(Gtk.Window):
         
         if quantity in ['sigmaOS', 'sigmaOSbin', 'sigmaOSMAD', 'sigmaOSMAD2', 'gainCu']:
             all_runIDs_reversed = ConniePaths.runIDProcessed_v3()[::-1]
-        elif quantity in ['lambdaBGbin', 'lambdaBGbinRAW', 'lambdaBGbinBorderRAW' ]:
+        elif quantity in [ 'lambdaBGbin' ]:
             all_runIDs_reversed = self.read_from_table_runIDs( quantity='gainCu' )[::-1]
         else:
             all_runIDs_reversed = ConniePaths.runID()[::-1]
@@ -573,7 +588,12 @@ class MonitorViewer(Gtk.Window):
             print 'lambdaBGbin', 'runID=', runID, 'ohud=', ohdu
             gainCu = None
             if gainCu is None and 'gainCu' in self.quantities: gainCu = self.read_from_table( runID=runID, ohdu=ohdu, quantity='gainCu' )
-            if gainCu is None or gainCu == 0: return None
+            if gainCu is None or gainCu == 0:
+                if ohdu in gainAverages.keys():
+                    gainCu = gainAverages[ohdu]
+                else:
+                    return None
+            
             gain = gainCu * 3.745e-3 #ADU/keV * keV/e-
 
             lambdaBGbinRAW = ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).lambdaBGbin( sigma=None, gain=gain, osi=True )
@@ -581,7 +601,11 @@ class MonitorViewer(Gtk.Window):
         elif quantity == 'lambdaBGbinBorderRAW':
             gainCu = None
             if gainCu is None and 'gainCu' in self.quantities: gainCu = self.read_from_table( runID=runID, ohdu=ohdu, quantity='gainCu' )
-            if gainCu is None or gainCu == 0: return None
+            if gainCu is None or gainCu == 0: 
+                if ohdu in gainAverages.keys():
+                    gainCu = gainAverages[ohdu]
+                else:
+                    return None
             gain = gainCu * 3.745e-3 #ADU/keV * keV/e-
             
             lambdaBGbinBorderRAW = ConnieImage\
@@ -633,6 +657,7 @@ class MonitorViewer(Gtk.Window):
         self.plotting[quantity] = True
         startTime = time.time()
         
+        self.maximize()
         print 'plotting image'
         allocation = self.imageCanvas.get_allocation()
         print 'allocated size', allocation.width, allocation.height
