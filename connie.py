@@ -3621,8 +3621,10 @@ class RandomSamplingFit:
         self.values[r'$N_{y\rm pix}$'] = [ event.pixelated.n_y for event in self.norm_rvs ]
         self.values[r'$\sigma_{\rm pix}$'] = [ event.pixelated.fitted.sigma[0] for event in self.norm_rvs ]
         self.values[r'$\sigma_{x\rm pix}$'] = [ event.pixelated.fittedx.sigma[0] for event in self.norm_rvs ]
+        self.values[r'$\sigma_{y\rm pix}$'] = [ event.pixelated.fittedx.sigma[1] for event in self.norm_rvs ]
         self.values[r'$\sigma_{\rm pix5}$'] = [ event.pixelated5.fitted.sigma[0] for event in self.norm_rvs ]
         self.values[r'$\sigma_{x\rm pix5}$'] = [ event.pixelated5.fittedx.sigma[0] for event in self.norm_rvs ]
+        self.values[r'$\sigma_{y\rm pix5}$'] = [ event.pixelated5.fittedx.sigma[1] for event in self.norm_rvs ]
         self.values[r'$N_{y\rm pix5}$'] = [ event.pixelated5.n_y for event in self.norm_rvs ]
     
     reconstruction_file = 'reconstruction.csv'
@@ -3632,13 +3634,19 @@ class RandomSamplingFit:
         np.savetxt( self.reconstruction_file, table, header = ', '.join(labels), delimiter=', ' )
         
     @classmethod
-    def plot_reconstruction( cls, ax, bins = None, show_data = True, ylabels = None ):
+    def plot_reconstruction( cls, ax, bins = None, show_data = True, ylabels = None, xlabel = None ):
         data = np.genfromtxt( cls.reconstruction_file, names = True, delimiter=',', deletechars='', replace_space=' ' )
         labels = data.dtype.names
         print 'found labels', labels
         if ylabels:
             print 'ylabels', ylabels
-            labels = [labels[0]] + [ label for label in labels[1:] if label in ylabels] 
+            _labels = []
+            if not xlabel is None:
+                _labels += [ xlabel ]
+            else:
+                _labels += [ labels[0] ] 
+            _labels += ylabels
+            labels = _labels
         print 'labels', labels
         if len(labels) == 1:
             raise Exception('no labels to plot')
@@ -3654,12 +3662,16 @@ class RandomSamplingFit:
             inds = np.digitize( data[labels[0]], bins )
         if show_data:
             for label in labels[1:]:
-                ax.plot( data[labels[0]], data[label], '.', ms=1, label = label )
+                y = data[label]
+                if 'y' in label and '5' in label: y *= 5
+                ax.plot( data[labels[0]], y, '.', ms=1, label = label )
         
         if not inds is None:
             for label in labels[1:]:
-                mean = [ np.mean( np.array( data[label] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
-                std = [ np.std( np.array( data[label] )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                y = data[label]
+                if 'y' in label and '5' in label: y *= 5
+                mean = [ np.mean( np.array( y )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
+                std = [ np.std( np.array( y )[ inds-1 == i ] ) for i,_ in enumerate(center_bins) ]
                 ax.errorbar( center_bins, mean, xerr = width_bins, yerr = std, fmt='.', label = label )
 
         line = matplotlib.lines.Line2D( ax.get_xlim(), ax.get_xlim(), color='black', linestyle=':')
@@ -3673,8 +3685,8 @@ class RandomSamplingFit:
         labels = data.dtype.names
         print data.dtype
         selections = [ 
-            #(r' $N_{y\rm pix5}=1$', data[r'$N_{y\rm pix5}$'] == 1),
-            (r' $N_{y\rm pix5}>1$', data[r'$N_{y\rm pix5}$'] > 1)
+            (r' $N_{y\rm pix5}>1$', data[r'$N_{y\rm pix5}$'] > 1),
+            (r' $N_{y\rm pix5}=1$', data[r'$N_{y\rm pix5}$'] == 1),
             ]
 
         if ylabels:
@@ -3783,67 +3795,76 @@ class Callable:
             randomSamplingFit = RandomSamplingFit()
             randomSamplingFit.generate_events( number_events )
             randomSamplingFit.make_table_reconstruction(
-                labels = [r'$\sigma$', r'$N_{\rm e}$', r'$N_{y\rm pix}$', r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$N_{y\rm pix5}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$']
+                labels = [r'$\sigma$', r'$N_{\rm e}$', r'$N_{y\rm pix}$', r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$', r'$\sigma_{y\rm pix}$', r'$N_{y\rm pix5}$', r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$', r'$\sigma_{y\rm pix5}$']
                 )
         else:
-            event = NormRVS( (.5,.5), 1, 100)
-            plot2file(
-                'pixelated.png',
-                event.pixelated.plot_hist,
-                show_original = True
-                )
-            plot2file(
-                'pixelated5.png',
-                event.pixelated5.plot_hist,
-                show_original = True
-                )
-            event = NormRVS( (0,0), .5, 500)
-            plot2file(
-                'pixelatedA.png',
-                event.pixelated.plot_hist,
-                show_original = True
-                )
-            plot2file(
-                'pixelatedA5.png',
-                event.pixelated5.plot_hist,
-                show_original = True
-                )
-            exit(0)
+            #event = NormRVS( (0,0), 1, 2000)
+            #plot2file(
+                #'pixelatedB.png',
+                #event.pixelated.plot_hist,
+                #show_original = True
+                #)
+            #plot2file(
+                #'pixelatedB5.png',
+                #event.pixelated5.plot_hist,
+                #show_original = True
+                #)
+            #event = NormRVS( (0,0), .5, 500)
+            #plot2file(
+                #'pixelatedA.png',
+                #event.pixelated.plot_hist,
+                #show_original = True
+                #)
+            #plot2file(
+                #'pixelatedA5.png',
+                #event.pixelated5.plot_hist,
+                #show_original = True
+                #)
+            #exit(0)
             sets = (
-                (r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$'),
-                (r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$')
+                #(r'$\sigma_{\rm pix}$', r'$\sigma_{x\rm pix}$'),
+                #(r'$\sigma_{\rm pix5}$', r'$\sigma_{x\rm pix5}$'),
+                #(r'$\sigma_{x\rm pix5}$'),
+                (r'$\sigma_{x\rm pix}$', r'$\sigma_{y\rm pix5}$', r'$\sigma_{y\rm pix}$'),
+                (r'$\sigma_{x\rm pix}$', r'$\sigma_{y\rm pix}$'),
+                (r'$\sigma_{x\rm pix5}$', r'$\sigma_{y\rm pix5}$', r'$\sigma_{x\rm pix}$'),
                 )
             for i, ylabels in enumerate(sets):
-                print ylabels
-                plot2file(
-                    'reconstructionNy%d.png'%i, 
-                    RandomSamplingFit.plot_reconstruction_ny,
-                    ylabels = ylabels
-                    )
-                plot2file(
-                    'reconstructionBinNy%d.png'%i, 
-                    RandomSamplingFit.plot_reconstruction_ny,
-                    ylabels = ylabels,
-                    show_data = False,
-                    bins = np.arange( 0, 1.21, .1 )
-                    )
+                print 'ylabels', ylabels
                 #plot2file(
-                    #'reconstruction%d.png'%i, 
-                    #RandomSamplingFit.plot_reconstruction,
+                    #'reconstructionNy%d.png'%i, 
+                    #RandomSamplingFit.plot_reconstruction_ny,
                     #ylabels = ylabels
                     #)
                 #plot2file(
-                    #'reconstructionBin%d.png'%i, 
-                    #RandomSamplingFit.plot_reconstruction,
+                    #'reconstructionBinNy%d.png'%i, 
+                    #RandomSamplingFit.plot_reconstruction_ny,
                     #ylabels = ylabels,
                     #show_data = False,
                     #bins = np.arange( 0, 1.21, .1 )
                     #)
+                plot2file(
+                    'reconstructionXY%d.png'%i, 
+                    RandomSamplingFit.plot_reconstruction,
+                    ylabels = ylabels[1:],
+                    xlabel = ylabels[0],
+                    )
+                plot2file(
+                    'reconstructionXYBin%d.png'%i, 
+                    RandomSamplingFit.plot_reconstruction,
+                    ylabels = ylabels[1:],
+                    xlabel = ylabels[0],
+                    show_data = False,
+                    bins = np.arange( 0, 1.21, .1 )
+                    )
         
         exit(0)
         
         return
-        
+    #@staticmethod
+    #def reconstructionViewer( **kwargs ):
+        #win = ReconstructionViewer( **kwargs )
+        #Gtk.main()
     
     @staticmethod
     def spectrumViewer( **kwargs ):

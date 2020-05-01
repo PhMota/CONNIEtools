@@ -686,4 +686,76 @@ class SimulateImage:
 
         return reconstructedNeutrinos, reconstructedNeutrinosE2, totalNeutrinos, totalNeutrinos2, Enu, Erec
 
- 
+
+def set_above_threshold_to_nan( image, thr, radius ):
+    imagecopy = image.copy()
+    s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    clusters = scipy.ndimage.label( imagecopy >= thr, structure=s33 )[0]
+    distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+    imagecopy[ distance_from_thr < radius ] = np.nan
+    return imagecopy
+
+def label_clusters( condition_image ):
+    s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    return scipy.ndimage.label( condition_image, structure=s33 )[0]
+
+def compute_distances( image ):
+    return scipy.ndimage.distance_transform_edt( image )
+
+def _extract_cluster_( val, pos ):
+    return [val, pos]
+
+
+class Image:
+    def _label_clusters_above_threshold_( self, threshold ):
+        return label_clusters( self.image >= thr )
+    
+    def _compute_distances_to_clusters_( self ):
+        return scipy.ndimage.distance_transform_edt(  )
+
+    def _extract_clusters_( self, threshold, border ):
+        border *= np.sqrt(2)
+        labeled_clusters = label_clusters( self.image > thershold )
+        is_cluster = labeled_clusters > 0
+        distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
+        labeled_clusters = label_clusters( distances_to_cluster <= border )
+        
+        list_of_clusters = scipy.ndimage.labeled_comprehension( 
+            self.image, 
+            labeled_clusters, 
+            index=None, 
+            func=lambda v, p: [v, p], 
+            out_dtype=list, 
+            pass_positions=True 
+            )
+        levels = scipy.ndimage.labeled_comprehension( self.image, labeled_clusters, index=None, func=lambda v: v, out_dtype=list )
+        
+    def extract_hits( self ):
+        pass
+    
+class Hits:
+    def compute_spectrum():
+        return Spectrum( self.E )
+        
+class Spectrum:
+    def plot( self ):
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.histogram( self.E, self.bins )
+        fig.savefig(self.file)
+
+def simulate_events( shape, ranges, number_of_events ):
+    pos = np.random.random( number_of_events*2 )
+    
+def analysis( shape, ranges, numver_of_events ):
+    events = simulate_events( shape, ranges, number_of_events )
+    image = events.generate_image( shape )
+    image.plot()
+    image.fits()
+    hits = image.extract_hits( mode = 'cluster', threshold = 15*4, border = 3 )
+    hits.catalog()
+    hits.plot()
+    reconstruction_efficiency = hits.compute_efficiency( events )
+    spectrum = hits.compute_spectrum()
+    spectrum.plot()
+    
