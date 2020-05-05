@@ -691,7 +691,7 @@ def set_above_threshold_to_nan( image, thr, radius ):
     imagecopy = image.copy()
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
     clusters = scipy.ndimage.label( imagecopy >= thr, structure=s33 )[0]
-    distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+    distance_from_thr = scipy.ndimage.distance_transform_edt( clusters == 0 )
     imagecopy[ distance_from_thr < radius ] = np.nan
     return imagecopy
 
@@ -704,7 +704,6 @@ def compute_distances( image ):
 
 def _extract_cluster_( val, pos ):
     return [val, pos]
-
 
 class Image:
     def _label_clusters_above_threshold_( self, threshold ):
@@ -722,7 +721,7 @@ class Image:
         
         list_of_clusters = scipy.ndimage.labeled_comprehension( 
             self.image, 
-            labeled_clusters, 
+            labeled_clusters,
             index=None, 
             func=lambda v, p: [v, p], 
             out_dtype=list, 
