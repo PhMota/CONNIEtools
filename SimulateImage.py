@@ -841,8 +841,22 @@ class Hits:
         if sorted:
             ret = ret[ret[:,sorted].argsort()]
         return ret
+    
 
-def analysis( shape, charge_range, number_of_events, gain = 7.25 ):
+def plot_reconstruction( output, events, image, hits ):
+    from matplotlib import pylab as plt
+    from matplotlib.patches import *
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    
+    ax.imshow( image.T, origin='lower', cmap='Blues' )
+    x, y = events.get_array_of_projections().T-.5
+    ax.scatter( x, y, c='r', s=1 )
+    for xBary, yBary, xVar, yVar in hits.table( ('xBary', 'yBary', 'xVar', 'yVar') ):
+        ax.add_artist( Ellipse((xBary, yBary), width=np.sqrt(xVar), height=np.sqrt(yVar), fill=False ) )
+    fig.savefig(output)
+
+def analysis( shape, charge_range, number_of_events, gain = 7.25, threshold = 15*4, border=3 ):
     from Timer import Timer
     with Timer('events generated') as t:
         events = simulate_events( shape, charge_range, number_of_events )
@@ -862,9 +876,12 @@ def analysis( shape, charge_range, number_of_events, gain = 7.25 ):
         image.save_fits('simulation.fits')
         
     with Timer('hits extracted') as t:
-        hits = image.extract_hits( mode = 'cluster', threshold = 15*4, border = 3 )
+        hits = image.extract_hits( mode = 'cluster', threshold = threshold, border = border )
     print( hits.number_of_events )
     print( hits.table(('xBary', 'yBary', 'xVar', 'E'), sorted = -1) )
     
+    with Timer('plot reconstruction') as t:
+        plot_reconstruction( 'recon.pdf', events, image, hits )
+    
 if __name__ == '__main__':
-    analysis( shape = (100,100,675), charge_range = (5,200), number_of_events = 10 )
+    analysis( shape = (200,200,675), charge_range = (5,200), number_of_events = 100, threshold=15 )
