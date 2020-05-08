@@ -1,3 +1,4 @@
+#from __future__ import print_function
 import sys
 import astropy.io.fits
 import numpy as np
@@ -43,6 +44,12 @@ class Properties:
     def ybary( self, values, indices ):
         return self.bary(values, indices)[1]
     
+    def xpix( self, values, indices ):
+        return index_to_xy( indices, self.shape )[0]
+
+    def ypix( self, values, indices ):
+        return index_to_xy( indices, self.shape )[1]
+    
     def compute( self, props, val, index ):
         return [ Properties.__dict__[prop](self, val, index) for prop in props ]
     
@@ -73,7 +80,7 @@ def check_arg( index, type, err_msg ):
 if __name__ == '__main__':
     if len(sys.argv) < 7:
         print( 'usage: \n\t> %s <fits_file> <ohdu> <threshold> <border> <quantities> <output_file>' % sys.argv[0] )
-        print( 'example: \n\t> %s /share/storage2/connie/data_analysis/processed02_data/runs/043C/data_6622_to_6774/scn/images/scn_mbs_osi_runID_043_06661_Int-400_Exp-3600_12May19_07\:45_to_12May19_08\:49_p1.fits 6 60 3 "E, xbary, ybary" output.csv' % sys.argv[0] )
+        print( 'example: \n\t> %s /share/storage2/connie/data_analysis/processed02_data/runs/043C/data_6622_to_6774/scn/images/scn_mbs_osi_runID_043_06661_Int-400_Exp-3600_12May19_07\:45_to_12May19_08\:49_p1.fits 6 60 3 "E, xbary, ybary, xpix" output.csv' % sys.argv[0] )
         exit(1)
     fits_file = sys.argv[1]
     ohdu = check_arg(2, int, err_msg = '2nd parameter <ohdu> mut be integer')

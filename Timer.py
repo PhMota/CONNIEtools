@@ -1,5 +1,16 @@
+from __future__ import print_function
 import time
 import datetime
+
+class Timer:
+    def __init__(self, msg='elapsed'):
+        self.msg = msg
+        
+    def __enter__(self):
+        self.start = datetime.datetime.now()
+    
+    def __exit__(self, type, value, traceback):
+        print( self.msg, (datetime.datetime.now()-self.start).total_seconds(), 's' )
 
 class timer:
     def __init__(self, name = ''):
@@ -10,8 +21,8 @@ class timer:
         self.text = text
         self.f = f
     def __del__(self):
-        print self.__call__()
-        if not self.text == '': print '\t%s: %.3gs'%(self.text, self.f*elapsed)
+        print( self.__call__() )
+        if not self.text == '': print( '\t%s: %.3gs'%(self.text, self.f*elapsed) )
     def __call__(self):
         elapsed = time.clock() - self.start
         return 'timer[%s] '%self.name + str(datetime.timedelta(seconds=elapsed))
@@ -21,22 +32,22 @@ class LoopTimer:
         self.name = name
         self.start = time.time()
         self.n = n
-        print self.name, 'start', time.strftime("%Hh%Mm%Ss", time.localtime(self.start) )
+        print( self.name, 'start', time.strftime("%Hh%Mm%Ss", time.localtime(self.start) ) )
         return
     
     def __del__(self):
-        print self.name, 'done in', time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - self.start) )
+        print( self.name, 'done in', time.strftime("%Hh%Mm%Ss", time.gmtime(time.time() - self.start) ) )
         return
     
     def eta( self, i ):
         if i==0: return
         ave = (time.time() - self.start)/i
-        print self.name, 'eta', time.strftime("%Hh%Mm%Ss", time.gmtime((self.n-i)*ave ) )
+        print( self.name, 'eta', time.strftime("%Hh%Mm%Ss", time.gmtime((self.n-i)*ave ) ) )
         return
     
     def end( self, i ):
         if i==0: return
         ave = (time.time() - self.start)/i
-        print self.name, 'end', time.strftime("%Hh%Mm%Ss", time.localtime(time.time() + (self.n-i)*ave ) )
+        print( self.name, 'end', time.strftime("%Hh%Mm%Ss", time.localtime(time.time() + (self.n-i)*ave ) ) )
         return
         

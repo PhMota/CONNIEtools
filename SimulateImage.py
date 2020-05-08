@@ -1,9 +1,10 @@
 # coding: utf-8
-
+from __future__ import print_function
 import numpy as np
 import time
 import astropy.io.fits
 import scipy.stats
+import scipy.ndimage
 import os
 import root_numpy
 import Statistics as stats
@@ -73,6 +74,18 @@ z2sigmaModel = {
     #ext15="sqrt(-7060.89*TMath::Log(1-6.26018e-05*x))/15"
 }
 
+'''
+sigma = np.sqrt(-891.074*np.log(1-0.000488203*z))/15
+(sigma*15)**2 = -891.074*np.log(1-0.000488203*z)
+(sigma*15)**2/(-891) = np.log(1-0.000488203*z)
+np.exp( (sigma*15)**2/(-891) ) = 1-0.000488203*z
+1-np.exp( (sigma*15)**2/(-891) ) = 0.000488203*z
+(1-np.exp( (sigma*15)**2/(-891) ))/0.000488203 = z
+'''
+
+sigma2zModel = {
+    '3': lambda s: (1-np.exp( (s*15)**2/(-923.666) ) )/0.000441113,
+    }
 #def round2int2( x, y ):
     #return np.rint( x ).astype(int), np.rint( y ).astype(int)
 
@@ -108,7 +121,7 @@ def add_dark_current( image, lambda_ ):
     '''
     adds electrons generated pixel by pixel by a poisson distribution and difused
     '''
-    print 'size', image.val.size
+    print( 'size', image.val.size )
     size = image.val.size
     shape = image.val.shape
     return image + stats.ufloat( scipy.stats.poisson.rvs( lambda_, size = size ).reshape(shape ), unit='e-' )
@@ -119,7 +132,7 @@ def add_readout_noise( image, sigma ):
     '''
     size = image.val.size
     shape = image.val.shape
-    print 'sigma', sigma
+    print( 'sigma', sigma )
     return image + stats.ufloat( sigma.val*scipy.stats.norm.rvs( size=size ).reshape( shape ), errSqr = sigma.val**2, unit ='e-')
 
 def rebinImage( image, n ):
@@ -143,14 +156,14 @@ def add_overscan( image, n ):
 
 def make_image( shape, v_os=70, os=550, ohdu=2, lambda_=0.1, sigma=2, gain=2000., rebin=1, mbs=False ):
     e_gain = gain*electron_in_keV
-    print 'gain', gain,
-    print 'lambda', lambda_
-    print 'sigma', sigma, sigma.asunit('ADU%s'%ohdu)
-    print 'shape', shape,
+    print( 'gain', gain )
+    print( 'lambda', lambda_ )
+    print( 'sigma', sigma, sigma.asunit('ADU%s'%ohdu) )
+    print( 'shape', shape )
     image = stats.ufloat( np.zeros(shape), unit='e-' )
-    print 'zeros shape', image.val.shape, image.unit
+    print( 'zeros shape', image.val.shape, image.unit )
     image = add_dark_current(image, lambda_)
-    print 'dc shape', image.val.shape, image.unit
+    print( 'dc shape', image.val.shape, image.unit )
     image = diffuse_electrons(image, alpha[ohdu], beta[ohdu] )
     
     image = rebinImage( image, rebin )
@@ -159,8 +172,8 @@ def make_image( shape, v_os=70, os=550, ohdu=2, lambda_=0.1, sigma=2, gain=2000.
     image = add_vOverscan( image, v_os )
     image = add_overscan( image, os )
     image = add_readout_noise( image, sigma )
-    print 'shape after rebin', image.val.shape
-    print image.__class__.__name__
+    print( 'shape after rebin', image.val.shape )
+    print( image.__class__.__name__ )
     return image
     #return (image*e_gain).astype(int)
 
@@ -181,7 +194,7 @@ def convertImage2Hits( self, image, save = None, verbose = False ):
 def standardExtraction( fname, out, verbose = True ):
     os.system( '/share/storage2/connie/data_analysis/Processor/tools/extract/extract.exe %s -c /home/mota/tests/simulatedFITS/extractConfigFS2.xml -o %s'%(fname,out) + ( '>/dev/null' if not verbose else '') )
     catalogData = root_numpy.root2array( out, treename='hitSumm' )
-    print 'numberExtracted', len(catalogData['ohdu']), 'to file', out
+    print( 'numberExtracted', len(catalogData['ohdu']), 'to file', out )
     #ohduData = catalogData[ catalogData['ohdu'] == int(self.config.ohdu) ]
 
 def makeHitSumm( **kwargs ):
@@ -290,7 +303,7 @@ class SimulateImage:
         return table
 
     def getCopperImage_e( self, number, save=False, particle='Cu' ):
-        print( '+Cu', )
+        print( '+Cu' )
         t = timeit.default_timer()
         path = self.config.outPath + self.copper_id + self.table_ext
         
@@ -324,17 +337,17 @@ class SimulateImage:
         np.add.at( image, [ iex_px[inside_boudary], iey_px[inside_boudary] ], 1. )
         if save:
             saveImage( image, path )
-        print( '%.2fs'%(timeit.default_timer() - t), )
+        print( '%.2fs'%(timeit.default_timer() - t) )
         return image
         
     def getNeutrinosImage_e( self, save = False ):
         self.partial_id += self.neutrino_id( self.config.numberNeutrinos )
-        print( '+nu', )
+        print( '+nu' )
         t = timeit.default_timer()
 
         path = self.config.outPath + self.neutrino_id + self.image_ext
         if os.path.exists( path ):
-            print( '(readnu)', )
+            print( '(readnu)' )
             return readImage( path )
         
         xlen_px, ylen_px = self.config.imageShape
@@ -351,7 +364,7 @@ class SimulateImage:
         
         if save:
             saveImage( image, path )
-        print( '%.2fs'%(timeit.default_timer() - t), )
+        print( '%.2fs'%(timeit.default_timer() - t) )
         return image
 
     def getNoiseImage_adu( self ):
@@ -448,7 +461,7 @@ class SimulateImage:
 
     def getSCNHits_adu( self, runID, ohdu=None, save = False ):
         self.partial_id += self.scn_id + str(runID)
-        print( '+SCN', )
+        print( '+SCN' )
         t = timeit.default_timer()
         
         if ohdu is None: ohdu = int(self.config.ohdu)
@@ -462,7 +475,7 @@ class SimulateImage:
         self.adu_keV = hits_adu['gainCu'][0]
         self.saveGain( runID, ohdu, self.adu_keV )
         #print( 'getSCNHits_adu', 'len', len(hits_adu['E0']), 'runID', runID )
-        print( '%.2fs'%(timeit.default_timer() - t), )
+        print( '%.2fs'%(timeit.default_timer() - t) )
         return hits_adu
 
     def getMBSubtracted_adu( self, image ):
@@ -472,7 +485,7 @@ class SimulateImage:
     
     def filterExposure( self, hits ):
         self.partial_id += self.exposure_id
-        print( '+exp', )
+        print( '+exp' )
         if hits is None: 
             return None
         indexlist = range( len( hits ) )
@@ -687,6 +700,9 @@ class SimulateImage:
         return reconstructedNeutrinos, reconstructedNeutrinosE2, totalNeutrinos, totalNeutrinos2, Enu, Erec
 
 
+
+
+
 def set_above_threshold_to_nan( image, thr, radius ):
     imagecopy = image.copy()
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
@@ -705,33 +721,6 @@ def compute_distances( image ):
 def _extract_cluster_( val, pos ):
     return [val, pos]
 
-class Image:
-    def _label_clusters_above_threshold_( self, threshold ):
-        return label_clusters( self.image >= thr )
-    
-    def _compute_distances_to_clusters_( self ):
-        return scipy.ndimage.distance_transform_edt(  )
-
-    def _extract_clusters_( self, threshold, border ):
-        border *= np.sqrt(2)
-        labeled_clusters = label_clusters( self.image > thershold )
-        is_cluster = labeled_clusters > 0
-        distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
-        labeled_clusters = label_clusters( distances_to_cluster <= border )
-        
-        list_of_clusters = scipy.ndimage.labeled_comprehension( 
-            self.image, 
-            labeled_clusters,
-            index=None, 
-            func=lambda v, p: [v, p], 
-            out_dtype=list, 
-            pass_positions=True 
-            )
-        levels = scipy.ndimage.labeled_comprehension( self.image, labeled_clusters, index=None, func=lambda v: v, out_dtype=list )
-        
-    def extract_hits( self ):
-        pass
-    
 class Hits:
     def compute_spectrum():
         return Spectrum( self.E )
@@ -743,18 +732,139 @@ class Spectrum:
         ax.histogram( self.E, self.bins )
         fig.savefig(self.file)
 
-def simulate_events( shape, ranges, number_of_events ):
-    pos = np.random.random( number_of_events*2 )
+def simulate_events( shape, charge_range, number_of_events ):
+    array_of_positions = np.random.random( number_of_events*3 ).reshape(-1,3)*(np.array(shape)-1)
+    print( 'pos.shape', array_of_positions.shape )
+    array_of_charges = np.random.random( number_of_events )*(charge_range[1] - charge_range[0]) + charge_range[0]
+    return Events( array_of_positions, array_of_charges )
+
+class Events:
+    def __init__( self, array_of_positions, array_of_charges ):
+        self.array_of_positions = array_of_positions
+        self.array_of_charges = array_of_charges.astype(int)
+        self.count = len(array_of_positions)
+        self.total_charge = np.sum( self.array_of_charges )
     
-def analysis( shape, ranges, numver_of_events ):
-    events = simulate_events( shape, ranges, number_of_events )
-    image = events.generate_image( shape )
-    image.plot()
-    image.fits()
-    hits = image.extract_hits( mode = 'cluster', threshold = 15*4, border = 3 )
-    hits.catalog()
-    hits.plot()
-    reconstruction_efficiency = hits.compute_efficiency( events )
-    spectrum = hits.compute_spectrum()
-    spectrum.plot()
+    def get_array_of_projections( self ):
+        return self.array_of_positions[:,0:2]
+
+    def get_array_of_depths( self ):
+        return self.array_of_positions[:,2]
     
+    def table(self, scale, sorted = True):
+        ret = np.append( self.array_of_positions, self.array_of_charges[:,None]*scale, axis=1)
+        if sorted:
+            ret = ret[ret[:,3].argsort()]
+        return ret
+    
+def generate_image( events, shape, diffusion_function = lambda v: .01*v/v ):
+    array_of_sigmas = diffusion_function( events.get_array_of_depths() )
+    array_of_normally_distributed_projections = scipy.stats.norm.rvs( size = 2*events.total_charge ).reshape( -1, 2 )
+    array_of_sigmas_per_charge = np.repeat( array_of_sigmas, events.array_of_charges )
+    array_of_projections = np.repeat( events.get_array_of_projections(), events.array_of_charges, axis=0 ) + array_of_sigmas_per_charge[:,None]*array_of_normally_distributed_projections
+    bins = [
+        np.arange(shape[0]+1),
+        np.arange(shape[1]+1)
+        ]
+    image = np.histogramdd( array_of_projections, bins = bins )[0]
+    return Image( image )
+
+class Image( np.ndarray ):
+    def __new__( cls, input_array ):
+        return np.asarray(input_array).view(cls)
+
+    def scale( self, factor ):
+        #print('max', self.max(), self.sum() )
+        self *= factor
+        #print('max', self.max(), self.sum() )
+        
+    def save_fits(self, output):
+        primary = astropy.io.fits.PrimaryHDU()
+        fits_image = astropy.io.fits.ImageHDU( self )
+        astropy.io.fits.HDUList([primary, fits_image]).writeto( output, overwrite=True )
+        
+    def extract_hits( self, mode, **kwargs ):
+        if mode == 'cluster':
+            return self._extract_clusters_( **kwargs )
+
+    def _label_clusters_above_threshold_( self, threshold ):
+        return label_clusters( self.image >= thr )
+    
+    def _compute_distances_to_clusters_( self ):
+        return scipy.ndimage.distance_transform_edt(  )
+
+    def _extract_clusters_( self, threshold, border ):
+        labeled_clusters = label_clusters( self >= threshold )
+        print( 'number_of_clusters_above_threshold', labeled_clusters.max() )
+        is_cluster = labeled_clusters > 0
+        distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
+        labeled_clusters = label_clusters( distances_to_cluster <= border )
+        print( 'number_of_clusters_with border', labeled_clusters.max() )
+        
+        list_of_clusters = scipy.ndimage.labeled_comprehension(
+            self, 
+            labeled_clusters,
+            index = np.unique(labeled_clusters), 
+            func = lambda v, p: [v, p], 
+            out_dtype=list, 
+            default=-1,
+            pass_positions=True 
+            )
+        #levels = scipy.ndimage.labeled_comprehension( self, labeled_clusters, index=None, func=lambda v: v, default=-1, out_dtype=list )
+        #list_of_clusters = map( lambda cluster: [ cluster[0] ] + [ np.unravel_index( cluster[1], self.shape ) ], list_of_clusters )
+        
+        #print( 'E', [ cluster[0].sum() for cluster in list_of_clusters ] )
+        #print( 'n', [ len(cluster[0]) for cluster in list_of_clusters ] )
+        #print( 'x,y', [ np.unravel_index(cluster[1], self.shape) for cluster in list_of_clusters ] )
+        def process( cluster ):
+            x, y = np.unravel_index(cluster[1], self.shape)
+            return cluster[0], x, y
+        list_of_clusters = map( process, list_of_clusters )
+        
+        return Hits(list_of_clusters)
+
+class Hits:
+    def __init__( self, list_of_clusters ):
+        self.ePix = np.array( [ cluster[0] for cluster in list_of_clusters ] )
+        self.xPix = np.array( [ cluster[1] for cluster in list_of_clusters ] )
+        self.yPix = np.array( [ cluster[2] for cluster in list_of_clusters ] )
+        self.E = map( sum, self.ePix )
+        self.n = map( len, self.ePix )
+        self.number_of_events = len(self.n)
+        self.xBary = np.array( [ np.average(x, weights=e) for e,x in zip(self.ePix, self.xPix) ] )
+        self.yBary = np.array( [ np.average(y, weights=e) for e,y in zip(self.ePix, self.yPix) ] )
+        self.xVar = np.array( [ np.average(x**2, weights=e) for e,x in zip(self.ePix, self.xPix) ] ) - self.xBary**2
+        self.yVar = np.array( [ np.average(y**2, weights=e) for e,y in zip(self.ePix, self.yPix) ] ) - self.yBary**2
+    
+    def table(self, keys, sorted = False):
+        ret = np.array( zip(*[ getattr(self,key) for key in keys]) )
+        if sorted:
+            ret = ret[ret[:,sorted].argsort()]
+        return ret
+
+def analysis( shape, charge_range, number_of_events, gain = 7.25 ):
+    from Timer import Timer
+    with Timer('events generated') as t:
+        events = simulate_events( shape, charge_range, number_of_events )
+    table = events.table(scale=gain, sorted=True)
+    table[:,2] = z2sigmaModel['3ap'](table[:,2])**2
+    print( table )
+    
+    with Timer('image generated') as t:
+        image_shape = shape[:2]
+        diffusion_function = z2sigmaModel['3ap']
+        image = generate_image( events, image_shape, diffusion_function )
+        image.scale(gain)
+    print( 'image.shape', image.shape )
+    print( 'isum', image.sum() )
+    
+    with Timer('image saved') as t:
+        image.save_fits('simulation.fits')
+        
+    with Timer('hits extracted') as t:
+        hits = image.extract_hits( mode = 'cluster', threshold = 15*4, border = 3 )
+    print( hits.number_of_events )
+    print( hits.table(('xBary', 'yBary', 'xVar', 'E'), sorted = -1) )
+    
+if __name__ == '__main__':
+    analysis( shape = (100,100,675), charge_range = (5,200), number_of_events = 10 )

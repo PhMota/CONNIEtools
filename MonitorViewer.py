@@ -99,8 +99,6 @@ gainAverages = {
     14: 1923
     }
 
-
-
 class MonitorViewer(Gtk.Window):
     
     def __del__(self, widget=None, msg=None ):
@@ -126,21 +124,22 @@ class MonitorViewer(Gtk.Window):
         
         self.log_file = '/home/mota/public/gui/%s.log'%self.id
         self.quantities = [
-            'lambdaBGbinBorderRAW',
-            'darkCurrent', 
-            'readoutNoise', 
+            #'darkCurrent', 
+            #'readoutNoise', 
             #'lambdaBGbin',
-            'lambdaBGbinRAW',
-            #'gainElectronbin',
-            #'gainElectronMAD',
-            #'gainElectron',
+            #'lambdaBGbinRAW',
+            #'lambdaBGbinBorderRAW',
+            'gainElectronbin',
+            'gainElectronMAD',
+            'gainElectron',
+            'gainElectronMAD_line',
             #'diffMedianBG',
             #'diffMADSqr', 
             #'sigmaOS', 
             #'sigmaOSMAD', 
             #'sigmaOSMAD2', 
             #'sigmaOSbin',
-            'gainCu',
+            #'gainCu',
             ]
         
         self.range_ = span
@@ -500,6 +499,7 @@ class MonitorViewer(Gtk.Window):
                 break
             else:
                 print '(update_table)empty entry at quantity', quantity, 'runID', runID
+                break
         
         if len(data) > 0:
             with open( self.tablePaths[quantity], 'wb' ) as f:
@@ -550,6 +550,8 @@ class MonitorViewer(Gtk.Window):
             return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).left().gainElectronbin()
         elif quantity == 'gainElectronMAD':
             return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).left().gainElectronMAD()
+        elif quantity == 'gainElectronMAD_line':
+            return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='raw', debug=debug ).left().gainElectronMAD_line()
         elif quantity == 'sigmaOS':
             return ConnieImage.FullImage( runID=runID, ohdu=ohdu, imageType='scn', debug=debug ).sigmaOS()
         elif quantity == 'sigmaOSbin':

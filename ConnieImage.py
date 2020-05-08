@@ -1187,6 +1187,39 @@ class SideImage(ImageBase):
 
         return gain_prime
 
+    def gainElectronMAD_line( self, thr=15 ):
+        subimage = self.image[:,:-self.overscanWidth ]
+        shape = subimage.shape
+        subimage = subimage[:,shape[1]/2:]
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        subimage -= osicorrection[ :, None ]
+
+        s33 = [[1,1,1], [1,1,1], [1,1,1]]
+        clusters = scipy.ndimage.label( subimage >= 4*thr, structure=s33 )[0]
+        distance_from_thr = scipy.ndimage.distance_transform_edt( clusters==0 )
+        subimage[ distance_from_thr <= 3 ] = np.nan
+        
+        AC_median_per_line = np.nanmedian( subimage, axis=1 )
+        AC_MAD_per_line = stats.nanMAD( subimage, axis=1 )
+        
+        imageOS = self.overscan().image
+        osicorrection = np.median( self.overscan().image, axis=1 )
+        imageOS -= osicorrection[ :, None ]
+            
+        dataOS = imageOS
+        dataOS[ dataOS > 1e9 ] = np.nan
+        OS_median_per_line = np.nanmedian( dataOS, axis=1 )
+        OS_MAD_per_line = stats.nanMAD( dataOS, axis=1 )
+
+        diff_median_per_line = AC_median_per_line - OS_median_per_line
+        diff_MADsqr_per_line = AC_MAD_per_line**2 - OS_MAD_per_line**2
+        
+        g_per_line = diff_MADsqr_per_line/diff_median_per_line
+        mask = np.all( [diff_MADsqr_per_line>0, diff_median_per_line>0], axis=0)
+        
+        print( '(gainElectronMAD_line)', 'meanmask=', np.nanmean( g_per_line[mask] ), 'stdmask=', np.nanstd( g_per_line[mask] ), 'mean=', np.nanmean( g_per_line ), 'std=', np.nanstd( g_per_line ), 'medianmask=', np.nanmedian( g_per_line[mask] ), 'median=', np.nanmedian( g_per_line ) )
+        return np.mean( g_per_line[mask] )
+
     def overscanLineSubtraction(self):
         return SideImage( self.image - self.overscan().h_medians() )
 
