@@ -10,7 +10,12 @@ class Timer:
         self.start = datetime.datetime.now()
     
     def __exit__(self, type, value, traceback):
-        print( self.msg, (datetime.datetime.now()-self.start).total_seconds(), 's' )
+        s = [ self.msg ]
+        s += [ '%ss' % ((datetime.datetime.now()-self.start).total_seconds() ) ]
+        if value:
+            s += [ '%s'%type ]
+            s += [ '%s'%value ]
+        print( ' '.join(s) )
 
 class timer:
     def __init__(self, name = ''):

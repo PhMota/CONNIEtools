@@ -722,9 +722,9 @@ def compute_distances( image ):
 def _extract_cluster_( val, pos ):
     return [val, pos]
 
-class Hits:
-    def compute_spectrum():
-        return Spectrum( self.E )
+#class Hits:
+    #def compute_spectrum():
+        #return Spectrum( self.E )
         
 class Spectrum:
     def plot( self ):
@@ -733,14 +733,13 @@ class Spectrum:
         ax.histogram( self.E, self.bins )
         fig.savefig(self.file)
 
-def simulate_events( shape, charge_range, number_of_events ):
+def simulate_events( shape, charge_range, number_of_events, gain, lambda_, sigma, diffusion_function, charge_efficiency_function ):
     array_of_positions = np.random.random( number_of_events*3 ).reshape(-1,3)*(np.array(shape)-1)
-    #print( 'pos.shape', array_of_positions.shape )
     array_of_charges = np.random.random( number_of_events )*(charge_range[1] - charge_range[0]) + charge_range[0]
-    return Events( array_of_positions, array_of_charges )
+    return Events( array_of_positions, array_of_charges, shape, gain, lambda_, sigma, diffusion_function, charge_efficiency_function )
 
 class Events( np.recarray ):
-    def __new__(cls, array_of_positions, array_of_charges ):
+    def __new__(cls, array_of_positions, array_of_charges, shape, gain, lambda_, sigma, diffusion_function, charge_efficiency_function ):
         from numpy.lib import recfunctions as rfn
         dtype = [
             ('x', float),
@@ -754,67 +753,190 @@ class Events( np.recarray ):
                                  dtypes=(int), 
                                  asrecarray=True 
                                  ).view(cls)
-        return obj
+        obj.xyshape = shape[:2]
+        obj.gain = gain
+        obj.diffusion_function = diffusion_function
+        obj.charge_efficiency_function = charge_efficiency_function
+        obj.lambda_ = lambda_
+        obj.sigma = sigma
+        obj.count = len( obj.q )
+        #obj.Q = np.sum( obj.q )
         
-    def __init__( self, array_of_positions, array_of_charges ):
-        self.count = len(self.q)
-        self.Q = np.sum( self.q )
+        return obj
+    
+    #def add_random( self, shape, charge_range, number_of_events ):
+        #array_of_positions = np.random.random( number_of_events*3 ).reshape(-1,3)*(np.array(shape)-1)
+        #array_of_charges = np.random.random( number_of_events )*(charge_range[1] - charge_range[0]) + charge_range[0]
+        
+    
+    #def __init__( self, array_of_positions, array_of_charges, shape, gain, diffusion_function ):
+    
+    def get_charge(self):
+        return ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
     
     def get_xy( self ):
         return np.array( (self.x, self.y) ).T
 
-    def get_E( self, scale ):
-        return self.q*scale
+    def get_E( self ):
+        return self.q*self.gain
     
-    def get_sigma( self, func ):
-        return func( self.z )
+    def get_sigma( self ):
+        return self.diffusion_function( self.z )
         
     def table(self, scale, sorted = True):
         ret = np.array( (self.x, self.y, self.z, self.q ) )
         if sorted:
             ret = ret[ret[:,3].argsort()]
         return ret
-    
-def generate_image( events, shape, diffusion_function = lambda v: .01*v/v ):
-    sigma_per_event = events.get_sigma( diffusion_function )
-    xy_norm = scipy.stats.norm.rvs( size = 2*events.Q ).reshape( -1, 2 )
-    sigma_per_charge = np.repeat( sigma_per_event, events.q )
-    xy_per_charge = np.repeat( events.get_xy(), events.q, axis=0 )
+
+def generate_image( events ):
+    sigma_per_event = events.get_sigma()
+    charge_per_event = events.get_charge()
+    Q = np.sum(charge_per_event)
+    xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
+    sigma_per_charge = np.repeat( sigma_per_event, charge_per_event )
+    xy_per_charge = np.repeat( events.get_xy(), charge_per_event, axis=0 )
     xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
     bins = [
-        np.arange(shape[0]+1),
-        np.arange(shape[1]+1)
+        np.arange(events.xyshape[0]+1),
+        np.arange(events.xyshape[1]+1)
         ]
-    image = np.histogramdd( xy, bins = bins )[0]
+    image = np.histogramdd( xy, bins = bins )[0] * events.gain
+
+    if events.lambda_ > 0:
+        dark_current = scipy.stats.poisson.rvs( events.lambda_, size = events.xyshape[0]*events.xyshape[1] ).reshape(events.xyshape)
+        image += dark_current * events.gain
+
+    if events.sigma > 0:
+        noise = scipy.stats.norm.rvs( size=events.xyshape[0]*events.xyshape[1] ).reshape(events.xyshape)*events.sigma
+        image += noise
+
     return Image( image )
 
 class Image( np.ndarray ):
     def __new__( cls, input_array ):
-        return np.asarray(input_array).view(cls)
-
-    def scale( self, factor ):
-        #print('max', self.max(), self.sum() )
-        self *= factor
-        #print('max', self.max(), self.sum() )
+        obj = np.asarray(input_array).view(cls)
+        return obj
         
     def save_fits(self, output):
         primary = astropy.io.fits.PrimaryHDU()
         fits_image = astropy.io.fits.ImageHDU( self )
         astropy.io.fits.HDUList([primary, fits_image]).writeto( output, overwrite=True )
+    
+    #def add_readout_noise( self, sigma ):
+        #self.sigma = sigma
+        #if sigma == 0: return self
+        #noise = scipy.stats.norm.rvs( size=self.shape[0]*self.shape[1] ).reshape(self.shape)*sigma
+        #self += noise
+        #return self
+
+    #def add_dark_current( self, lambda_ ):
+        #self.lambda_ = lambda_
+        #if lambda_ == 0: return self
+        #dark_current = scipy.stats.poisson.rvs( lambda_, size = self.shape[0]*self.shape[1] ).reshape(self.shape)
+        #self += dark_current*self.gain
+        #return self
+
+    def stats_robust(self, gain, lambda_, sigma, tol = 1e-3, fraction = .001):
+        x = np.sort(self.flatten())
+        left = 0
+        right = len(x)
+        i = 0
+        compute_gain = lambda x: (np.std(x)**2 - sigma**2)/np.mean(x)
+        compute_lambda = lambda x: np.mean(x)**2/(np.std(x)**2 - sigma**2)
+        mean = [np.mean(x)]
+        median = [np.median(x)]
+        std = [np.std(x)]
+        MAD = [stats.MAD(x)]
+        gains = [ compute_gain(x) ]
+        lambdas = [ compute_lambda(x) ]
+        goal_std = np.sqrt( gain**2*lambda_ + sigma**2 )
+        goal_mean = gain * lambda_
+        while True:
+            if mean[-1] > median[-1]:
+                right -= int( fraction*(right-left) )
+            else:
+                left += int( fraction*(right-left) )
+            x__ = x[left:right]
+            mean.append( np.mean( x__ ) )
+            median.append( np.median( x__ ) )
+            std.append( np.std( x__ ) )
+            MAD.append( stats.MAD( x__ ) )
+            gains.append( compute_gain( x__ ) )
+            lambdas.append( compute_lambda( x__ ) )
+            print( 'expected', goal_mean, goal_std )
+            print( 'lim', left, right )
+            print( 'stats', np.mean(mean), np.mean(median), np.mean(std), np.mean(MAD) )
+            print( 'vals', gain, lambda_ )
+            print( 'stats2', np.mean(gains), np.mean(lambdas) )
+            print()
+            if len(mean) > 3:
+                if abs(np.mean(mean) - np.mean(mean[:-1])) < tol:
+                    break
+            
+        return np.mean( mean ), np.mean( median ), np.mean( std ), np.mean( MAD ), x[left:right]
+
+    def stats_robust_2(self, gain, lambda_, sigma, tol = 1e-3, partitions = 10):
+        x = self.flatten()
+
+        compute_gain = lambda x: (np.std(x)**2 - sigma**2)/np.mean(x)
+        compute_lambda = lambda x: np.mean(x)**2/(np.std(x)**2 - sigma**2)
+
+        mean = [np.mean(x)]
+        median = [np.median(x)]
+        std = [np.std(x)]
+        MAD = [stats.MAD(x)]
+        gains = [ compute_gain(x) ]
+        lambdas = [ compute_lambda(x) ]
+
+        goal_std = np.sqrt( gain**2*lambda_ + sigma**2 )
+        goal_mean = gain * lambda_
+        
+        while True:
+            bins = np.linspace( x.min(), x.max(), 10 )
+            bin_indices = np.digitize( x, bins )
+            counts, _ = np.histogram( x, bins )
+            print( 'counts before', counts )
+            number_to_delete = np.min( counts[ counts > 0 ] )
+            indices_to_delete = []
+            for i, ind in enumerate( bins ):
+                indices_in_bin = np.argwhere( bin_indices == i )
+                if len(indices_in_bin) > 0:
+                    to_delete = np.random.choice( indices_in_bin, number_to_delete, replace = False )
+                    print( len(to_delete ) )
+                    indices_to_delete.extend( indices_in_bin[ to_delete ] )
+            x = np.delete(x, indices_to_delete )
+            counts, _ = np.histogram( x, bins )
+            print( 'counts after', counts )
+
+            mean.append( np.mean( x ) )
+            median.append( np.median( x ) )
+            std.append( np.std( x ) )
+            MAD.append( stats.MAD( x ) )
+            gains.append( compute_gain( x ) )
+            lambdas.append( compute_lambda( x ) )
+
+            print( 'expected', goal_mean, goal_std )
+            print( 'stats', np.mean(mean), np.mean(median), np.mean(std), np.mean(MAD) )
+            print( 'vals', gain, lambda_ )
+            print( 'stats2', np.mean(gains), np.mean(lambdas) )
+            print()
+        
+        return np.mean( mean ), np.mean( median ), np.mean( std ), np.mean( MAD ), x
         
     def extract_hits( self, mode, **kwargs ):
         if mode == 'cluster':
             return self._extract_clusters_( **kwargs )
 
-    def _label_clusters_above_threshold_( self, threshold ):
-        return label_clusters( self.image >= thr )
+    #def _label_clusters_above_threshold_( self, threshold ):
+        #return label_clusters( self.image >= thr )
     
-    def _compute_distances_to_clusters_( self ):
-        return scipy.ndimage.distance_transform_edt(  )
+    #def _compute_distances_to_clusters_( self ):
+        #return scipy.ndimage.distance_transform_edt(  )
 
     def _extract_clusters_( self, threshold, border ):
         labeled_clusters = label_clusters( self >= threshold )
-        print( 'number_of_clusters_above_threshold', labeled_clusters.max() )
+        print( 'number_of_clusters_above_threshold', labeled_clusters.max(), len(np.unique(labeled_clusters)) )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
@@ -837,21 +959,107 @@ class Image( np.ndarray ):
             default=-1, 
             out_dtype=list 
             )
-        #list_of_clusters = map( lambda cluster: [ cluster[0] ] + [ np.unravel_index( cluster[1], self.shape ) ], list_of_clusters )
-        
-        #print( 'E', [ cluster[0].sum() for cluster in list_of_clusters ] )
-        #print( 'n', [ len(cluster[0]) for cluster in list_of_clusters ] )
-        #print( 'x,y', [ np.unravel_index(cluster[1], self.shape) for cluster in list_of_clusters ] )
         def process( cluster ):
             ei, level = cluster
             x, y = np.unravel_index(ei[1], self.shape)
             return ei[0], x, y, level
         list_of_clusters = map( process, zip(list_of_clusters, levels) )
         
-        return Hits( list_of_clusters, levels, border )
+        return Hits( list_of_clusters, levels, threshold, border )
+
+    def spectrum( self, output, gain, lambda_, sigma, binsize = 2 ):
+        from matplotlib import pylab as plt
+        
+        median = np.median( self )
+        mean = self.mean()
+        std = self.std()
+        #mean_robust, _, std_robust, _, x = self.stats_robust(gain=gain, lambda_=lambda_, sigma=sigma, tol=1e-3, fraction=0.001 )
+        #mean_robust, _, std_robust, _, x = self.stats_robust_2(gain=gain, lambda_=lambda_, sigma=sigma, tol=1e-3, partitions = 10 )
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        bins = np.arange( self.min(), x.max()*2, binsize )
+        ax.hist( self.flatten(), bins = bins, label = 'pix', histtype = 'step' )
+        ax.hist( x, bins = bins, label = 'cropped', histtype = 'step' )
+        ymin, ymax = ax.get_ylim()
+        ax.axvline( median, ymin, ymax, color='r', label = 'median %.3f' % median )
+        ax.axvline( mean, ymin, ymax, color='g', label = 'mean %.3f' % mean )
+        ax.axvline( std, ymin, ymax, color='m', label = 'std %.3f' % std )
+        ax.axvline( mean_robust, ymin, ymax, color='k', label = 'mean_robust %.3f' % mean_robust )
+        ax.axvline( std_robust, ymin, ymax, color='b', label = 'std_robust %.3f' % std_robust )
+        ax.axvline( std_robust, ymin, ymax, color='b', label = 'gain %.3f' % ((std_robust**2 - sigma**2)/mean_robust) )
+        ax.axvline( std_robust, ymin, ymax, color='b', label = 'lambda %.3f' % (mean_robust**2/(std_robust**2 - sigma**2)) )
+        
+        ax.set_yscale('log')
+        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )        
+        fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
+
+def integral_norm_pixel( pix_edge, mu, sigma ):
+    sqrt2 = np.sqrt(2.)
+    return -.5*( scipy.special.erf( -( pix_edge+1 - mu)/( sqrt2*sigma )) - scipy.special.erf( -( pix_edge - mu )/( sqrt2*sigma ) ) )
+
+def probability_pixel( xPix, yPix, mu, sigma, single_sigma = False ):
+    if single_sigma: sigma[1] = sigma[0]
+    return integral_norm_pixel( xPix, mu = mu[0], sigma = sigma[0] ) * integral_norm_pixel( yPix, mu = mu[1], sigma = sigma[1] )
+
+def pdf( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False):
+    prob = probability_pixel( xPix, yPix, mu, sigma, single_sigma )
+    prob_i = prob[:,None]
+    ePix_i = ePix[:,None]
+    q_j = np.arange(E)[None,:]
+    j = -1
+    return np.sum( scipy.stats.binom.pmf( q_j, E, prob_i ) * scipy.stats.norm.pdf( ePix_i - q_j, scale = sigma_noise ), axis = j )
+
+def pdf_sigma0( ePix, xPix, yPix, E, mu, sigma, single_sigma = False):
+    prob = probability_pixel( xPix, yPix, mu, sigma, single_sigma )
+    return scipy.stats.binom.pmf( ePix, E, prob )
+
+def negloglikelihood( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False ):
+    val = pdf( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = single_sigma )
+    val = val[ val > 0 ]
+    return -np.nansum( np.log( val ) )
+
+binom_pmf = scipy.stats.binom.pmf
+norm_pdf = scipy.stats.norm.pdf
+np_sum = np.sum
+sqrt2 = np.sqrt(2.)
+erf = scipy.special.erf
+def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False ):
+    integral_norm_pixel_x = -.5*( erf( -( xPix+1 - mu[0])/( sqrt2*sigma[0] )) - erf( -( xPix - mu[0] )/( sqrt2*sigma[0] ) ) )
+    integral_norm_pixel_y = -.5*( erf( -( yPix+1 - mu[1])/( sqrt2*sigma[1] )) - erf( -( yPix - mu[1] )/( sqrt2*sigma[1] ) ) )
+    
+    prob = integral_norm_pixel_x * integral_norm_pixel_y
+    prob_i = prob[:,None]
+    ePix_i = ePix[:,None]
+    q_j = np.arange(E).astype(int)[None,:]
+    j = -1
+    val = np_sum( binom_pmf( q_j, E, prob_i ) * norm_pdf( ePix_i - q_j, scale = sigma_noise ), axis = j )
+    val = val[ val > 0 ]
+    return -np.nansum( np.log( val ) )
+
+def size_like( ePix, xPix, yPix, E0, mu0, sigma0, sigma_noise0, single_sigma = False, fast = False, tol = None ):
+    mu = [0,0]
+    sigma = [0,0]
+    Q = 0
+    e = ePix.astype(int)
+    x = xPix.astype(int)
+    y = yPix.astype(int)
+    positive_e = e > 0
+    e = e[ positive_e ]
+    x = x[ positive_e ]
+    y = y[ positive_e ]
+    if fast:
+        fun = lambda p: negloglikelihood_fast(e, x, y, int(p[0]), [p[1], p[2]], [p[3], p[4]], sigma_noise0, single_sigma)
+    else:
+        fun = lambda p: negloglikelihood(e, x, y, int(p[0]), [p[1], p[2]], [p[3], p[4]], sigma_noise0, single_sigma)
+    Q, mu[0], mu[1], sigma[0], sigma[1] = scipy.optimize.minimize(
+        fun = fun,
+        x0 = [ int(E0), mu0[0]+.5, mu0[1]+.5, sigma0[0], sigma0[1] ],
+        tol = tol,
+        bounds = [(1, np.inf), (-np.inf,np.inf), (-np.inf, np.inf), (0.01, np.inf), (0.01, np.inf)] ).x
+    return Q, mu, sigma
 
 class Hits(np.recarray):
-    def __new__( cls, list_of_entries, levels, border ):
+    def __new__( cls, list_of_entries, levels, threshold, border ):
         from numpy.lib import recfunctions as rfn
         dtype = [
             ('ePix', object),
@@ -859,44 +1067,56 @@ class Hits(np.recarray):
             ('yPix', object),
             ('level', object),
             ]
-        obj = np.array( list_of_entries, dtype = dtype ).view(np.recarray).view(cls)
-        #print( 'obj.dtype', obj.dtype )
-        obj = obj._add_fields().view(cls)
+        obj = np.array( list_of_entries[1:], dtype = dtype ).view(np.recarray).view(cls)
+        for i in range(border+1):
+            obj = obj._add_level_fields(i).view(cls)
+
         obj.border = border
+        obj.threshold = threshold
+        obj.background = list_of_entries[0]
+        print( 'fields in hits', obj.dtype.names )
         return obj
     
-    def _add_fields(self):
+    def _add_level_fields( self, lvl ):
         from numpy.lib import recfunctions as rfn
         
-        def sum_len( x ):
-            return np.sum(x), len(x)
-        new_fields = np.array(map( sum_len, self.ePix ))
+        def sum_len( entry ):
+            below_lvl = entry.level <= lvl
+            return np.sum(entry.ePix[below_lvl]), len(entry.ePix[below_lvl])
+        new_fields = np.array(map( sum_len, self ))
         self = rfn.append_fields( self, 
-                                 ('E','n'), 
+                                 ('E%d' % lvl, 'n%d' % lvl), 
                                  new_fields.T, 
                                  dtypes=(float,float), 
                                  asrecarray=True 
                                  )
 
-        def ave( x, weights ):
-            try: 
-                return np.average(x, weights=weights, axis=-1)
+        def ave( xy, weights, level ):
+            below_lvl = level <= lvl
+            try:
+                #positive = weights[below_lvl] > 0
+                #return np.average( xy[:,below_lvl][positive], weights = weights[below_lvl][positive], axis=-1 )
+                ret = np.average( xy[:,below_lvl], weights = weights[below_lvl], axis=-1 )
             except:
-                return np.mean(x, axis=-1)
+                ret = np.mean( xy[:,below_lvl], axis=-1 )
+                #print( 'ret', ret.shape )
+            return np.abs(ret)
             
         
-        a = np.array(map( lambda v: ave( (v.xPix,v.yPix), v.ePix ), self ))
+        a = np.array(map( lambda entry: ave( np.array((entry.xPix, entry.yPix)), entry.ePix, entry.level ), self ))
         self = rfn.append_fields( self, 
-                                 ['xBary','yBary'], 
+                                 ['xBary%d' % lvl,'yBary%d' % lvl], 
                                  a.T, 
                                  dtypes=(float,float),
                                  asrecarray=True 
                                  )
-        a = np.array(map( lambda v: ave( (v.xPix**2, v.yPix**2), v.ePix ) - (v.xBary**2,v.yBary**2), self ))
+        a = np.array(map( lambda entry: np.abs( 
+            ave( np.array((entry.xPix, entry.yPix))**2, entry.ePix, entry.level ) - (entry['xBary%d' % lvl]**2,entry['yBary%d' % lvl]**2)
+            ), self ))
         
         self = rfn.append_fields( self, 
-                                 ['xVar','yVar'], 
-                                 a.T, 
+                                 ['xVar%d' % lvl, 'yVar%d' % lvl], 
+                                 a.T,
                                  dtypes=(float,float),
                                  asrecarray=True 
                                  )
@@ -908,56 +1128,68 @@ class Hits(np.recarray):
     def get_Var(self):
         return np.array( (self.xVar, self.yVar) ).T
     
-    def get_sizeLike( self ):
-        pass
+    def get_sizeLike( self, lvl, gain, sigma_noise, fast=True, tol = None ):
+        Q = []
+        mu, sigma = [], []
+        for entry in self:
+            _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
+                                  E0 = entry['E%d'%lvl]/gain, 
+                                  mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ], 
+                                  sigma0 = np.sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ), 
+                                  sigma_noise0 = sigma_noise,
+                                  single_sigma=False,
+                                  fast = fast,
+                                  tol = tol)
+            Q.append( _Q )
+            mu.append( _mu )
+            sigma.append( _sigma )
+        return np.array(Q)*gain, np.array(mu), np.array(sigma)
     
     def table(self, keys, sorted = False):
         ret = np.array( zip(*[ self[key] for key in keys]) )
         if sorted:
             ret = ret[ret[:,sorted].argsort()]
         return ret
-    
-    def make_link_list( r, h, d=1, radius=2 ):
-        import itertools
-        n = array_to_int(r, h)
-        linklist = {}
-        shifts = range(-radius,radius+1)
-        listofshifts = [ shifts for i in range(d) ]
-        nshifts = tuple(itertools.product(*listofshifts) )
-        
-        for i,ni in enumerate(n):
-            for ns in nshifts:
-                try:
-                    linklist[ tuple(ni + ns) ].append(i)
-                except:
-                    linklist[ tuple(ni + ns) ] = [i]
-        return linklist
 
 def get_indices( array, length ):
     return np.floor(array/length).astype(int)
 
 class Matches( np.recarray ):
-    def __new__( cls, hits, events, length = 3 ):
-        matches =  match( hits, events, length )
-        obj = np.core.records.fromrecords( [ tuple(m) for m in matches], dtype=[('rec',int),('sim',int),('dist',float)] ).view(cls)
+    def __new__( cls, hits, events, lvl = 3, length = 3 ):
+        matches = match( hits, events, lvl,  length )
+        obj = np.core.records.fromrecords( [ tuple(m) for m in matches], dtype=[('rec',int),('sim',int),('dist',float),('mult',bool)] ).view(cls)
+        obj.n_events = len(events)
+        obj.n_hits = len(hits)
         return obj
     
-    def get_sim_unique(self):
-        return np.unique( self.sim ).astype(int)
-
-    def get_rec_unique(self):
-        return np.unique( self.rec ).astype(int)
+    def get_unmatched( self, t ):
+        all_ = None
+        if t == 'sim':
+            all_ = set(range(self.n_events))
+        elif t == 'rec':
+            all_ = set(range(self.n_hits))
+        return np.array( list( all_ - set( tuple( self[t] ) ) ) ).astype(int)
     
-def match( hits, events, length = 3 ):
+    def get_matched_indices(self, t):
+        return np.unique( self[t] ).astype(int)
+
+    def get_single_matched(self, t):
+        return self[t][ self.mult == False ]
+
+    def get_mult_matched(self, t):
+        return self[t][ self.mult == True ]
+    
+def match( hits, events, lvl = 3, length = 4 ):
     import itertools
     linked_list = {}
     radius = 1
-    shifts = range(-radius,radius+1)
+    shifts = range( -radius, radius+1 )
     listofshifts = [ shifts for i in range(2) ]
     nshifts = tuple(itertools.product(*listofshifts) )
 
     array_of_projections_events = events.get_xy()
     array_of_projections_indices_events = get_indices( array_of_projections_events, length=length )
+    events_indices_set = set( map(tuple, array_of_projections_indices_events ) )
     
     for i, ni in enumerate(array_of_projections_indices_events):
         for ns in nshifts:
@@ -966,30 +1198,34 @@ def match( hits, events, length = 3 ):
             except:
                 linked_list[ tuple(ni + ns) ] = [i]
 
-    array_of_projections_hits = np.array( (hits.xBary, hits.yBary) ).T
+    array_of_projections_hits = np.array( (hits['xBary%d' % lvl], hits['yBary%d' % lvl]) ).T
     array_of_projections_indices_hits = get_indices( array_of_projections_hits, length=length )
     
     matched = []
     dist = lambda a, b: np.sqrt( np.sum( (a-b)**2, axis=-1 ) )
-    for i, ni in enumerate(array_of_projections_indices_hits):
+    for hit_ind, hit_ni in enumerate(array_of_projections_indices_hits):
         try:
-            j = np.array(linked_list[tuple(ni)])
+            event_ind = np.array(linked_list[tuple( hit_ni )])
         except:
-            #unmatched.append((i,))
             continue
-        pos_hit = array_of_projections_hits[i]
-        pos_event = array_of_projections_events[j]
+        pos_hit = array_of_projections_hits[ hit_ind ]
+        std_max_hit = np.sqrt( np.max( ( hits[ hit_ind ]['xVar%d' % lvl], hits[ hit_ind ]['yVar%d' % lvl] ) ) )
+        pos_event = array_of_projections_events[event_ind]
         ds = dist( pos_hit, pos_event )
-        is_matched = ds < length
-        for k, d in zip(j[is_matched], ds[is_matched]):
-            matched.append( (i, k, d) )
+        is_matched = ds <= std_max_hit
+        event_ind_matched = event_ind[is_matched]
+        if len( event_ind_matched ) == 0:
+            continue
+        is_mult = False
+        if len( event_ind_matched ) > 1:
+            is_mult = True
+        for ei, d in zip(event_ind_matched, ds[is_matched]):
+            matched.append( (hit_ind, ei, d, is_mult) )
 
     matched = np.array(matched)
-    print( 'hits matched', len(np.unique( matched[:,0] )), float(len(np.unique( matched[:,0] )))/len(array_of_projections_indices_hits) )
-    print( 'events matched', len(np.unique( matched[:,1] )), float(len(np.unique( matched[:,1] )))/len(array_of_projections_indices_events) )
     return matched
 
-def show_reconstruction( output, events, image, hits, zoom = None ):
+def show_reconstruction( output, events, image, hits, level = 1, zoom = None ):
     from matplotlib import pylab as plt
     from matplotlib.patches import Ellipse
     from matplotlib.colors import LogNorm
@@ -1005,135 +1241,143 @@ def show_reconstruction( output, events, image, hits, zoom = None ):
     
     first = True
     for hit in hits:
-        if first: 
-            ax.add_artist( Ellipse((hit.xBary, hit.yBary), width=np.sqrt(hit.xVar), height=np.sqrt(hit.yVar), fill=False, color='green' ) )
-            first = False
-            continue
-        width = np.sqrt(hit.xVar)*5
-        height = np.sqrt(hit.yVar)*5
-        ax.add_artist( Ellipse((hit.xBary, hit.yBary), width, height, fill=False ) )
+        width = np.sqrt(hit['xVar%d' % level])*5
+        height = np.sqrt(hit['yVar%d' % level])*5
+        ax.add_artist( Ellipse((hit['xBary%d' % level], hit['yBary%d' % level]), width, height, fill=False ) )
     if zoom:
         ax.set_xlim(zoom[0])
         ax.set_ylim(zoom[1])
     fig.savefig(output)
 
-def spectrum_reconstruction( output, events, image, hits, gain, binsize, threshold, func ):
+def spectrum_reconstruction( output, events, image, hits, lvl, tol, binsize ):
     from matplotlib import pylab as plt
     from Timer import Timer
     
-    sim_E = events.get_E(gain)
-    #print( 'sim_E', sim_E.dtype )
-    rec_E = hits.E[1:]
+    sim_E = events.get_E()
+    rec_E = hits[ 'E%d' % lvl ]
+
+    with Timer('size like fast') as t:
+        minimization = hits.get_sizeLike( lvl, events.gain, events.sigma, fast = True, tol = tol )
+
+    #with Timer('size like') as t:
+        #minimization_fast = hits.get_sizeLike(1, events.gain, events.sigma, fast = False )
     
-    matches = Matches( hits, events, length=hits.border+2 )
-    sim_indexes_not_rec = list( set(range(len(sim_E))) - set(matches.get_sim_unique()) )
-    print( len(sim_E), matches.sim.max() )
-    print( len(rec_E), matches.rec.max() )
-    sim_E_not_rec = sim_E[ sim_indexes_not_rec ]
-    pairs_E = np.array( ( sim_E[ matches.sim ], rec_E[ matches.rec-1 ], matches.dist ) )
-    
-    rec_E_dist_1 = pairs_E[ :, pairs_E[2] <= np.sqrt(2) ][1]
-    
+    size_like_E = minimization[0]
+    size_like = minimization[2]
+    rec_sigma = size_like[:,0]
+    matches = Matches( hits, events, lvl=3, length = hits.border+2 )
+
     min_E = min( np.min(sim_E), np.min(rec_E) )
     max_E = max( np.max(sim_E), np.max(rec_E) )
     bins = np.arange( min_E, max_E+10, binsize )
-    with Timer('histogram') as t:
+    with Timer('histogram E') as t:
         fig = plt.figure()
         ax = fig.add_subplot(111)
+        
         ax.hist( sim_E, bins, histtype='step', label = 'sim' )
-        ax.hist( sim_E_not_rec, bins, histtype='step', label = 'sim !rec' )
+        ax.hist( sim_E[ matches.get_unmatched('sim') ], bins, histtype='step', label = 'sim not rec' )
         ax.hist( rec_E, bins, histtype='step', label = 'all rec' )
-        ax.hist( rec_E_dist_1, bins, histtype='step', label = 'rec d<=1.4' )
+        ax.hist( rec_E[ matches.get_single_matched('rec')], bins, histtype='step', label = 'rec single' )
+        ax.hist( rec_E[ matches.get_mult_matched('rec')], bins, histtype='step', label = 'rec mult' )
+        ax.hist( rec_E[ matches.get_unmatched('rec')], bins, histtype='step', label = 'rec fake' )
+        
+        ax.hist( size_like_E, bins, histtype='step', label = 'size like' )
         ax.set_xlabel(r'$E$[ADU]')
-        ax.axvline( threshold, ymin=0, ymax=ax.get_ylim()[1], c='g' )
+        ax.axvline( hits.threshold, ymin=0, ymax=ax.get_ylim()[1], c='g' )
         legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
 
     with Timer('scatter') as t:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.scatter( pairs_E[0], pairs_E[1], label = r'$E_{\rm rec}$', s=1 )
-        ax.plot( (ax.get_xlim()[0], ax.get_xlim()[0]), (ax.get_xlim()[1], ax.get_xlim()[1]), 'k-' )
+        
+        ax.scatter( sim_E[ matches.get_single_matched('sim') ], rec_E[ matches.get_single_matched('rec') ], label = r'$E_{\rm rec}$s', s=1 )
+        ax.scatter( sim_E[ matches.get_mult_matched('sim') ], rec_E[ matches.get_mult_matched('rec') ], label = r'$E_{\rm rec}$m', s=1 )
+        ax.scatter( sim_E[ matches.sim ], size_like_E[ matches.rec ], label = r'$E_{\rm sl}$', s=1 )
+        
+        ax.plot( (ax.get_xlim()[0], ax.get_xlim()[1]), (ax.get_xlim()[0], ax.get_xlim()[1]), 'k' )
         ax.set_xlabel(r'$E_{\rm sim}$')
         legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         output2 = (lambda _: _[0]+'sc.'+_[1])(output.split('.'))
         fig.savefig( output2, bbox_extra_artists = (legend,), bbox_inches='tight')
         
-    sim_sigma = events.get_sigma( func )
-    rec_sigma = np.sqrt( hits.xVar[1:] )
+    sim_sigma = events.get_sigma()
+    rec_std = np.sqrt( hits['xVar%d' % lvl] )
     
     with Timer('scatter') as t:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.scatter( sim_E, sim_sigma, label = r'$E_{\rm sim}$', s=1 )
-        ax.scatter( rec_E, rec_sigma, label = r'$E_{\rm rec}$', s=1 )
+
+        ax.scatter( sim_E, sim_sigma, label = r'$\sigma_{\rm sim}$', s=1 )
+        ax.scatter( rec_E, rec_std, label = r'${\rm std}_{\rm rec}$', s=1 )
+        ax.scatter( rec_E, rec_sigma, label = r'$\sigma_{\rm rec}$', s=1 )
+
         ax.set_xlabel(r'$E$')
-        ax.set_ylabel(r'$\sigma$')
-        ax.set_xlim( (sim_E.min(), sim_E.max()) )
-        ax.set_ylim( (sim_sigma.min(), sim_sigma.max()) )
+        ax.set_xlim( (sim_E.min(), sim_E.max()*1.2) )
+        ax.set_ylim( (sim_sigma.min(), sim_sigma.max()*1.2) )
         legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         output2 = (lambda _: _[0]+'sigma.'+_[1])(output.split('.'))
         fig.savefig( output2, bbox_extra_artists = (legend,), bbox_inches='tight')
 
-    binsize = .1
-    min_sigma = min( np.min(sim_sigma), np.min(rec_sigma) )
-    max_sigma = max( np.max(sim_sigma), np.max(rec_sigma) )
+    binsize = .02
+    min_sigma = np.min(sim_sigma)
+    max_sigma = np.max(sim_sigma)*1.5
     bins = np.arange( min_sigma, max_sigma+1, binsize )
 
     with Timer('scatter') as t:
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.hist( sim_sigma, bins=bins, label = r'$\sigma_{\rm sim}$', histtype = 'step' )
+        ax.hist( rec_std, bins=bins, label = r'${\rm std}_{\rm rec}$', histtype = 'step' )
         ax.hist( rec_sigma, bins=bins, label = r'$\sigma_{\rm rec}$', histtype = 'step' )
         ax.set_xlabel(r'$\sigma$')
         legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         output2 = (lambda _: _[0]+'sigma2.'+_[1])(output.split('.'))
         fig.savefig( output2, bbox_extra_artists = (legend,), bbox_inches='tight')
     
-    pairs_sigma = np.array( ( sim_sigma[ matches.sim ], rec_sigma[ matches.rec-1 ], matches.dist ) )
-    
-    pairs_sigma_d_1 = pairs_sigma[ :, pairs_sigma[2] <= np.sqrt(2) ]
-    pairs_sigma_d_a1 = pairs_sigma[ :, pairs_sigma[2] > np.sqrt(2) ]
-    print( pairs_sigma_d_a1.shape, pairs_sigma.shape )
-    
     with Timer('scatter') as t:
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        #ax.scatter( pairs_sigma[0], pairs_sigma[1], label = r'$\sigma_{\rm rec}$', s=1 )
-        #ax.scatter( pairs_sigma_single[0], pairs_sigma_single[1], label = r'$\sigma_{\rm rec} single$', s=1 )
-        #ax.scatter( pairs_sigma_multi[0], pairs_sigma_multi[1], label = r'$\sigma_{\rm rec} mult$', s=1 )
-        ax.scatter( pairs_sigma_d_1[0], pairs_sigma_d_1[1], label = r'$\sigma_{\rm rec} =1$', s=1 )
-        ax.scatter( pairs_sigma_d_a1[0], pairs_sigma_d_a1[1], label = r'$\sigma_{\rm rec} >1$', s=1 )
-        #ax.plot( (ax.get_xlim()[0], ax.get_xlim()[0]), (ax.get_xlim()[1], ax.get_xlim()[1]), 'k' )
+        ax.scatter( sim_sigma[ matches.sim ], rec_std[ matches.rec ], label = r'${\rm std}_{\rm rec}$', s=1 )
+        ax.scatter( sim_sigma[ matches.sim ], rec_sigma[ matches.rec ], label = r'$\sigma_{\rm rec}$', s=1 )
+
+        ax.plot( (ax.get_xlim()[0], ax.get_xlim()[1]), (ax.get_xlim()[0], ax.get_xlim()[1]), 'k' )
         ax.set_xlabel(r'$\sigma_{\rm sim}$')
+        ax.set_ylim( (sim_sigma.min(), sim_sigma.max()*1.2) )
         legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         output2 = (lambda _: _[0] + 'scsigmaPair.' + _[1])(output.split('.'))
         fig.savefig( output2, bbox_extra_artists = (legend,), bbox_inches='tight')
 
-
-def analysis( shape, charge_range, number_of_events, gain = 7.25, threshold = 15*4, border=3, diffusion_function = None, output_fits = None ):
+def analysis( args ):
     from Timer import Timer
-    with Timer('done') as t:
-        with Timer('events generated') as t:
-            events = simulate_events( shape, charge_range, number_of_events )
-        
-        with Timer('image generated') as t:
-            image_shape = shape[:2]
-            #diffusion_function = z2sigmaModel['3ap']
-            diffusion_function = diffusion_function
-            image = generate_image( events, image_shape, diffusion_function )
-            image.scale(gain)
-        
-        with Timer('image saved') as t:
-            image.save_fits( output_fits )
+    with Timer('analysis') as t:
+        if args['image_fits_input'] == 'none':
+            with Timer('events generated') as t:
+                events = simulate_events( args['shape'], args['charge_range'], args['number_of_events'], args['charge_gain'], args['dark_current'], args['readout_noise'], args['diffusion_function'], args['charge_efficiency_function'] )
+            
+            with Timer('image generated') as t:
+                image = generate_image( events )
+
+            #if args['image_energy_spectrum'] != 'none':
+                #with Timer('plot saved at ' + args['image_energy_spectrum'] ) as t:
+                    #image.spectrum( args['image_energy_spectrum'], events.gain, args['dark_current'], args['readout_noise'] )
+
+            if args['image_fits_output'] != 'none':
+                with Timer('fits image saved at ' + args['image_fits_output'] ) as t:
+                    image.save_fits( args['image_fits_output'] )
+        #else:
+            #image = read_image_from_file( args['image_fits_input'] )
             
         with Timer('hits extracted') as t:
-            hits = image.extract_hits( mode = 'cluster', threshold = threshold, border = border )
+            hits = image.extract_hits( mode = 'cluster', threshold = args['extraction_threshold'], border = args['extraction_border'] )
 
-        with Timer('plot reconstruction') as t:
-            show_reconstruction( 'recon.pdf', events, image, hits, zoom=[[0,200],[0,200]] )
-            spectrum_reconstruction( 'recon_sp.png', events, image, hits, gain=gain, binsize = 100, threshold=threshold, func=diffusion_function )
-
+        if args['reconstruction_image'] != 'none':
+            with Timer('plot reconstruction') as t:
+                show_reconstruction( args['reconstruction_image'], events, image, hits, zoom=[[0,200],[0,200]] )
+            
+        if args['reconstruction_spectra'] != 'none':
+            with Timer('plot spectrum reconstruction') as t:
+                spectrum_reconstruction( args['reconstruction_spectra'], events, image, hits, args['sigma_like_level'], args['sigma_like_tol'], binsize = 50 )
 
 
 if __name__ == '__main__':
@@ -1148,13 +1392,27 @@ if __name__ == '__main__':
     parser.add_argument('number_of_events', type=int, default = '4000', help = 'number of events to be randomly generated' )
     parser.add_argument('--shape', type=tuple_of_int, default = '[4000,4000,670]', help = 'shape of the image in pixel per pixel per µm' )
     parser.add_argument('--charge-range', type=tuple_of_int, default = '[5, 200]', help = 'range into which to randomly generate charges' )
-    parser.add_argument('--charge-gain', type=float, default = '7.25', help = 'factor to convert charges into ADU' )
-    parser.add_argument('--extraction-threshold', type=float, default = '15', help = 'energy threshold for extraction in ADU' )
+    parser.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
+    parser.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
+    parser.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
+    parser.add_argument('--extraction-threshold', type=eval, default = '15*4', help = 'energy threshold for extraction in ADU' )
     parser.add_argument('--extraction-border', type=int, default = '3', help = 'borders to be added around the axtracted event' )
-    parser.add_argument('--output-fits', type=str, default = 'simulation.fits', help = 'fits file to be overwritten with the generated image' )
-    parser.add_argument('--diffusion-function', 
+    parser.add_argument('--image-fits-output', type=str, default = 'simulation.fits', help = 'set to "none" not to generate a fits output' )
+    parser.add_argument('--image-fits-input', type=str, default = 'none', help = 'set to <path> to load existing fits image' )
+    parser.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
+    parser.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
+    parser.add_argument('--reconstruction-image', type=str, default = 'reconstruction_image.pdf', help = 'set to "none" not to plot the reconstruction image' )
+    parser.add_argument('--reconstruction-spectra', type=str, default = 'reconstruction_spectra.png', help = 'set to "none" not to plot the reconstruction spectra' )
+    parser.add_argument('--sigma-like-level', type=int, default = '2', help = 'level used to compute the sigma like' )
+    parser.add_argument('--sigma-like-tol', type=float, default = '1e-3', help = 'tolerance used to compute the sigma like' )
+    parser.add_argument('--diffusion-function',
                         type=str, 
                         default = 'sqrt(-923.666*log1p(-0.000441113*z))/15 if z < 670 else 0',
+                        help = 'function to map z-depth into sigma' 
+                        )
+    parser.add_argument('--charge-efficiency-function',
+                        type=str, 
+                        default = '1. if z < 670 else .9',
                         help = 'function to map z-depth into sigma' 
                         )
     if len(sys.argv) == 1:
@@ -1162,8 +1420,9 @@ if __name__ == '__main__':
         exit(1)
     args = parser.parse_args()
     
-    print( args )
+    print( vars(args) )
     from numpy import *
     args.diffusion_function = eval( 'vectorize(lambda z: %s)' % args.diffusion_function )
+    args.charge_efficiency_function = eval( 'vectorize(lambda z: %s)' % args.charge_efficiency_function )
     
-    analysis( shape = args.shape, charge_range = args.charge_range, number_of_events = args.number_of_events, threshold = args.extraction_threshold, border = args.extraction_border, diffusion_function = args.diffusion_function )
+    analysis( vars(args) )

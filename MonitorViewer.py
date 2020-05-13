@@ -124,18 +124,18 @@ class MonitorViewer(Gtk.Window):
         
         self.log_file = '/home/mota/public/gui/%s.log'%self.id
         self.quantities = [
-            #'darkCurrent', 
-            #'readoutNoise', 
+            'darkCurrent', 
+            'readoutNoise', 
             #'lambdaBGbin',
-            #'lambdaBGbinRAW',
-            #'lambdaBGbinBorderRAW',
+            'lambdaBGbinRAW',
+            'lambdaBGbinBorderRAW',
             'gainElectronbin',
             'gainElectronMAD',
             'gainElectron',
             'gainElectronMAD_line',
             #'diffMedianBG',
             #'diffMADSqr', 
-            #'sigmaOS', 
+            'sigmaOS', 
             #'sigmaOSMAD', 
             #'sigmaOSMAD2', 
             #'sigmaOSbin',
