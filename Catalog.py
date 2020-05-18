@@ -8,6 +8,8 @@ import rootpy
 import rootpy.io
 from ROOT import TFile, TTree, AddressOf
 from array import array
+from rootpy.tree import Tree, TreeModel, IntCol, FloatArrayCol
+from rootpy.io import root_open
 
 class Timer:
     def __init__(self, msg='elapsed'):
@@ -84,8 +86,6 @@ def build_new_root_from_existing( input, output, condition = None, selection = '
     if number_of_selected_hits == 0:
         print( 'selection found no hits, exiting' )
         return
-    #print( np.min( input_file.hitSumm.GetBranch('xMin') ), np.max( input_file.hitSumm.GetBranch('xMax') ) )
-    #print( input_file.hitSumm.yMin, input_file.hitSumm.yMax )
     
     output_file = TFile.Open( output, 'recreate' )
     with Timer('clone config and write') as t:
@@ -116,6 +116,28 @@ def build_new_root_from_existing( input, output, condition = None, selection = '
         output_file.Close()
         input_file.Close()
     return
+
+def build_new_catalog_from_recarry( input, output, model, N ):
+    class Event(TreeModel):
+        E0 = FloatCol()
+        nSavedPix = IntCol()
+        ePix = FloatArrayCol(10, length_name='nSavedPix')
+        xPix = IntArrayCol(10, length_name='nSavedPix')
+
+    rfile = root_open('test.root', 'w')
+    tree = Tree('hitSumm', model=Event)
+
+    for i in range(N):
+        tree.nSavedPix = output.nSavedPix[i]
+        for j in range( tree.nSavedPix ):
+            tree.ePix[j] = output.ePix[j]
+        tree.fill()
+
+    tree.write()
+    tree.vals.reset()
+    #tree.csv()
+    rfile.close()
+    print("===")
 
 def build_new_root_from_existing_rootpy( input, output, condition = None, selection = '' ):
     with Timer('open file') as t:
