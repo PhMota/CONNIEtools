@@ -11,11 +11,14 @@ class Timer:
     
     def __exit__(self, type, value, traceback):
         s = [ self.msg ]
-        s += [ '%ss' % ((datetime.datetime.now()-self.start).total_seconds() ) ]
+        s += [ '%ss' % self.__call__() ]
         if value:
             s += [ '%s'%type ]
             s += [ '%s'%value ]
         print( ' '.join(s) )
+    
+    def __call__(self, N=1):
+        return (datetime.datetime.now() - self.start).total_seconds()/N
 
 class timer:
     def __init__(self, name = ''):

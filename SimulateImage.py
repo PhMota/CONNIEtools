@@ -9,6 +9,7 @@ import scipy.ndimage
 import os
 import root_numpy
 import Statistics as stats
+from numpy.lib import recfunctions as rfn
 
 electron_in_eV = 3.745
 electron_in_keV = electron_in_eV*1e-3
@@ -732,7 +733,6 @@ def simulate_events( shape, charge_range, number_of_events, gain, lambda_, sigma
 
 class Events( np.recarray ):
     def __new__(cls, array_of_positions, array_of_charges, shape, gain, lambda_, sigma, diffusion_function, charge_efficiency_function ):
-        from numpy.lib import recfunctions as rfn
         dtype = [
             ('x', float),
             ('y', float),
@@ -851,6 +851,7 @@ def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_s
     return -np.nansum( np.log( val ) )
 
 def size_like( ePix, xPix, yPix, E0, mu0, sigma0, sigma_noise0, single_sigma = False, fast = False, tol = None ):
+    #print( 'size like call', len(ePix) )
     mu = [0,0]
     sigma = [0,0]
     Q = 0
@@ -865,16 +866,22 @@ def size_like( ePix, xPix, yPix, E0, mu0, sigma0, sigma_noise0, single_sigma = F
         fun = lambda p: negloglikelihood_fast(e, x, y, int(p[0]), [p[1], p[2]], [p[3], p[4]], sigma_noise0, single_sigma)
     else:
         fun = lambda p: negloglikelihood(e, x, y, int(p[0]), [p[1], p[2]], [p[3], p[4]], sigma_noise0, single_sigma)
+    
     Q, mu[0], mu[1], sigma[0], sigma[1] = scipy.optimize.minimize(
         fun = fun,
         x0 = [ int(E0), mu0[0]+.5, mu0[1]+.5, sigma0[0], sigma0[1] ],
         tol = tol,
-        bounds = [(1, np.inf), (-np.inf,np.inf), (-np.inf, np.inf), (0.01, np.inf), (0.01, np.inf)] ).x
+        bounds = [(1, np.inf), (-np.inf,np.inf), (-np.inf, np.inf), (0.001, np.inf), (0.001, np.inf)] ).x
+    
+    print( 'size like call', (Q, E0), (mu[0], mu[1], mu0), (sigma[0], sigma[1], sigma0) )
     return Q, mu, sigma
 
+
+
 class Hits(np.recarray):
+    
     def __new__( cls, list_of_entries, levels, threshold, border ):
-        from numpy.lib import recfunctions as rfn
+        print( 'new hits' )
         dtype = [
             ('ePix', object),
             ('xPix', object),
@@ -882,59 +889,113 @@ class Hits(np.recarray):
             ('level', object),
             ]
         obj = np.array( list_of_entries[1:], dtype = dtype ).view(np.recarray).view(cls)
-        for i in range(border+1):
-            obj = obj._add_level_fields(i).view(cls)
+        obj = rfn.append_fields( obj, 
+                                 ('nSavedPix'), 
+                                 np.array(map(len, obj.ePix)), 
+                                 dtypes=(int), 
+                                 asrecarray=True 
+                                 ).view(cls)
 
         obj.border = border
         obj.threshold = threshold
         obj.background = list_of_entries[0]
-        print( 'fields in hits', obj.dtype.names )
         return obj
     
-    def _add_level_fields( self, lvl ):
-        from numpy.lib import recfunctions as rfn
+    def add_fields( self, names, arrays, types ):
+        return rfn.append_fields( self, names, arrays, dtypes=types, asrecarray=True ).view(Hits)
         
-        def sum_len( entry ):
-            below_lvl = entry.level <= lvl
-            return np.sum(entry.ePix[below_lvl]), len(entry.ePix[below_lvl])
-        new_fields = np.array(map( sum_len, self ))
-        self = rfn.append_fields( self, 
-                                 ('E%d' % lvl, 'n%d' % lvl), 
-                                 new_fields.T, 
-                                 dtypes=(float,float), 
-                                 asrecarray=True 
-                                 )
-
-        def ave( xy, weights, level ):
-            below_lvl = level <= lvl
-            try:
-                #positive = weights[below_lvl] > 0
-                #return np.average( xy[:,below_lvl][positive], weights = weights[below_lvl][positive], axis=-1 )
-                ret = np.average( xy[:,below_lvl], weights = weights[below_lvl], axis=-1 )
-            except:
-                ret = np.mean( xy[:,below_lvl], axis=-1 )
-                #print( 'ret', ret.shape )
-            return np.abs(ret)
-            
+    def compute_number_of_pixel_levels( self, lvl ):
+        return np.array(map( lambda entry: len(entry.ePix[ entry.level <= lvl ]), self ))
         
-        a = np.array(map( lambda entry: ave( np.array((entry.xPix, entry.yPix)), entry.ePix, entry.level ), self ))
-        self = rfn.append_fields( self, 
-                                 ['xBary%d' % lvl,'yBary%d' % lvl], 
-                                 a.T, 
-                                 dtypes=(float,float),
-                                 asrecarray=True 
-                                 )
-        a = np.array(map( lambda entry: np.abs( 
-            ave( np.array((entry.xPix, entry.yPix))**2, entry.ePix, entry.level ) - (entry['xBary%d' % lvl]**2,entry['yBary%d' % lvl]**2)
-            ), self ))
-        
-        self = rfn.append_fields( self, 
-                                 ['xVar%d' % lvl, 'yVar%d' % lvl], 
-                                 a.T,
-                                 dtypes=(float,float),
-                                 asrecarray=True 
-                                 )
+    def add_number_of_pixel_levels( self, lvls ):
+        added_fields = []
+        for lvl in lvls:
+            new_field = 'n%d' % lvl
+            self = self.add_fields( 'n%d' % lvl, self.compute_number_of_pixel_levels(lvl), int )
+            added_fields.append( new_field )
+        print( 'added', added_fields )
         return self
+        
+    def compute_energy_levels( self, lvl ):
+        return np.array(map( lambda entry: np.sum(entry.ePix[ entry.level <= lvl ]) , self ))
+    
+    def add_energy_levels( self, lvls ):
+        added_fields = []
+        for lvl in lvls:
+            new_field = 'E%d' % lvl
+            self = self.add_fields( new_field, self.compute_energy_levels(lvl), float )
+            added_fields.append( new_field )
+        print( 'added', added_fields )
+        return self
+        
+    def __average__( self, xy, weights, level, lvl ):
+        below_lvl = level <= lvl
+        try:
+            ret = np.average( xy[:,below_lvl], weights = weights[below_lvl], axis=-1 )
+        except:
+            ret = np.mean( xy[:,below_lvl], axis=-1 )
+        return np.abs(ret)
+
+    def compute_barycenter_levels(self, lvl):
+        barycenter = lambda entry: self.__average__( np.array((entry.xPix, entry.yPix)), entry.ePix, entry.level, lvl )
+        return np.array(map( barycenter, self ))
+        
+    def add_barycenter_levels( self, lvls ):
+        added_fields = []
+        for lvl in lvls:
+            new_fields = ['xBary%d' % lvl,'yBary%d' % lvl]
+            self = self.add_fields( new_fields, self.compute_barycenter_levels(lvl).T, (float, float) )
+            added_fields.extend( new_fields )
+        print( 'added', added_fields )
+        return self
+    
+    def compute_variance_levels( self, lvl ):
+        variance = lambda entry: np.abs(
+            self.__average__( np.array((entry.xPix, entry.yPix))**2, entry.ePix, entry.level, lvl ) - self.__average__( np.array((entry.xPix, entry.yPix)), entry.ePix, entry.level, lvl )**2 )
+        
+        return np.array(map( variance, self ))
+        
+    def add_variance_levels( self, lvls ):
+        added_fields = []
+        for lvl in lvls:
+            new_fields = ['xVar%d' % lvl,'yVar%d' % lvl]
+            self = self.add_fields( new_fields, self.compute_variance_levels( lvl ).T, (float,float) )
+            added_fields.extend( new_fields )
+        print( 'added', added_fields )
+        return self
+        
+    def compute_sizelike_each( self, entry, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
+        _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
+                                E0 = entry['E%d'%lvl]/gain, 
+                                mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ], 
+                                sigma0 = np.sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ), 
+                                sigma_noise0 = sigma_noise,
+                                single_sigma = False,
+                                fast = fast,
+                                tol = tol)
+        return _Q*gain, _mu[0], _mu[1], _sigma[0], _sigma[1]
+
+    def add_sizelike( self, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
+        new_fields = np.array( map( lambda entry: self.compute_sizelike_each( entry, lvl, gain, sigma_noise, fast, tol ), self ) )
+        self = self.add_fields( ['EL', 'xMu', 'yMu', 'xSigma', 'ySigma'], new_fields.T, (float, float, float, float, float) )
+        return self
+        
+    #def get_sizeLike( self, lvl, gain, sigma_noise, fast=True, tol = None ):
+        #Q = []
+        #mu, sigma = [], []
+        #for entry in self:
+            #_Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
+                                  #E0 = entry['E%d'%lvl]/gain, 
+                                  #mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ], 
+                                  #sigma0 = np.sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ), 
+                                  #sigma_noise0 = sigma_noise,
+                                  #single_sigma=False,
+                                  #fast = fast,
+                                  #tol = tol)
+            #Q.append( _Q )
+            #mu.append( _mu )
+            #sigma.append( _sigma )
+        #return np.array(Q)*gain, np.array(mu), np.array(sigma)
     
     def get_Bary(self):
         return np.array( (self.xBary, self.yBary) ).T
@@ -942,28 +1003,11 @@ class Hits(np.recarray):
     def get_Var(self):
         return np.array( (self.xVar, self.yVar) ).T
     
-    def get_sizeLike( self, lvl, gain, sigma_noise, fast=True, tol = None ):
-        Q = []
-        mu, sigma = [], []
-        for entry in self:
-            _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
-                                  E0 = entry['E%d'%lvl]/gain, 
-                                  mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ], 
-                                  sigma0 = np.sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ), 
-                                  sigma_noise0 = sigma_noise,
-                                  single_sigma=False,
-                                  fast = fast,
-                                  tol = tol)
-            Q.append( _Q )
-            mu.append( _mu )
-            sigma.append( _sigma )
-        return np.array(Q)*gain, np.array(mu), np.array(sigma)
-    
-    def table(self, keys, sorted = False):
-        ret = np.array( zip(*[ self[key] for key in keys]) )
-        if sorted:
-            ret = ret[ret[:,sorted].argsort()]
-        return ret
+    #def table(self, keys, sorted = False):
+        #ret = np.array( zip(*[ self[key] for key in keys]) )
+        #if sorted:
+            #ret = ret[ret[:,sorted].argsort()]
+        #return ret
 
 def get_indices( array, length ):
     return np.floor(array/length).astype(int)
@@ -1164,6 +1208,8 @@ def spectrum_reconstruction( output, events, image, hits, lvl, tol, binsize ):
 
 def analysis( args ):
     from Timer import Timer
+    import Catalog
+
     with Timer('analysis') as t:
         if args['image_fits_input'] == 'none':
             with Timer('events generated') as t:
@@ -1184,14 +1230,31 @@ def analysis( args ):
             
         with Timer('hits extracted') as t:
             hits = image.extract_hits( mode = 'cluster', threshold = args['extraction_threshold'], border = args['extraction_border'] )
+            n = 4
+            hits = hits.add_number_of_pixel_levels( range(n) )
+            hits = hits.add_energy_levels( range(n) )
+            hits = hits.add_barycenter_levels( range(n) )
+            hits = hits.add_variance_levels( range(n) )
+            print( 'hits', hits.dtype.names )
 
+        if args['catalog_root_output'] != 'none':
+            with Timer('root catalog at ' + args['catalog_root_output'] ) as t:
+                Catalog.build_new_catalog_from_recarray( hits, args['catalog_root_output'], None )
+        
+        #with Timer('size like') as t:
+            #hits.add_sizelike( 3, args['charge_gain'], args['readout_noise'], fast = False, tol = 1e-3 )
+            #t( len(hits) )
+
+        with Timer('write catalog sizelike') as t:
+            Catalog.build_new_catalog_from_recarray( hits, 'catalog_test.root', None )
+            
         if args['reconstruction_image'] != 'none':
             with Timer('plot reconstruction') as t:
                 show_reconstruction( args['reconstruction_image'], events, image, hits, zoom=[[0,200],[0,200]] )
             
-        if args['reconstruction_spectra'] != 'none':
-            with Timer('plot spectrum reconstruction') as t:
-                spectrum_reconstruction( args['reconstruction_spectra'], events, image, hits, args['sigma_like_level'], args['sigma_like_tol'], binsize = 50 )
+        #if args['reconstruction_spectra'] != 'none':
+            #with Timer('plot spectrum reconstruction') as t:
+                #spectrum_reconstruction( args['reconstruction_spectra'], events, image, hits, args['sigma_like_level'], args['sigma_like_tol'], binsize = 50 )
 
 
 if __name__ == '__main__':
@@ -1215,6 +1278,7 @@ if __name__ == '__main__':
     parser.add_argument('--image-fits-input', type=str, default = 'none', help = 'set to <path> to load existing fits image' )
     parser.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
     parser.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
+    parser.add_argument('--catalog-root-output', type=str, default = 'catalog_test.root', help = 'set to "none" not to generate root catalog' )
     parser.add_argument('--reconstruction-image', type=str, default = 'reconstruction_image.pdf', help = 'set to "none" not to plot the reconstruction image' )
     parser.add_argument('--reconstruction-spectra', type=str, default = 'reconstruction_spectra.png', help = 'set to "none" not to plot the reconstruction spectra' )
     parser.add_argument('--sigma-like-level', type=int, default = '2', help = 'level used to compute the sigma like' )

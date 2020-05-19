@@ -35,10 +35,10 @@ def crop_mean( x, axis = None, mode = None ):
     elif mode == 'partition':
         return crop_mean_1d_partition( x )
 
-def crop_var_1d( x, step = 1 ):
-    x2 = crop_mean_1d(x**2, step)
-    m = crop_mean_1d(x, step)**2
-    return x2 - m**2    
+#def crop_var_1d( x, step = 1 ):
+    #x2 = crop_mean_1d(x**2, step)
+    #m = crop_mean_1d(x, step)**2
+    #return x2 - m**2    
 
 def crop_mean_1d( x, step = 1 ):
     x = np.sort( x.flatten() )
@@ -54,6 +54,29 @@ def crop_mean_1d( x, step = 1 ):
         mean = np.mean( x[left:right] )
         median = np.median( x[left:right] )
     return mean
+
+def crop_std_1d( x, step = 1, abs_tol = .5 ):
+    x = np.sort( x.flatten() )
+    left, right = 0, len(x)
+
+    std = np.std(x)
+    mad = MAD(x)
+    mean = np.mean(x)
+    median = np.median(x)
+
+    while abs(std - mad) >= abs_tol:
+        if mean > median: right -= step
+        else: left += step
+
+        mean = np.mean( x[left:right] )
+        median = np.median( x[left:right] )
+        std = np.std(x[left:right])
+        mad = MAD(x[left:right])
+        if (right-left) < .7*len(x):
+            print('did not converge', mean, median, std, mad, right-left, len(x) )
+            break
+    print( '\tcrop var', std, mad )
+    return std
 
 def crop_mean_1d_partition( x, partitions = 10 ):
     mean = np.mean(x)
@@ -143,7 +166,16 @@ def get_imageHDU( fits, ohdu ):
     index = list_params( fits ).index( ohdu )
     return fits[ index ]
 
-def parse_expr( expr, ohdu, correction_mode = 'none', smoothening_length = 0 ):
+def statistics( data ):
+    return (float(np.mean(data)), 
+            float(np.median(data)), 
+            float(crop_mean_1d(data, step=10)), 
+            float(np.std(data)), 
+            float( MAD(data) ), 
+            float(crop_std_1d(data, step=10, abs_tol = 1)),
+            )
+
+def parse_expr( expr, ohdu, correction_mode = 'none', smoothening_length = 0, correct_vertical = True ):
     with Timer('read and process') as t:
         paths = glob( expr )[::-1]
         header = None
@@ -154,18 +186,32 @@ def parse_expr( expr, ohdu, correction_mode = 'none', smoothening_length = 0 ):
                 data = { key: np.concatenate( [ data[key], datum[key] ], axis=0 ) for key in data.keys() }
             else:
                 data = datum
+        print( 'concatenated stats', statistics( data['bias'] ) )
         data['bias'] = data['bias'].view(Image)
         vbias_width = vbias_from_height[ data['data'].shape[0] ]
         data['vbias'] = data['data'][:vbias_width,:].view(Image)
         data['data'] = data['data'][vbias_width:,:].view(Image)
-        data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], mode = correction_mode, size = smoothening_length )
-        #print( 'corr', type( data['data'] ) )
+        if correct_vertical:
+            data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], mode = correction_mode, size = smoothening_length )
+        print( 'corrected by rows stats', statistics( data['bias'] ) )
+        print()
     return data, dict(header)
 
+def get_params( expr, ohdu, correction_mode = 'none', smoothening_length = 0, correct_vertical = True, remove_hits = False, threshold = 0, border = 0):
+    data, header = parse_expr(expr, ohdu, correction_mode, smoothening_length, correct_vertical )
+    mu = float( crop_mean_1d( data['bias'], step = 100 ) )
+    sigma = float( crop_std_1d( data['bias'], step = 100 ) )
+    if remove_hits:
+        data['data'] = data['data'].get_background( threshold, border )
+    g_lamb = float( crop_mean_1d( data['data'], step = 100 ) - mu )
+    g2_lamb = float( crop_std_1d( data['data'], step = 100 )**2 - sigma**2 )
+    g = g2_lamb/g_lamb
+    return mu, sigma, g_lamb, g2_lamb, g, g_lamb/g
+    
 def parse_fits( path, ohdu, correction_mode = 'none', smoothening_length = 0 ):
     fits_dir = astropy.io.fits.open( path )
     imageHDU = get_imageHDU( fits_dir, ohdu )
-    #print( 'full data', imageHDU.shape )
+
     section = {}
     half_width = imageHDU.data.shape[1]/2
     bias_width = bias_from_width[ imageHDU.data.shape[1] ]
@@ -173,25 +219,26 @@ def parse_fits( path, ohdu, correction_mode = 'none', smoothening_length = 0 ):
 
     section['data'] = Image( imageHDU.data[ :-1, : half_width - bias_width ] )/bin_width
     section['bias'] = Image( imageHDU.data[ :-1, half_width -bias_width: half_width ] )/bin_width
-    
+
     if correction_mode == 'none':
         section['data'], section['bias'] = correct_global_by_bias( [section['data'], section['bias']], section['bias'] )
     else:
         section['data'], section['bias'] = correct_lines_by_bias( [section['data'], section['bias']], section['bias'], mode = correction_mode, size = smoothening_length )
+    print( 'corrected by lines stats', statistics(section['bias'] ) )
     return section, dict(imageHDU.header)
 
 def correct_global_by_bias( data, bias ):
     correction = np.median( bias )
     return [ datum - correction for datum in data ]
 
-def correct_lines_by_bias( data, bias, size = None, mode = 'median' ):
+def correct_lines_by_bias( data, bias, size = 0, mode = 'median' ):
     func = np.mean
     if mode == 'median':
         func = np.median
     elif mode == 'crop_mean':
         func = crop_mean
     correction_of_lines = func( bias, axis = 1 )
-    if size: 
+    if size > 2:
         correction_of_lines = scipy.ndimage.filters.uniform_filter1d( correction_of_lines, size = size, mode='nearest' )
     return [ datum - correction_of_lines[:,None] for datum in data ]
 
@@ -221,8 +268,6 @@ def label_clusters( condition_image ):
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
     return scipy.ndimage.label( condition_image, structure=s33 )[0]
 
-def generate_image_from_fits():
-    horizontal_overscan = data[ get_overscan_slice ]
 
 class Image( np.ndarray ):
     def __new__( cls, input_array ):
@@ -254,10 +299,10 @@ class Image( np.ndarray ):
         if mode == 'partition':
             return crop_mean_1d_partition( self.flatten() )
     
-    def median( self ): return np.median(self)
-    def mean(self): return np.mean(self)
-    def MAD(self): return MAD(self)
-    def var(self): return np.var(self)
+    #def median( self ): return np.median(self)
+    #def mean(self): return np.mean(self)
+    #def MAD(self): return MAD(self)
+    #def var(self): return np.var(self)
     
     def get_binned_distribution( self, binsize = 1):
         bins = np.arange( self.min(), self.max(), binsize)
@@ -275,27 +320,28 @@ class Image( np.ndarray ):
         bounds = [(0, -np.inf, 0), (np.inf, np.inf, np.inf)]
         self.fit_binned( func, p0, bounds, binsize )
         
-    
     def extract_hits( self, mode, **kwargs ):
         if mode == 'cluster':
             return self._extract_clusters_( **kwargs )
 
-    #def _label_clusters_above_threshold_( self, threshold ):
-        #return label_clusters( self.image >= thr )
-    
-    #def _compute_distances_to_clusters_( self ):
-        #return scipy.ndimage.distance_transform_edt(  )
-
-    def _extract_clusters_( self, threshold, border ):
+    def get_clusters( self, threshold, border ):
         labeled_clusters = label_clusters( self >= threshold )
         print( 'number_of_clusters_above_threshold', labeled_clusters.max(), len(np.unique(labeled_clusters)) )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
         print( 'number_of_clusters_with border', labeled_clusters.max() )
+        return labeled_clusters, distances_to_cluster
+
+    def get_background( self, threshold, border ):
+        labeled_clusters, _ = self.get_clusters( threshold, border )
+        return self[ labeled_clusters == 0 ]
+        
+    def _extract_clusters_( self, threshold, border ):
+        labeled_clusters, distances_to_cluster = self.get_clusters( threshold, border )
         
         list_of_clusters = scipy.ndimage.labeled_comprehension(
-            self, 
+            self,
             labeled_clusters,
             index = np.unique(labeled_clusters), 
             func = lambda v, p: [v, p], 
@@ -307,7 +353,7 @@ class Image( np.ndarray ):
             distances_to_cluster, 
             labeled_clusters, 
             index= np.unique(labeled_clusters),
-            func=lambda v: v, 
+            func = lambda v: v, 
             default=-1, 
             out_dtype=list 
             )
@@ -411,11 +457,23 @@ def main( args ):
     #section_none, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'none' )
     #section_mean, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'mean' )
     #section_mean10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'mean', smoothening_length = 10 )
-    section_median, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'median' )
+
+    #section_median, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'median' )
+
     #section_median10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'median', smoothening_length = 10 )
     #section_crop, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'crop_mean' )
-    section_crop10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'crop_mean', smoothening_length = 10 )
 
+    #section_crop10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'crop_mean', smoothening_length = 10 )
+
+    print( 'median', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = False ) )
+    print( 'median100', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = True, smoothening_length = 100 ) )
+    #print( 'crop', get_params( args['input_fits'], args['ohdu'], correction_mode = 'crop_median', correct_vertical = False ) )
+    #print( 'cropV', get_params( args['input_fits'], args['ohdu'], correction_mode = 'crop_median', correct_vertical = True ) )
+    #print( 'cropV10', get_params( args['input_fits'], args['ohdu'], correction_mode = 'crop_median', correct_vertical = True, smoothening_length = 10 ) )
+
+    #print( 'median', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = False, remove_hits = True, threshold = 60, border = 3 ) )
+    
+    exit(0)
     ##display( [section_none['data']], 'xy', delta = 5, labels=['none'] )
     ##display( [section_mean['data']], 'xy', delta = 5, labels=['mean'] )
     ###display( [section_mean10['data']], 'xy', delta = 5, labels=['mean10'] )
@@ -477,8 +535,8 @@ if __name__ == '__main__':
         )
     def tuple_of_int( x ):
         return map(int, eval(x))
-    #parser.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/029/runID_029_03326_Int-400_Exp-10800_11Mar18_18:06_to_11Mar18_21:10_p*.fits.fz', help = 'fits file input' )
-    parser.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/047/runID_047_12750_Int-400_Exp-3600_22Mar20_08:05_to_22Mar20_09:09_p1.fits.fz', help = 'fits file input' )
+    parser.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/029/runID_029_03326_Int-400_Exp-10800_11Mar18_18:06_to_11Mar18_21:10_p*.fits.fz', help = 'fits file input' )
+    #parser.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/047/runID_047_12750_Int-400_Exp-3600_22Mar20_08:05_to_22Mar20_09:09_p1.fits.fz', help = 'fits file input' )
     parser.add_argument('--ohdu', type=int, default = '3', help = 'ohdu to be read' )
 
     #parser.add_argument('--shape', type=tuple_of_int, default = '[4000,4000,670]', help = 'shape of the image in pixel per pixel per µm' )

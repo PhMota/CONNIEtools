@@ -8,18 +8,10 @@ import rootpy
 import rootpy.io
 from ROOT import TFile, TTree, AddressOf
 from array import array
-from rootpy.tree import Tree, TreeModel, IntCol, FloatArrayCol
+from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol
 from rootpy.io import root_open
 
-class Timer:
-    def __init__(self, msg='elapsed'):
-        self.msg = msg
-        
-    def __enter__(self):
-        self.start = datetime.datetime.now()
-    
-    def __exit__(self, type, value, traceback):
-        print( self.msg, (datetime.datetime.now()-self.start).total_seconds(), 's' )
+from Timer import Timer
 
 def list_branches( file, treename = 'hitSumm' ):
     return root_numpy.list_branches( file, treename = treename )
@@ -117,27 +109,58 @@ def build_new_root_from_existing( input, output, condition = None, selection = '
         input_file.Close()
     return
 
-def build_new_catalog_from_recarry( input, output, model, N ):
-    class Event(TreeModel):
-        E0 = FloatCol()
+def build_new_catalog_from_recarray( input, output, model ):
+    N = len(input)
+    print( 'build_new_catalog_from_recarray', N )
+    class Event( TreeModel ):
+        flag = IntCol()
         nSavedPix = IntCol()
-        ePix = FloatArrayCol(10, length_name='nSavedPix')
-        xPix = IntArrayCol(10, length_name='nSavedPix')
+        runID = IntCol()
+        ohdu = IntCol()
+        nSat = IntCol()
+        
+        ePix = FloatArrayCol(10000, length_name = 'nSavedPix')
+        xPix = IntArrayCol(10000, length_name = 'nSavedPix')
+        yPix = IntArrayCol(10000, length_name = 'nSavedPix')
+        level = IntArrayCol(10000, length_name = 'nSavedPix')
+    
+    extra_fields = []
+    for name in input.dtype.names:
+        if not name in vars(Event):
+            type_ = getattr( input, name ).dtype
+            eventtype = None
+            if type_ == 'float64':
+                eventtype = FloatCol()
+            elif type_ == 'int64':
+                eventtype = IntCol()
+            else:
+                raise Exception( 'type not recognized', type_ )
+            setattr( Event, name, eventtype )
+            extra_fields.append( name )
+    
+    print( 'extra_fields', extra_fields )
 
-    rfile = root_open('test.root', 'w')
-    tree = Tree('hitSumm', model=Event)
+    rfile = root_open( output, 'w' )
+    tree = Tree( name = 'hitSumm', model = Event )
 
     for i in range(N):
-        tree.nSavedPix = output.nSavedPix[i]
+        tree.flag = 0
+        tree.nSat = 0
+        tree.runID = 0
+        tree.ohdu = 0
+        tree.nSavedPix = input.nSavedPix[i]
+        
         for j in range( tree.nSavedPix ):
-            tree.ePix[j] = output.ePix[j]
+            tree.ePix[j] = input.ePix[i][j]
+            tree.xPix[j] = input.xPix[i][j]
+            tree.yPix[j] = input.yPix[i][j]
+            tree.level[j] = int( input.level[i][j] )
+        for name in extra_fields:
+            setattr( tree, name, getattr( input, name)[i] )
         tree.fill()
 
     tree.write()
-    tree.vals.reset()
-    #tree.csv()
     rfile.close()
-    print("===")
 
 def build_new_root_from_existing_rootpy( input, output, condition = None, selection = '' ):
     with Timer('open file') as t:
@@ -223,51 +246,8 @@ class Catalog(TFile):
             return getattr(self, treename).CopyTree( selection )
         raise Exception('tree not selected')
 
-    #def save_as( self, outputname ):
-        #output = TFile.Open( outputname, 'recreate' )
-        
-class Tree(TTree):
-    def __new__( self, tree ):
-        self = tree
-    def __init__( self, tree ):
-        print( type(self ))
-        #print( type(self), type(tree) )
-        self.list_of_branches = [ branch.GetName() for branch in self.GetListOfBranches() ]
-        self.number_of_entries = self.GetEntries()
-        #print( 'branches __init__', self.list_of_branches )
-        #print( 'number_of_entries __init__', self.number_of_entries )
 
 if __name__ == '__main__':
-    #file = rootpy.io.root_open( sys.argv[1] )
-    #print( file )
-    #print( [ ( branch.GetName(), branch.GetTitle() ) for branch in file.config.GetListOfBranches() ] )
-    #print( [ ( branch.GetName(), branch.GetTitle() ) for branch in file.hitSumm.GetListOfBranches() ] )
-    ##print( dir(file.hitSumm) )
-    
-    #print( type(file.hitSumm.get_branch('E0'))) 
-    
-    ##for entry in file.hitSumm:
-        ##print( type(entry) )
-    #input()
-    #exit()
-    ##print( dir(TTree) )
-    #cat = Catalog( sys.argv[1] )
-    #print( type(cat) )
-    #print( cat.list_of_treenames )
-    #print( cat.config.list_of_branches )
-    #cat.status()
-    
-    #with Catalog( sys.argv[1] ) as catalog:
-        #print( type(catalog) )
-        #print( catalog.config.number_of_entries )
-        #catalog.status()
-    #exit(0)
-    ##status( sys.argv[1] )
-    ##build_new_root_from_existing( sys.argv[1], 'test.root', lambda entry: entry.E0 > 1e6 and entry.flag == 0, selection = 'flag==0&&E0>1e6' )
-    # catalogs 1x1
-    # hpixP_
-    # catalogues 1x5 to be used
-    # 6322, 6522, 6722
     conds1_x = [
         'flag==0',
         '(xMax-xMin) >= 50',

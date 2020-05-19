@@ -47,8 +47,6 @@ class Image:
         ax.hist( self.matrix.flatten(), kwargs )
         return ax
 
-    #def get_mean( self ):
-        
 class CCDImage:
     def __init__( self ):
         self.data_section = None
