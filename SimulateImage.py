@@ -1245,8 +1245,8 @@ def analysis( args ):
             #hits.add_sizelike( 3, args['charge_gain'], args['readout_noise'], fast = False, tol = 1e-3 )
             #t( len(hits) )
 
-        with Timer('write catalog sizelike') as t:
-            Catalog.build_new_catalog_from_recarray( hits, 'catalog_test.root', None )
+        #with Timer('write catalog sizelike') as t:
+            #Catalog.build_new_catalog_from_recarray( hits, 'catalog_test.root', None )
             
         if args['reconstruction_image'] != 'none':
             with Timer('plot reconstruction') as t:

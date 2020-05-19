@@ -132,7 +132,7 @@ def build_new_catalog_from_recarray( input, output, model ):
             if type_ == 'float64':
                 eventtype = FloatCol()
             elif type_ == 'int64':
-                eventtype = IntCol()
+                eventtype = FloatCol()
             else:
                 raise Exception( 'type not recognized', type_ )
             setattr( Event, name, eventtype )
