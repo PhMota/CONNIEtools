@@ -8,7 +8,7 @@ import rootpy
 import rootpy.io
 from ROOT import TFile, TTree, AddressOf
 from array import array
-from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol
+from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol, CharArrayCol
 from rootpy.io import root_open
 
 from Timer import Timer
@@ -138,7 +138,7 @@ def build_new_catalog_from_recarray( input, output, model ):
             setattr( Event, name, eventtype )
             extra_fields.append( name )
     
-    print( 'extra_fields', extra_fields )
+    print( 'fields to be written in catalog', ['flag', 'runID', 'ohdu', 'nSat', 'nSavedPix', 'ePix', 'xPix', 'yPix', 'level'] + extra_fields )
 
     rfile = root_open( output, 'w' )
     tree = Tree( name = 'hitSumm', model = Event )

@@ -326,11 +326,11 @@ class Image( np.ndarray ):
 
     def get_clusters( self, threshold, border ):
         labeled_clusters = label_clusters( self >= threshold )
-        print( 'number_of_clusters_above_threshold', labeled_clusters.max(), len(np.unique(labeled_clusters)) )
+        print( 'number of clusters above threshold', labeled_clusters.max() )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
-        print( 'number_of_clusters_with border', labeled_clusters.max() )
+        print( 'number of clusters with border', labeled_clusters.max() )
         return labeled_clusters, distances_to_cluster
 
     def get_background( self, threshold, border ):

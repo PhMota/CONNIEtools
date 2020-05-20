@@ -13,6 +13,9 @@ from numpy.lib import recfunctions as rfn
 
 electron_in_eV = 3.745
 electron_in_keV = electron_in_eV*1e-3
+Cu_energy_eV = 8046
+Cu2_energy_eV = 8904
+si_energy_eV = 1740
 
 def z_to_sigma( z, alpha, beta ):
     '''
@@ -88,17 +91,6 @@ np.exp( (sigma*15)**2/(-891) ) = 1-0.000488203*z
 sigma2zModel = {
     '3': lambda s: (1-np.exp( (s*15)**2/(-923.666) ) )/0.000441113,
     }
-#def round2int2( x, y ):
-    #return np.rint( x ).astype(int), np.rint( y ).astype(int)
-
-#def round2int( *x ):
-    #return [ np.rint( ix ).astype(int) for ix in x ]
-
-#def diffuseElectrons( x, y, sigma ):
-    #sigma = z2sigmaModel['3']( z )
-    #xoff, yoff = sigma * scipy.stats.norm.rvs( size = 2*len(sigma) ).reshape( 2, len(sigma) )
-    #return x + xoff, y + yoff
-    #return np.rint(sigma * scipy.stats.norm.rvs( size = 2*len(sigma) ).reshape( 2, len(sigma) ) ).astype(int)
 
 def diffuse_electrons( image, alpha, beta ):
     '''
@@ -517,28 +509,6 @@ class SimulateImage:
     def convertImage2Hits( self, image, save = None, verbose = False ):
         return processImage3( image, self.config.extractThreshold )
     
-        #i = self.partial_id + self.image_ext
-        #writeImageHits( image, self.config(), fname = i )
-        #if save is not None:
-            #o = self.partial_id + self.hits_ext
-        #else:
-            #o = self.config.outPath + 'temp.root'
-        #if not os.path.exists(o):
-            #os.system( '/share/storage2/connie/data_analysis/Processor/tools/extract/extract.exe %s -c /home/mota/tests/simulatedFITS/extractConfigFS2.xml -o %s'%(i,o) + ( '>/dev/null' if not verbose else '') )
-            #print( 'ended' )
-        
-        #os.remove( i )
-        #ohduData = None
-        #try:
-            #catalogData = readCatalog( o, None, readGain=False )
-            #ohduData = catalogData[ catalogData['ohdu'] == int(self.config.ohdu) ]
-        #except:
-            #pass
-        #if save is None:
-            #os.remove( o )
-        #return ohduData
-        
-
     def makeSimulatedImage_e( self, lambda_e_h = None, exposure_h = None, numberCu = None, numberCu2 = None, numberSi = None ):
         print( 'making', path )
         
@@ -641,11 +611,6 @@ class SimulateImage:
             match = np.argwhere( dist( center(rec_hits), center2(scn_hit) ) < 2 )
             if len(match) == 1:
                 matches += 1.
-            #else:
-                #match = np.argwhere( np.abs(scn_hit['E0'] - rec_hits['E0'])/scn_hit['E0'] < 1e-3 )
-                #if len(match) > 0:
-                    #print( scn_hit['E0'], rec_hits['E0'][match], center2(scn_hit), [ center(rh) for rh in rec_hits[match] ] )
-                ###print( scn_hit['E0'], )
         print( '%.2f'%(matches/len(scn_hits)), 'scn_hits found' )
 
         matches = 0.
@@ -701,67 +666,67 @@ class SimulateImage:
 
         return reconstructedNeutrinos, reconstructedNeutrinosE2, totalNeutrinos, totalNeutrinos2, Enu, Erec
 
-def set_above_threshold_to_nan( image, thr, radius ):
-    imagecopy = image.copy()
-    s33 = [[1,1,1], [1,1,1], [1,1,1]]
-    clusters = scipy.ndimage.label( imagecopy >= thr, structure=s33 )[0]
-    distance_from_thr = scipy.ndimage.distance_transform_edt( clusters == 0 )
-    imagecopy[ distance_from_thr < radius ] = np.nan
-    return imagecopy
 
-def compute_distances( image ):
-    return scipy.ndimage.distance_transform_edt( image )
-
-def _extract_cluster_( val, pos ):
-    return [val, pos]
-
-#class Hits:
-    #def compute_spectrum():
-        #return Spectrum( self.E )
         
-class Spectrum:
-    def plot( self ):
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.histogram( self.E, self.bins )
-        fig.savefig(self.file)
-
-def simulate_events( shape, charge_range, number_of_events, gain, lambda_, sigma, diffusion_function, charge_efficiency_function ):
-    array_of_positions = np.random.random( number_of_events*3 ).reshape(-1,3)*(np.array(shape)-1)
-    array_of_charges = np.random.random( number_of_events )*(charge_range[1] - charge_range[0]) + charge_range[0]
-    return Events( array_of_positions, array_of_charges, shape, gain, lambda_, sigma, diffusion_function, charge_efficiency_function )
+def simulate_events( args ):
+    shape = args['shape']
+    depth_range = args['depth_range']
+    charge_range = args['charge_range']
+    number_of_charges = args['number_of_charges']
+    array_of_positions = np.random.random( number_of_charges*2 ).reshape(-1,2)*(np.array(shape)-1)
+    array_of_depths = np.random.random( number_of_charges )*(depth_range[1] - depth_range[0]) + depth_range[0]
+    array_of_charges = np.random.random( number_of_charges )*(charge_range[1] - charge_range[0]) + charge_range[0]
+    array_of_identities = ['random']*number_of_charges
+    if args['number_of_Cu_charges'] > 0:
+        number_of_Cu_charges = args['number_of_Cu_charges']
+        array_of_positions = np.concatenate( (array_of_positions, np.random.random( number_of_Cu_charges*2 ).reshape(-1,2)*(np.array(shape)-1) ), axis=0 )
+        array_of_depths = np.append( array_of_depths, np.random.random( number_of_Cu_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        array_of_charges = np.append( array_of_charges, [Cu_energy_eV/electron_in_eV]*number_of_Cu_charges )
+        array_of_identities.extend( ['Cu']*number_of_Cu_charges )
+        print( 'Cu', array_of_charges )
+    print( 'total charges created', len( array_of_identities ) )
+    return Events( array_of_positions, array_of_depths, array_of_charges, array_of_identities, args )
 
 class Events( np.recarray ):
-    def __new__(cls, array_of_positions, array_of_charges, shape, gain, lambda_, sigma, diffusion_function, charge_efficiency_function ):
+    def __new__(cls, array_of_positions, array_of_depths, array_of_charges, array_of_identities, args ):
         dtype = [
             ('x', float),
             ('y', float),
-            ('z', float),
+            #('z', float),
             ]
         obj = np.array( [ tuple(pos) for pos in array_of_positions], dtype = dtype ).view(np.recarray).view(cls)
+        obj = rfn.append_fields( obj, 
+                                 'z',
+                                 array_of_depths, 
+                                 dtypes=(float), 
+                                 asrecarray=True 
+                                 ).view(cls)
         obj = rfn.append_fields( obj, 
                                  'q',
                                  array_of_charges, 
                                  dtypes=(int), 
                                  asrecarray=True 
                                  ).view(cls)
-        obj.xyshape = shape[:2]
-        obj.gain = gain
-        obj.diffusion_function = diffusion_function
-        obj.charge_efficiency_function = charge_efficiency_function
-        obj.lambda_ = lambda_
-        obj.sigma = sigma
+        obj = rfn.append_fields( obj, 
+                                 'id',
+                                 array_of_identities,
+                                 dtypes=None,
+                                 asrecarray=True 
+                                 ).view(cls)
+        obj.xyshape = np.array(args['shape'])
+        obj.rebin = np.array(args['rebin'])
+        obj.xyrebinshape = obj.xyshape/obj.rebin
+        obj.charge_gain = args['charge_gain']
+        obj.number_of_Cu_charges = args['number_of_Cu_charges']
+        obj.number_of_Cu2_charges = args['number_of_Cu2_charges']
+        obj.number_of_Si_charges = args['number_of_Si_charges']
+        obj.diffusion_function = args['diffusion_function']
+        obj.charge_efficiency_function = args['charge_efficiency_function']
+        obj.lambda_ = args['dark_current']
+        obj.sigma = args['readout_noise']
         obj.count = len( obj.q )
-        #obj.Q = np.sum( obj.q )
-        
+        print( 'ids', obj.id )
         return obj
-    
-    #def add_random( self, shape, charge_range, number_of_events ):
-        #array_of_positions = np.random.random( number_of_events*3 ).reshape(-1,3)*(np.array(shape)-1)
-        #array_of_charges = np.random.random( number_of_events )*(charge_range[1] - charge_range[0]) + charge_range[0]
-        
-    
-    #def __init__( self, array_of_positions, array_of_charges, shape, gain, diffusion_function ):
     
     def get_charge(self):
         return ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
@@ -769,40 +734,49 @@ class Events( np.recarray ):
     def get_xy( self ):
         return np.array( (self.x, self.y) ).T
 
+    def get_xy_rebin( self ):
+        return (np.array( (self.x, self.y) )/self.rebin[:,None]).T
+
     def get_E( self ):
-        return self.q*self.gain
+        return self.q*self.charge_gain
     
+    def get_id_code( self ):
+        map_id = {'random': 1, 'Cu': 11, 'Cu2': 12, 'Si':10}
+        return map( lambda i: map_id[i], self.id )
+
     def get_sigma( self ):
         return self.diffusion_function( self.z )
         
-    def table(self, scale, sorted = True):
-        ret = np.array( (self.x, self.y, self.z, self.q ) )
-        if sorted:
-            ret = ret[ret[:,3].argsort()]
-        return ret
 
 def generate_image( events ):
     from Image import Image
-
-    sigma_per_event = events.get_sigma()
-    charge_per_event = events.get_charge()
-    Q = np.sum(charge_per_event)
-    xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
-    sigma_per_charge = np.repeat( sigma_per_event, charge_per_event )
-    xy_per_charge = np.repeat( events.get_xy(), charge_per_event, axis=0 )
-    xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
-    bins = [
-        np.arange(events.xyshape[0]+1),
-        np.arange(events.xyshape[1]+1)
-        ]
-    image = np.histogramdd( xy, bins = bins )[0] * events.gain
-
+    
+    if events.count > 0:
+        sigma_per_event = events.get_sigma()
+        charge_per_event = events.get_charge()
+        Q = np.sum(charge_per_event)
+        xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
+        sigma_per_charge = np.repeat( sigma_per_event, charge_per_event )
+        xy_per_charge = np.repeat( events.get_xy(), charge_per_event, axis=0 )
+        xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
+        bins = [
+            np.arange(events.xyshape[0]+1),
+            np.arange(events.xyshape[1]+1)
+            ]
+        image = np.histogramdd( xy, bins = bins )[0] * events.charge_gain
+    else:
+        image = np.zeros( events.xyshape )
+    print( 'shape', image.shape )
+        
     if events.lambda_ > 0:
         dark_current = scipy.stats.poisson.rvs( events.lambda_, size = events.xyshape[0]*events.xyshape[1] ).reshape(events.xyshape)
-        image += dark_current * events.gain
-
+        image += dark_current * events.charge_gain
+    
+    image = image.reshape( (events.xyrebinshape[0], events.xyrebinshape[1], -1) ).sum(axis = -1)
+    print( 'shape rebin', image.shape, events.xyrebinshape )
+    
     if events.sigma > 0:
-        noise = scipy.stats.norm.rvs( size=events.xyshape[0]*events.xyshape[1] ).reshape(events.xyshape)*events.sigma
+        noise = scipy.stats.norm.rvs( size=events.xyrebinshape[0]*events.xyrebinshape[1] ).reshape(events.xyrebinshape)*events.sigma
         image += noise
 
     return Image( image )
@@ -902,6 +876,7 @@ class Hits(np.recarray):
         return obj
     
     def add_fields( self, names, arrays, types ):
+        print( 'added', names )
         return rfn.append_fields( self, names, arrays, dtypes=types, asrecarray=True ).view(Hits)
         
     def compute_number_of_pixel_levels( self, lvl ):
@@ -913,7 +888,6 @@ class Hits(np.recarray):
             new_field = 'n%d' % lvl
             self = self.add_fields( 'n%d' % lvl, self.compute_number_of_pixel_levels(lvl), int )
             added_fields.append( new_field )
-        print( 'added', added_fields )
         return self
         
     def compute_energy_levels( self, lvl ):
@@ -925,7 +899,6 @@ class Hits(np.recarray):
             new_field = 'E%d' % lvl
             self = self.add_fields( new_field, self.compute_energy_levels(lvl), float )
             added_fields.append( new_field )
-        print( 'added', added_fields )
         return self
         
     def __average__( self, xy, weights, level, lvl ):
@@ -946,7 +919,6 @@ class Hits(np.recarray):
             new_fields = ['xBary%d' % lvl,'yBary%d' % lvl]
             self = self.add_fields( new_fields, self.compute_barycenter_levels(lvl).T, (float, float) )
             added_fields.extend( new_fields )
-        print( 'added', added_fields )
         return self
     
     def compute_variance_levels( self, lvl ):
@@ -961,8 +933,79 @@ class Hits(np.recarray):
             new_fields = ['xVar%d' % lvl,'yVar%d' % lvl]
             self = self.add_fields( new_fields, self.compute_variance_levels( lvl ).T, (float,float) )
             added_fields.extend( new_fields )
-        print( 'added', added_fields )
         return self
+    
+    def match_simulated_events( self, events, lvl, length ):
+        import itertools
+        linked_list = {}
+        radius = 1
+        shifts = range( -radius, radius+1 )
+        listofshifts = [ shifts for i in range(2) ]
+        nshifts = tuple(itertools.product(*listofshifts) )
+
+        array_of_projections_events = events.get_xy_rebin()
+        array_of_projections_indices_events = get_indices( array_of_projections_events, length=length )
+        events_indices_set = set( map(tuple, array_of_projections_indices_events ) )
+        
+        for i, ni in enumerate(array_of_projections_indices_events):
+            for ns in nshifts:
+                try:
+                    linked_list[ tuple(ni + ns) ].append(i)
+                except:
+                    linked_list[ tuple(ni + ns) ] = [i]
+
+        array_of_projections_hits = np.array( (self['xBary%d' % lvl], self['yBary%d' % lvl]) ).T
+        array_of_projections_indices_hits = get_indices( array_of_projections_hits, length=length )
+        
+        matched_indices = []
+        matched_id = []
+        matched_Q = []
+        matched_z = []
+        matched_distances = []
+        dist = lambda a, b: np.sqrt( np.sum( (a-b)**2, axis=-1 ) )
+        for hit_ind, hit_ni in enumerate(array_of_projections_indices_hits):
+            try:
+                event_ind = np.array(linked_list[tuple( hit_ni )])
+            except:
+                matched_id.append( 0 )
+                matched_distances.append( 0 )
+                matched_Q.append( 0 )
+                matched_z.append( -1 )
+                continue
+            pos_hit = array_of_projections_hits[ hit_ind ]
+            std_max_hit = np.sqrt( np.max( ( self[ hit_ind ]['xVar%d' % lvl], self[ hit_ind ]['yVar%d' % lvl] ) ) )
+            pos_event = array_of_projections_events[event_ind]
+            ds = dist( pos_hit, pos_event )
+            is_matched = ds <= 2*std_max_hit
+            event_ind_matched = event_ind[is_matched]
+            if len( event_ind_matched ) == 0:
+                matched_id.append( 0 )
+                matched_distances.append( 0 )
+                matched_Q.append( 0 )
+                matched_z.append( -1 )
+                continue
+            
+            if len( event_ind_matched ) > 1:
+                matched_id.append( 2 )
+                matched_distances.append( ds.min() )
+                matched_Q.append( np.sum( events.q[event_ind_matched] ) )
+                matched_z.append( -1 )
+                
+            if len( event_ind_matched ) == 1:
+                matched_id.append( events.get_id_code()[event_ind_matched[0]] )
+                matched_distances.append( ds[0] )
+                matched_Q.append( events.q[event_ind_matched[0]] )
+                matched_z.append( events.z[event_ind_matched[0]] )
+                
+            #for ei, d in zip(event_ind_matched, ds[is_matched]):
+                #matched_indices.append( (hit_ind, ei, d, is_mult) )
+
+        #print( 'matched id', matched_id )
+        #matched = np.array(matched)
+        new_fields = ['id', 'Q', 'z', 'dist' ]
+        self = self.add_fields( new_fields, (matched_id, matched_Q, matched_z, matched_distances), (int,int,float,float) )
+        return self
+        
         
     def compute_sizelike_each( self, entry, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
         _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
@@ -1003,12 +1046,6 @@ class Hits(np.recarray):
     def get_Var(self):
         return np.array( (self.xVar, self.yVar) ).T
     
-    #def table(self, keys, sorted = False):
-        #ret = np.array( zip(*[ self[key] for key in keys]) )
-        #if sorted:
-            #ret = ret[ret[:,sorted].argsort()]
-        #return ret
-
 def get_indices( array, length ):
     return np.floor(array/length).astype(int)
 
@@ -1067,10 +1104,11 @@ def match( hits, events, lvl = 3, length = 4 ):
         except:
             continue
         pos_hit = array_of_projections_hits[ hit_ind ]
-        std_max_hit = np.sqrt( np.max( ( hits[ hit_ind ]['xVar%d' % lvl], hits[ hit_ind ]['yVar%d' % lvl] ) ) )
+        std = np.sqrt( ( hits[ hit_ind ]['xVar%d' % lvl], hits[ hit_ind ]['yVar%d' % lvl] ) )
         pos_event = array_of_projections_events[event_ind]
-        ds = dist( pos_hit, pos_event )
-        is_matched = ds <= std_max_hit
+
+        ds = dist( pos_hit/std, pos_event/std )
+        is_matched = ds <= 1
         event_ind_matched = event_ind[is_matched]
         if len( event_ind_matched ) == 0:
             continue
@@ -1213,7 +1251,7 @@ def analysis( args ):
     with Timer('analysis') as t:
         if args['image_fits_input'] == 'none':
             with Timer('events generated') as t:
-                events = simulate_events( args['shape'], args['charge_range'], args['number_of_events'], args['charge_gain'], args['dark_current'], args['readout_noise'], args['diffusion_function'], args['charge_efficiency_function'] )
+                events = simulate_events( args )
             
             with Timer('image generated') as t:
                 image = generate_image( events )
@@ -1230,12 +1268,15 @@ def analysis( args ):
             
         with Timer('hits extracted') as t:
             hits = image.extract_hits( mode = 'cluster', threshold = args['extraction_threshold'], border = args['extraction_border'] )
-            n = 4
+            n = args['extraction_border']+1
             hits = hits.add_number_of_pixel_levels( range(n) )
             hits = hits.add_energy_levels( range(n) )
             hits = hits.add_barycenter_levels( range(n) )
             hits = hits.add_variance_levels( range(n) )
             print( 'hits', hits.dtype.names )
+
+        if args['image_fits_input'] == 'none':
+            hits = hits.match_simulated_events( events, lvl=1, length=3 )
 
         if args['catalog_root_output'] != 'none':
             with Timer('root catalog at ' + args['catalog_root_output'] ) as t:
@@ -1265,10 +1306,16 @@ if __name__ == '__main__':
         formatter_class = argparse.ArgumentDefaultsHelpFormatter,
         )
     def tuple_of_int( x ):
-        return map(int, eval(x))
-    parser.add_argument('number_of_events', type=int, default = '4000', help = 'number of events to be randomly generated' )
-    parser.add_argument('--shape', type=tuple_of_int, default = '[4000,4000,670]', help = 'shape of the image in pixel per pixel per µm' )
-    parser.add_argument('--charge-range', type=tuple_of_int, default = '[5, 200]', help = 'range into which to randomly generate charges' )
+        return map( int, eval(x.replace('\"', '')) )
+    
+    parser.add_argument('number_of_charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
+    parser.add_argument('--number-of-Cu-charges', type=int, default = '0', help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' )
+    parser.add_argument('--number-of-Cu2-charges', type=int, default = '0', help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' )
+    parser.add_argument('--number-of-Si-charges', type=int, default = '0', help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' )
+    parser.add_argument('--shape', type=tuple_of_int, default = '\"[4000,4000]\"', help = 'shape of the image in pixel per pixel per µm' )
+    parser.add_argument('--rebin', type=tuple_of_int, default = '\"[1,1]\"', help = 'shape of the image in pixel per pixel per µm' )
+    parser.add_argument('--charge-range', type=tuple_of_int, default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
+    parser.add_argument('--depth-range', type=tuple_of_int, default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
     parser.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
     parser.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
     parser.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
@@ -1302,5 +1349,5 @@ if __name__ == '__main__':
     from numpy import *
     args.diffusion_function = eval( 'vectorize(lambda z: %s)' % args.diffusion_function )
     args.charge_efficiency_function = eval( 'vectorize(lambda z: %s)' % args.charge_efficiency_function )
-    
+
     analysis( vars(args) )
