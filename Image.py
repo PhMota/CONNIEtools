@@ -22,6 +22,18 @@ bias_from_width = { 9340: 450, 8540: 150 }
 bin_from_width = { 9340: 5, 8540: 1 }
 vbias_from_height = { 900: 70, 900-1: 70, 4*1055: 90, 4*1055-4: 90 }
 
+def MAD( data, axis = None, scale=1.4826 ):
+    if axis == 0:
+        median = np.median( data, axis = 0 )[None,:]
+    elif axis == 1:
+        median = np.median( data, axis = 1 )[:,None]
+    elif axis is None:
+        median = np.median( data, axis = None )
+    else:
+        raise Exception( 'axis not found', axis )
+    return scale * np.median( np.abs( data - median ), axis = axis )
+
+
 def crop_var( x, axis = None, mode = None ):
     x2 = crop_mean(x**2, axis = axis, mode=mode)
     m = crop_mean(x, axis = axis, mode=mode)**2
@@ -175,40 +187,37 @@ def statistics( data ):
             float(crop_std_1d(data, step=10, abs_tol = 1)),
             )
 
-def parse_expr( expr, ohdu, correction_mode = 'none', smoothening_length = 0, correct_vertical = True ):
+def parse_expr( expr, ohdu, line_correction_function = np.median, smoothening_length = 0, correct_vertical = True, row_correction_function = np.median ):
     with Timer('read and process') as t:
         paths = glob( expr )[::-1]
         header = None
         data = None
         for path in paths:
-            datum, header = parse_fits( path, ohdu, correction_mode, smoothening_length )
+            datum, header = parse_fits( path, ohdu, line_correction_function, smoothening_length )
             if data:
                 data = { key: np.concatenate( [ data[key], datum[key] ], axis=0 ) for key in data.keys() }
             else:
                 data = datum
-        print( 'concatenated stats', statistics( data['bias'] ) )
         data['bias'] = data['bias'].view(Image)
         vbias_width = vbias_from_height[ data['data'].shape[0] ]
         data['vbias'] = data['data'][:vbias_width,:].view(Image)
         data['data'] = data['data'][vbias_width:,:].view(Image)
         if correct_vertical:
-            data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], mode = correction_mode, size = smoothening_length )
-        print( 'corrected by rows stats', statistics( data['bias'] ) )
-        print()
+            data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], func = row_correction_function, size = smoothening_length )
     return data, dict(header)
 
-def get_params( expr, ohdu, correction_mode = 'none', smoothening_length = 0, correct_vertical = True, remove_hits = False, threshold = 0, border = 0):
-    data, header = parse_expr(expr, ohdu, correction_mode, smoothening_length, correct_vertical )
-    mu = float( crop_mean_1d( data['bias'], step = 100 ) )
-    sigma = float( crop_std_1d( data['bias'], step = 100 ) )
+def get_params( expr, ohdu, line_correction_function = np.median, row_correction_function = np.median, smoothening_length = 0, correct_vertical = True, remove_hits = False, threshold = 0, border = 0, mean_function = np.median, std_function = MAD ):
+    data, header = parse_expr(expr, ohdu, line_correction_function = line_correction_function, smoothening_length = smoothening_length, correct_vertical = correct_vertical, row_correction_function = row_correction_function )
+    mu = float( mean_function( data['bias'] ) )
+    sigma = float( std_function( data['bias'] ) )
     if remove_hits:
         data['data'] = data['data'].get_background( threshold, border )
-    g_lamb = float( crop_mean_1d( data['data'], step = 100 ) - mu )
-    g2_lamb = float( crop_std_1d( data['data'], step = 100 )**2 - sigma**2 )
+    g_lamb = float( mean_function( data['data'] ) - mu )
+    g2_lamb = float( std_function( data['data'] )**2 - sigma**2 )
     g = g2_lamb/g_lamb
-    return mu, sigma, g_lamb, g2_lamb, g, g_lamb/g
+    return mu, sigma, g_lamb, g2_lamb, g
     
-def parse_fits( path, ohdu, correction_mode = 'none', smoothening_length = 0 ):
+def parse_fits( path, ohdu, line_correction_function = np.median, smoothening_length = 0 ):
     fits_dir = astropy.io.fits.open( path )
     imageHDU = get_imageHDU( fits_dir, ohdu )
 
@@ -217,52 +226,30 @@ def parse_fits( path, ohdu, correction_mode = 'none', smoothening_length = 0 ):
     bias_width = bias_from_width[ imageHDU.data.shape[1] ]
     bin_width = bin_from_width[ imageHDU.data.shape[1] ]
 
-    section['data'] = Image( imageHDU.data[ :-1, : half_width - bias_width ] )/bin_width
-    section['bias'] = Image( imageHDU.data[ :-1, half_width -bias_width: half_width ] )/bin_width
+    section['data'] = Image( imageHDU.data[ :-1, :half_width - bias_width ] )#/bin_width
+    section['bias'] = Image( imageHDU.data[ :-1, half_width -bias_width: half_width ] )#/bin_width
 
-    if correction_mode == 'none':
+    if line_correction_function is None:
         section['data'], section['bias'] = correct_global_by_bias( [section['data'], section['bias']], section['bias'] )
     else:
-        section['data'], section['bias'] = correct_lines_by_bias( [section['data'], section['bias']], section['bias'], mode = correction_mode, size = smoothening_length )
-    print( 'corrected by lines stats', statistics(section['bias'] ) )
+        section['data'], section['bias'] = correct_lines_by_bias( [section['data'], section['bias']], section['bias'], func = line_correction_function, size = smoothening_length )
     return section, dict(imageHDU.header)
 
 def correct_global_by_bias( data, bias ):
     correction = np.median( bias )
     return [ datum - correction for datum in data ]
 
-def correct_lines_by_bias( data, bias, size = 0, mode = 'median' ):
-    func = np.mean
-    if mode == 'median':
-        func = np.median
-    elif mode == 'crop_mean':
-        func = crop_mean
+def correct_lines_by_bias( data, bias, size = 0, func = np.median ):
     correction_of_lines = func( bias, axis = 1 )
     if size > 2:
         correction_of_lines = scipy.ndimage.filters.uniform_filter1d( correction_of_lines, size = size, mode='nearest' )
     return [ datum - correction_of_lines[:,None] for datum in data ]
 
-def correct_rows_by_bias( data, bias, size = None, mode = 'median' ):
-    func = np.mean
-    if mode == 'median':
-        func = np.median
-    elif mode == 'crop_mean':
-        func = crop_mean
+def correct_rows_by_bias( data, bias, size = 0, func = np.median ):
     correction_of_rows = func( bias, axis = 0 )
-    if size: 
+    if size > 2: 
         correction_of_rows = scipy.ndimage.filters.uniform_filter1d( correction_of_rows, size = size, mode='nearest' )
     return [ datum - correction_of_rows[None,:] for datum in data ]
-
-def MAD( data, axis = None, scale=1.4826 ):
-    if axis == 0:
-        median = np.median( data, axis = 0 )[None,:]
-    elif axis == 1:
-        median = np.median( data, axis = 1 )[:,None]
-    elif axis is None:
-        median = np.median( data, axis = None )
-    else:
-        raise Exception( 'axis not found', axis )
-    return scale * np.median( np.abs( data - median ), axis = axis )
 
 def label_clusters( condition_image ):
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
@@ -454,24 +441,38 @@ def display( data, mode, delta = None, labels = None, nbins = None, log = False 
     plt.show()
 
 def main( args ):
-    #section_none, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'none' )
-    #section_mean, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'mean' )
-    #section_mean10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'mean', smoothening_length = 10 )
 
-    #section_median, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'median' )
+    def median_by_lines( x ):
+        medians = np.median(x, axis=0)
+        return np.mean( medians )
 
-    #section_median10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'median', smoothening_length = 10 )
-    #section_crop, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'crop_mean' )
+    def MAD_by_lines2( x ):
+        correction = np.median( x, axis=0 )
+        mads_by_line = MAD( x - correction[None,:], axis = 1 )
+        return np.mean( mads_by_line )
 
-    #section_crop10, header = parse_expr( args['input_fits'], args['ohdu'], correction_mode = 'crop_mean', smoothening_length = 10 )
+    def MAD_by_lines( x ):
+        return np.mean( MAD(correct_rows_by_bias( [x], x, func = np.median )[0], axis=1) )
 
+    print( 'officialmedian', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        line_correction_function = None, 
+        correct_vertical = False,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines
+    ))
+    print( 'officialmedian', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        line_correction_function = np.median, 
+        correct_vertical = False,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines2
+    ))
+    exit(0)
     print( 'median', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = False ) )
-    print( 'median100', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = True, smoothening_length = 100 ) )
-    #print( 'crop', get_params( args['input_fits'], args['ohdu'], correction_mode = 'crop_median', correct_vertical = False ) )
-    #print( 'cropV', get_params( args['input_fits'], args['ohdu'], correction_mode = 'crop_median', correct_vertical = True ) )
-    #print( 'cropV10', get_params( args['input_fits'], args['ohdu'], correction_mode = 'crop_median', correct_vertical = True, smoothening_length = 10 ) )
-
-    #print( 'median', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = False, remove_hits = True, threshold = 60, border = 3 ) )
+    print( 'median100', get_params( args['input_fits'], args['ohdu'], correction_mode = 'median', correct_vertical = True, smoothening_length = 10 ) )
     
     exit(0)
     ##display( [section_none['data']], 'xy', delta = 5, labels=['none'] )
@@ -539,21 +540,8 @@ if __name__ == '__main__':
     #parser.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/047/runID_047_12750_Int-400_Exp-3600_22Mar20_08:05_to_22Mar20_09:09_p1.fits.fz', help = 'fits file input' )
     parser.add_argument('--ohdu', type=int, default = '3', help = 'ohdu to be read' )
 
-    #parser.add_argument('--shape', type=tuple_of_int, default = '[4000,4000,670]', help = 'shape of the image in pixel per pixel per µm' )
-    #parser.add_argument('--charge-range', type=tuple_of_int, default = '[5, 200]', help = 'range into which to randomly generate charges' )
-    #parser.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
-    #parser.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
-    #parser.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
-    #parser.add_argument('--extraction-threshold', type=eval, default = '15*4', help = 'energy threshold for extraction in ADU' )
-    #parser.add_argument('--extraction-border', type=int, default = '3', help = 'borders to be added around the axtracted event' )
-    #parser.add_argument('--image-fits-output', type=str, default = 'simulation.fits', help = 'set to "none" not to generate a fits output' )
-    #parser.add_argument('--image-fits-input', type=str, default = 'none', help = 'set to <path> to load existing fits image' )
     parser.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
     parser.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
-    #parser.add_argument('--reconstruction-image', type=str, default = 'reconstruction_image.pdf', help = 'set to "none" not to plot the reconstruction image' )
-    #parser.add_argument('--reconstruction-spectra', type=str, default = 'reconstruction_spectra.png', help = 'set to "none" not to plot the reconstruction spectra' )
-    #parser.add_argument('--sigma-like-level', type=int, default = '2', help = 'level used to compute the sigma like' )
-    #parser.add_argument('--sigma-like-tol', type=float, default = '1e-3', help = 'tolerance used to compute the sigma like' )
     if len(sys.argv) == 1:
         parser.print_help()
         exit(1)

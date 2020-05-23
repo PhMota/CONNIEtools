@@ -11,6 +11,9 @@ import root_numpy
 import Statistics as stats
 from numpy.lib import recfunctions as rfn
 
+import Simulation
+import Image
+
 electron_in_eV = 3.745
 electron_in_keV = electron_in_eV*1e-3
 Cu_energy_eV = 8046
@@ -668,119 +671,6 @@ class SimulateImage:
 
 
         
-def simulate_events( args ):
-    shape = args['shape']
-    depth_range = args['depth_range']
-    charge_range = args['charge_range']
-    number_of_charges = args['number_of_charges']
-    array_of_positions = np.random.random( number_of_charges*2 ).reshape(-1,2)*(np.array(shape)-1)
-    array_of_depths = np.random.random( number_of_charges )*(depth_range[1] - depth_range[0]) + depth_range[0]
-    array_of_charges = np.random.random( number_of_charges )*(charge_range[1] - charge_range[0]) + charge_range[0]
-    array_of_identities = ['random']*number_of_charges
-    if args['number_of_Cu_charges'] > 0:
-        number_of_Cu_charges = args['number_of_Cu_charges']
-        array_of_positions = np.concatenate( (array_of_positions, np.random.random( number_of_Cu_charges*2 ).reshape(-1,2)*(np.array(shape)-1) ), axis=0 )
-        array_of_depths = np.append( array_of_depths, np.random.random( number_of_Cu_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
-        array_of_charges = np.append( array_of_charges, [Cu_energy_eV/electron_in_eV]*number_of_Cu_charges )
-        array_of_identities.extend( ['Cu']*number_of_Cu_charges )
-        print( 'Cu', array_of_charges )
-    print( 'total charges created', len( array_of_identities ) )
-    return Events( array_of_positions, array_of_depths, array_of_charges, array_of_identities, args )
-
-class Events( np.recarray ):
-    def __new__(cls, array_of_positions, array_of_depths, array_of_charges, array_of_identities, args ):
-        dtype = [
-            ('x', float),
-            ('y', float),
-            #('z', float),
-            ]
-        obj = np.array( [ tuple(pos) for pos in array_of_positions], dtype = dtype ).view(np.recarray).view(cls)
-        obj = rfn.append_fields( obj, 
-                                 'z',
-                                 array_of_depths, 
-                                 dtypes=(float), 
-                                 asrecarray=True 
-                                 ).view(cls)
-        obj = rfn.append_fields( obj, 
-                                 'q',
-                                 array_of_charges, 
-                                 dtypes=(int), 
-                                 asrecarray=True 
-                                 ).view(cls)
-        obj = rfn.append_fields( obj, 
-                                 'id',
-                                 array_of_identities,
-                                 dtypes=None,
-                                 asrecarray=True 
-                                 ).view(cls)
-        obj.xyshape = np.array(args['shape'])
-        obj.rebin = np.array(args['rebin'])
-        obj.xyrebinshape = obj.xyshape/obj.rebin
-        obj.charge_gain = args['charge_gain']
-        obj.number_of_Cu_charges = args['number_of_Cu_charges']
-        obj.number_of_Cu2_charges = args['number_of_Cu2_charges']
-        obj.number_of_Si_charges = args['number_of_Si_charges']
-        obj.diffusion_function = args['diffusion_function']
-        obj.charge_efficiency_function = args['charge_efficiency_function']
-        obj.lambda_ = args['dark_current']
-        obj.sigma = args['readout_noise']
-        obj.count = len( obj.q )
-        print( 'ids', obj.id )
-        return obj
-    
-    def get_charge(self):
-        return ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
-    
-    def get_xy( self ):
-        return np.array( (self.x, self.y) ).T
-
-    def get_xy_rebin( self ):
-        return (np.array( (self.x, self.y) )/self.rebin[:,None]).T
-
-    def get_E( self ):
-        return self.q*self.charge_gain
-    
-    def get_id_code( self ):
-        map_id = {'random': 1, 'Cu': 11, 'Cu2': 12, 'Si':10}
-        return map( lambda i: map_id[i], self.id )
-
-    def get_sigma( self ):
-        return self.diffusion_function( self.z )
-        
-
-def generate_image( events ):
-    from Image import Image
-    
-    if events.count > 0:
-        sigma_per_event = events.get_sigma()
-        charge_per_event = events.get_charge()
-        Q = np.sum(charge_per_event)
-        xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
-        sigma_per_charge = np.repeat( sigma_per_event, charge_per_event )
-        xy_per_charge = np.repeat( events.get_xy(), charge_per_event, axis=0 )
-        xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
-        bins = [
-            np.arange(events.xyshape[0]+1),
-            np.arange(events.xyshape[1]+1)
-            ]
-        image = np.histogramdd( xy, bins = bins )[0] * events.charge_gain
-    else:
-        image = np.zeros( events.xyshape )
-    print( 'shape', image.shape )
-        
-    if events.lambda_ > 0:
-        dark_current = scipy.stats.poisson.rvs( events.lambda_, size = events.xyshape[0]*events.xyshape[1] ).reshape(events.xyshape)
-        image += dark_current * events.charge_gain
-    
-    image = image.reshape( (events.xyrebinshape[0], events.xyrebinshape[1], -1) ).sum(axis = -1)
-    print( 'shape rebin', image.shape, events.xyrebinshape )
-    
-    if events.sigma > 0:
-        noise = scipy.stats.norm.rvs( size=events.xyrebinshape[0]*events.xyrebinshape[1] ).reshape(events.xyrebinshape)*events.sigma
-        image += noise
-
-    return Image( image )
-
 def integral_norm_pixel( pix_edge, mu, sigma ):
     sqrt2 = np.sqrt(2.)
     return -.5*( scipy.special.erf( -( pix_edge+1 - mu)/( sqrt2*sigma )) - scipy.special.erf( -( pix_edge - mu )/( sqrt2*sigma ) ) )
@@ -956,6 +846,9 @@ class Hits(np.recarray):
 
         array_of_projections_hits = np.array( (self['xBary%d' % lvl], self['yBary%d' % lvl]) ).T
         array_of_projections_indices_hits = get_indices( array_of_projections_hits, length=length )
+        
+        print( 'max evts', array_of_projections_events[0].min(), array_of_projections_events[0].max(), array_of_projections_events[1].min(), array_of_projections_events[1].max() )
+        print( 'max hits', array_of_projections_hits[0].min(), array_of_projections_hits[0].max(), array_of_projections_hits[1].min(), array_of_projections_hits[1].max() )
         
         matched_indices = []
         matched_id = []
@@ -1251,20 +1144,15 @@ def analysis( args ):
     with Timer('analysis') as t:
         if args['image_fits_input'] == 'none':
             with Timer('events generated') as t:
-                events = simulate_events( args )
+                events = Simulation.simulate_events( args )
             
-            with Timer('image generated') as t:
-                image = generate_image( events )
-
-            #if args['image_energy_spectrum'] != 'none':
-                #with Timer('plot saved at ' + args['image_energy_spectrum'] ) as t:
-                    #image.spectrum( args['image_energy_spectrum'], events.gain, args['dark_current'], args['readout_noise'] )
-
             if args['image_fits_output'] != 'none':
                 with Timer('fits image saved at ' + args['image_fits_output'] ) as t:
-                    image.save_fits( args['image_fits_output'] )
-        #else:
-            #image = read_image_from_file( args['image_fits_input'] )
+                    events.generate_image( events, args['image_fits_output'] )
+            
+            args['image_fits_input'] = args['image_fits_output']
+        
+        image = Image.read_image_from_file( args['image_fits_input'] )
             
         with Timer('hits extracted') as t:
             hits = image.extract_hits( mode = 'cluster', threshold = args['extraction_threshold'], border = args['extraction_border'] )
