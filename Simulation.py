@@ -219,7 +219,7 @@ if __name__ == '__main__':
     import argparse
     import sys
     parser = argparse.ArgumentParser(
-        description = 'simulate events, generates image and extract hits',
+        description = 'simulate events and generates image',
         formatter_class = argparse.ArgumentDefaultsHelpFormatter,
         )
     def tuple_of_int( x ):

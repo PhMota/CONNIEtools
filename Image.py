@@ -686,7 +686,7 @@ if __name__ == '__main__':
     import argparse
     import sys
     parser = argparse.ArgumentParser(
-        description = 'read fits image',
+        description = 'read fits image and extract hits',
         formatter_class = argparse.ArgumentDefaultsHelpFormatter,
         )
     def tuple_of_int( x ):
