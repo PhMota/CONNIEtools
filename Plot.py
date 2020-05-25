@@ -10,30 +10,59 @@ import gi
 
 import matplotlib
 matplotlib.use('gtk3agg')
+import matplotlib.pylab as plt
 from Timer import Timer
 
-def generate_plot( args ):
+def generate_plot( input_file, diagonal_line = False, xcolumn = 0, ycolumns = [1], xlabel = r'$x$', ylabel = r'$y$', marker = '.', output_file = 'none', fig_scale = [1,1], **args ):
     data = None
-    if '.csv' in args['input_file']:
+    if '.csv' in input_file:
         skip_lines = -1
-        for file in open( args['input_file'] ):
-            line = file.readline()
+        for line in open( input_file ):
             if '#' in line:
                 skip_lines += 1
             else:
                 break
-        data = np.genfromtxt( args['input_file'], delimiter = ',', names = True, skip_header = skip_lines )
-        data = [ data[column] for column in args['columns'] ]
-        #skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
+        data = np.genfromtxt( input_file, delimiter = ',', names = True, skip_header = skip_lines, deletechars= '#' )
+        print( 'available columns in file', data.dtype.names )
+        xdatum = data[ xcolumn ]
+        ydata = [ data[column] for column in ycolumns ]
     
     fig = plt.figure()
+    size = fig.get_size_inches()
+    if fig_scale:
+        fig.set_size_inches( fig_scale[0]*size[0], fig_scale[1]*size[1] )
     ax = fig.add_subplot(111)
-    ax.scatter( data[0], data[1] )
+    ax.set_xlabel( xlabel )
+    ax.set_ylabel( ylabel )
     
-    if 'output_file' in args:
-        fig.savefig(args['output_file')
+        
+    for column in ycolumns:
+        ax.scatter( xdatum, data[column], label = column, marker = marker )
+
+    if diagonal_line:
+        lims = ax.get_xlim()
+        print( 'adding diagonal line', lims )
+        ax.plot( [lims[0], lims[1]], [lims[0],lims[1]], 'k-', zorder = 0, alpha = .5 )
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
+        lenght = lims[1]-lims[0]
+        kwargs = {'edgecolor':'b', 'head_width': .02*lenght, 'length_includes_head': True}
+        for column in ycolumns:
+            y = data[column]
+            xarrows = xdatum[ y < lims[0] ]
+            offset = .1*lenght
+            for xarrow in xarrows: ax.arrow( xarrow, lims[0] + offset, 0, -offset+.1, **kwargs )
+            xarrows = xdatum[ y > lims[1] ]
+            for xarrow in xarrows: ax.arrow( xarrow, lims[1] - offset, 0, +offset-.1, **kwargs )
+            
+    
+    legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper right' )
+    
+    if output_file != 'none':
+        print( 'save to file ' + output_file )
+        fig.savefig( output_file, bbox_extra_artists = (legend,), bbox_inches='tight' )
     else:
-        fig.show()
+        plt.show()
     return
 
 if __name__ == '__main__':
@@ -47,45 +76,15 @@ if __name__ == '__main__':
         return map( int, eval(x.replace('\"', '')) )
     
     parser.add_argument('input_file', type=str, help = 'file to be plotted' )
-    parser.add_argument('--output-file', type=int, default = 'none', help = 'set to none for X11 display' )
-    parser.add_argument('--xlabel', type=int, default = r'$x$', help = 'xlabel' )
-    parser.add_argument('--ylabel', type=int, default = r'$y$', help = 'ylabel' )
-    parser.add_argument('--xcolumn', type=int, default = 0, help = 'column of the file associated with the x axis' )
-    parser.add_argument('--ycolumns', type=int, default = [1], help = 'list of columns of the file associated with the y axis' )
+    parser.add_argument('--output-file', type=str, default = 'none', help = 'set to none for X11 display' )
+    parser.add_argument('--xlabel', type=str, default = r'$x$', help = 'xlabel' )
+    parser.add_argument('--ylabel', type=str, default = r'$y$', help = 'ylabel' )
+    parser.add_argument('--xcolumn', type=str, default = 0, help = 'column of the file associated with the x axis' )
+    parser.add_argument('--ycolumns', type=eval, default = "[1]", help = 'list of columns of the file associated with the y axis' )
+    parser.add_argument('--diagonal-line', type=bool, default = False, help = 'add diagonal line to the plot' )
+    parser.add_argument('--marker', type=str, default = '.', help = 'marker type' )
+    parser.add_argument('--fig-scale', type=eval, default = '[1,1]', help = 'scale the figure size' )
 
-    parser.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
-    parser.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
-    parser.add_argument('--xyshape', type=tuple_of_int, default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
-    parser.add_argument('--rebin', type=tuple_of_int, default = '\"[1,1]\"', help = '2d rebinning strides' )
-    parser.add_argument('--charge-range', type=tuple_of_int, default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
-    parser.add_argument('--depth-range', type=tuple_of_int, default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
-    parser.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
-    parser.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
-    parser.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
-    parser.add_argument('--simulation-output', type=str, default = 'simulation.csv', help = 'csv file with the events generation data' )
-    parser.add_argument('--image-fits-output', type=str, default = 'simulation.fits', help = 'set to "none" not to generate a fits output' )
-    parser.add_argument('--image-pdf-output', type=str, default = 'simulation.pdf', help = 'set to "none" not to generate a pdf output' )
-    parser.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
-    parser.add_argument('--diffusion-function',
-                        type=str, 
-                        default = default_diffusion_function,
-                        help = 'function to map z-depth into sigma' 
-                        )
-    parser.add_argument('--charge-efficiency-function',
-                        type=str,
-                        default = default_charge_efficiency_function,
-                        help = 'function to map z-depth into sigma' 
-                        )
-    parser.add_argument('--vertical-modulation-function',
-                        type=str, 
-                        default = default_vertical_modulation_function,
-                        help = 'function to modulate the vertical axis' 
-                        )    
-    parser.add_argument('--horizontal-modulation-function',
-                        type=str, 
-                        default = default_horizontal_modulation_function,
-                        help = 'function to modulate the horizontal axis' 
-                        )
     if len(sys.argv) == 1:
         parser.print_help()
         exit(1)
@@ -93,4 +92,5 @@ if __name__ == '__main__':
     
     print( vars(args) )
 
-    generate_plot( vars(args) )
+    generate_plot( **vars(args) )
+    exit(0)
