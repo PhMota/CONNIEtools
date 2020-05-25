@@ -741,7 +741,6 @@ def size_like( ePix, xPix, yPix, E0, mu0, sigma0, sigma_noise0, single_sigma = F
     return Q, mu, sigma
 
 
-
 class Hits(np.recarray):
     
     def __new__( cls, list_of_entries, levels, threshold, border ):

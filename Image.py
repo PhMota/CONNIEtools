@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use('gtk3agg')
 #from matplotlib.backends.backend_gtk3cairo import (FigureCanvasGTK3Cairo as FigureCanvas)
 
-from SimulateImage import Hits
+#from SimulateImage import Hits
 from Timer import Timer
 
 bias_from_width = { 9340: 450, 8540: 150 }
@@ -187,52 +187,72 @@ def statistics( data ):
             float(crop_std_1d(data, step=10, abs_tol = 1)),
             )
 
-def parse_expr( expr, ohdu, line_correction_function = np.median, smoothening_length = 0, correct_vertical = True, row_correction_function = np.median ):
+def parse_image( imagesHDU, correct_lines_by_bias_median = np.median, smoothening_length = 0, correct_rows_by_bias_median = None, row_correction_function = np.median ):
     with Timer('read and process') as t:
-        paths = glob( expr )[::-1]
         header = None
         data = None
-        for path in paths:
-            datum, header = parse_fits( path, ohdu, line_correction_function, smoothening_length )
+        for imageHDU in imagesHDU:
+            datum, header = parse_single_image( imageHDU, correct_lines_by_bias_median, smoothening_length )
             if data:
                 data = { key: np.concatenate( [ data[key], datum[key] ], axis=0 ) for key in data.keys() }
             else:
                 data = datum
         data['bias'] = data['bias'].view(Image)
-        vbias_width = vbias_from_height[ data['data'].shape[0] ]
+        #print( 'header', header )
+        if 'BIASH' in header:
+            vbias_width = header['BIASH']
+        else:
+            vbias_width = vbias_from_height[ data['data'].shape[0] ]
         data['vbias'] = data['data'][:vbias_width,:].view(Image)
         data['data'] = data['data'][vbias_width:,:].view(Image)
-        if correct_vertical:
-            data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], func = row_correction_function, size = smoothening_length )
+        data['bias'] = data['bias'][vbias_width:,:].view(Image)
+        if correct_rows_by_bias_median:
+            data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], func = correct_rows_by_bias_median, size = smoothening_length )
     return data, dict(header)
 
-def get_params( expr, ohdu, line_correction_function = np.median, row_correction_function = np.median, smoothening_length = 0, correct_vertical = True, remove_hits = False, threshold = 0, border = 0, mean_function = np.median, std_function = MAD ):
-    data, header = parse_expr(expr, ohdu, line_correction_function = line_correction_function, smoothening_length = smoothening_length, correct_vertical = correct_vertical, row_correction_function = row_correction_function )
+def get_params( imagesHDU, correct_lines_by_bias_median = np.median, correct_rows_by_bias_median = None, smoothening_length = 0, remove_hits = False, threshold = 0, border = 0, mean_function = np.median, std_function = MAD, median_diff_function = None, var_diff_function = None ):
+    
+    data, header = parse_image( imagesHDU, correct_lines_by_bias_median = correct_lines_by_bias_median, smoothening_length = smoothening_length, correct_rows_by_bias_median = correct_rows_by_bias_median )
+    
     mu = float( mean_function( data['bias'] ) )
     sigma = float( std_function( data['bias'] ) )
+    gain = 1
     if remove_hits:
         data['data'] = data['data'].get_background( threshold, border )
-    g_lamb = float( mean_function( data['data'] ) - mu )
-    g2_lamb = float( std_function( data['data'] )**2 - sigma**2 )
+    if 'GAIN' in header:
+        gain = header['GAIN']
+        #print( 'gain', gain )
+    g_lamb = median_diff_function( data['data'], data['bias'] )
+    g2_lamb = var_diff_function( data['data'], data['bias'] )
     g = g2_lamb/g_lamb
-    return mu, sigma, g_lamb, g2_lamb, g
-    
-def parse_fits( path, ohdu, line_correction_function = np.median, smoothening_length = 0 ):
-    fits_dir = astropy.io.fits.open( path )
-    imageHDU = get_imageHDU( fits_dir, ohdu )
+    return {'mu':mu, 'sigma':sigma, 'g*lambda':g_lamb, 'g**2*lambda':g2_lamb/gain**2, 'g':g}
 
+def read_image_from_fits( path, ohdu ):
+    paths = glob( expr )[::-1]
+    imagesHDU = []
+    for path in paths:
+        fits_dir = astropy.io.fits.open( path )
+        imagesHDU.append( get_imageHDU( fits_dir, ohdu ) )
+    return imagesHDU
+    
+def parse_single_image( imageHDU, correct_lines_by_bias_median = np.median, smoothening_length = 0 ):
     section = {}
-    half_width = imageHDU.data.shape[1]/2
-    bias_width = bias_from_width[ imageHDU.data.shape[1] ]
-    bin_width = bin_from_width[ imageHDU.data.shape[1] ]
+    if imageHDU.header['ohdu'] == -1:
+        half_width = imageHDU.data.shape[1]
+        bias_width = imageHDU.header['biasW']
+        bin_width = imageHDU.header['rebin']
+    else:
+        half_width = imageHDU.data.shape[1]/2
+        bias_width = bias_from_width[ imageHDU.data.shape[1] ]
+        bin_width = bin_from_width[ imageHDU.data.shape[1] ]
 
     section['data'] = Image( imageHDU.data[ :-1, :half_width - bias_width ] )#/bin_width
     section['bias'] = Image( imageHDU.data[ :-1, half_width -bias_width: half_width ] )#/bin_width
 
-    if line_correction_function is None:
+    if correct_lines_by_bias_median is None:
         section['data'], section['bias'] = correct_global_by_bias( [section['data'], section['bias']], section['bias'] )
     else:
-        section['data'], section['bias'] = correct_lines_by_bias( [section['data'], section['bias']], section['bias'], func = line_correction_function, size = smoothening_length )
+        section['data'], section['bias'] = correct_lines_by_bias( [section['data'], section['bias']], section['bias'], func = correct_lines_by_bias_median, size = smoothening_length )
     return section, dict(imageHDU.header)
 
 def correct_global_by_bias( data, bias ):
@@ -247,6 +267,7 @@ def correct_lines_by_bias( data, bias, size = 0, func = np.median ):
 
 def correct_rows_by_bias( data, bias, size = 0, func = np.median ):
     correction_of_rows = func( bias, axis = 0 )
+    #print( 'correction_of_rows', correction_of_rows.shape )
     if size > 2: 
         correction_of_rows = scipy.ndimage.filters.uniform_filter1d( correction_of_rows, size = size, mode='nearest' )
     return [ datum - correction_of_rows[None,:] for datum in data ]
@@ -350,7 +371,7 @@ class Image( np.ndarray ):
             return ei[0], x, y, level
         list_of_clusters = map( process, zip(list_of_clusters, levels) )
         
-        return Hits( list_of_clusters, levels, threshold, border )
+        return list_of_clusters, levels, threshold, border
 
     def spectrum( self, output, gain, lambda_, sigma, binsize = 2 ):
         from matplotlib import pylab as plt
@@ -418,8 +439,8 @@ def display( data, mode, delta = None, labels = None, nbins = None, log = False 
         if mode == 'mediany':
             ax.plot( np.median(datum, axis=1), '.', label = labels[i] )
         if mode == 'xy':
-            vmin = None
-            vmax = None
+            vmin = datum.min()
+            vmax = datum.max()
             if delta:
                 vmin = np.median(datum)-delta
                 vmax = np.median(datum)+delta
@@ -440,33 +461,167 @@ def display( data, mode, delta = None, labels = None, nbins = None, log = False 
     legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper right' )
     plt.show()
 
+def simulate_and_test( correct_lines_by_bias_median, correct_rows_by_bias_median, smoothening_length, mean_function, std_function, median_diff_function, var_diff_function ):
+    import Simulation
+    output_file = 'simulate_and_test.csv'
+    count = 0
+    columns = ['n', 'readout_noise', 'charge_gain*dark_current', 'charge_gain**2*dark_current', 'charge_gain', 'mu', 'sigma', 'g*lambda', 'g**2*lambda', 'g']
+    open( output_file, 'w' ).writelines( '#' + ', '.join(columns) + '\n' )
+    while count < 100:
+        count += 1
+        print( 'count', count )
+        args = {'simulation_output': 'image_test.csv',
+                'image_fits_output': 'image_test.fits',
+                'rebin': [1,1],
+                'xyshape': [4000,4000],
+                'number_of_charges': 0,
+                'depth_range': [0,670],
+                'charge_range': [1,2000],
+                'charge_gain': 10.*np.random.random(),
+                'readout_noise': 18.*np.random.random(),
+                'dark_current': 0.2*np.random.random(),
+                'horizontal_overscan': 150,
+                'vertical_overscan': 90,
+                'diffusion_function': Simulation.default_diffusion_function,
+                'charge_efficiency_function': Simulation.default_charge_efficiency_function,
+                'horizontal_modulation_function': Simulation.default_horizontal_modulation_function,
+                'vertical_modulation_function': Simulation.default_vertical_modulation_function,
+                }
+        with Timer('simulate'):
+            Simulation.simulate_events( args )
+            sim = Simulation.Simulation( args['simulation_output'] )
+            imageHDU = sim.generate_image( return_image = True )
+        with Timer('get params'):
+            params = get_params( 
+                [imageHDU],
+                correct_lines_by_bias_median = correct_lines_by_bias_median,
+                correct_rows_by_bias_median = correct_rows_by_bias_median,
+                smoothening_length = smoothening_length,
+                mean_function = mean_function,
+                std_function = std_function,
+                median_diff_function = median_diff_function,
+                var_diff_function = var_diff_function,
+            )
+        args['charge_gain*dark_current'] = args['charge_gain']*args['dark_current']
+        args['charge_gain**2*dark_current'] = args['charge_gain']**2*args['dark_current']
+        args['n'] = count
+        entry = [ args[column] if column in args else params[column] for column in columns ]
+        open( output_file, 'a' ).writelines( ', '.join(map( str, entry)) + '\n' )
+        #print( 'noise', args['readout_noise'], params['sigma'] )
+        #print( 'darkcurrent', args['dark_current'], params['g*lambda/gain'], params['g**2*lambda/gain**2'] )
+        #print( 'gain', args['charge_gain'], params['g'] )
+
 def main( args ):
 
     def median_by_lines( x ):
-        medians = np.median(x, axis=0)
+        medians = np.median(x, axis=1)
         return np.mean( medians )
 
     def MAD_by_lines2( x ):
         correction = np.median( x, axis=0 )
+        #print( 'correction2.shape', correction.shape )
         mads_by_line = MAD( x - correction[None,:], axis = 1 )
         return np.mean( mads_by_line )
 
     def MAD_by_lines( x ):
+        #print( 'correction.shape', correct_rows_by_bias( [x], x, func = np.median)[0].shape )
         return np.mean( MAD(correct_rows_by_bias( [x], x, func = np.median )[0], axis=1) )
+    
+    def median_diff_by_half_lines( x, y ):
+        #display([x], mode = 'medianx')
+        #display([x], mode = 'mediany')
+        return float(np.mean( np.median(x[:,x.shape[1]/2:], axis=1) - np.median(y, axis=1) ))
 
-    print( 'officialmedian', get_params( 
+    def MADsqr_diff_by_half_lines( x, y ):
+        return float(np.mean( MAD(x[:,x.shape[1]/2:], axis=1)**2 - MAD(y, axis=1)**2 ))
+    
+    simulate_and_test( 
+        correct_lines_by_bias_median = np.median, 
+        correct_rows_by_bias_median = None,
+        smoothening_length = 0,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines,
+        median_diff_function = median_diff_by_half_lines,
+        var_diff_function = MADsqr_diff_by_half_lines,
+        )
+    
+    exit(0)
+    
+    print( 'official median', get_params( 
         args['input_fits'], 
         args['ohdu'], 
-        line_correction_function = None, 
-        correct_vertical = False,
+        correct_lines_by_bias_median = np.median, 
+        correct_rows_by_bias_median = None,
+        smoothening_length = 10,
         mean_function = median_by_lines,
-        std_function = MAD_by_lines
+        std_function = MAD_by_lines,
+        median_diff_function = median_diff_by_half_lines,
+        var_diff_function = MADsqr_diff_by_half_lines,
     ))
-    print( 'officialmedian', get_params( 
+
+    print( 'vertical median', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        correct_lines_by_bias_median = np.median, 
+        correct_rows_by_bias_median = np.median,
+        smoothening_length = 0,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines,
+        median_diff_function = median_diff_by_half_lines,
+        var_diff_function = MADsqr_diff_by_half_lines,
+    ))
+
+    print( 'vertical median', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        correct_lines_by_bias_median = np.median, 
+        correct_rows_by_bias_median = np.median,
+        smoothening_length = 10,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines,
+        median_diff_function = median_diff_by_half_lines,
+        var_diff_function = MADsqr_diff_by_half_lines,
+    ))
+
+    print( 'vertical mean', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        correct_lines_by_bias_median = np.mean, 
+        correct_rows_by_bias_median = np.mean,
+        smoothening_length = 0,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines,
+        median_diff_function = median_diff_by_half_lines,
+        var_diff_function = MADsqr_diff_by_half_lines,
+    ))
+
+    print( 'vertical mean', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        correct_lines_by_bias_median = np.mean,
+        correct_rows_by_bias_median = np.mean,
+        smoothening_length = 0,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines,
+        median_diff_function = median_diff_by_half_lines,
+        var_diff_function = MADsqr_diff_by_half_lines,
+    ))
+    
+    exit(0)
+    
+    print( 'correctbias', get_params( 
         args['input_fits'], 
         args['ohdu'], 
         line_correction_function = np.median, 
         correct_vertical = False,
+        mean_function = median_by_lines,
+        std_function = MAD_by_lines2
+    ))
+    print( 'correctbias vertical', get_params( 
+        args['input_fits'], 
+        args['ohdu'], 
+        line_correction_function = np.median, 
+        correct_vertical = True,
         mean_function = median_by_lines,
         std_function = MAD_by_lines2
     ))
