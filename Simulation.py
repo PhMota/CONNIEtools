@@ -4,50 +4,77 @@ from numpy import *
 import scipy.stats
 from numpy.lib import recfunctions as rfn
 import json
+import os
 import astropy.io.fits
 from Timer import Timer
+from TerminalColor import text
 
 electron_in_eV = 3.745
 electron_in_keV = electron_in_eV*1e-3
 Cu_energy_eV = 8046
 Cu2_energy_eV = 8904
-si_energy_eV = 1740
+Si_energy_eV = 1740
 
+def generate_folder( number_of_images, readout_noise_range, dark_current_range, output_pattern, **kwargs ):
+    count = 1
+    for count in range( number_of_images ):
+        print( 'generating image', count, 'out of', number_of_images )
+        kwargs['readout_noise'] = (readout_noise_range[1] - readout_noise_range[0])*random.random() + readout_noise_range[0]
+        kwargs['dark_current'] = (dark_current_range[1] - dark_current_range[0])*random.random() + dark_current_range[0]
+        kwargs['output_file'] = output_pattern.replace('*', 'RN{readout_noise:.3}DC{dark_current:.3}'.format(**kwargs) )
+        print( kwargs['image_fits_output'] )
+        sim = simulate_events( **kwargs )
+        sim.generate_image( output = kwargs['output_file'] )
+        count += 1
+    return
 
 def simulate_events( args ):
-    xyshape = args['xyshape']
-    depth_range = args['depth_range']
-    charge_range = args['charge_range']
-    number_of_charges = args['number_of_charges']
+    xyshape = args.xyshape
+    depth_range = args.depth_range
+    charge_range = args.charge_range
+    number_of_charges = args.number_of_charges
     array_of_positions = random.random( number_of_charges*2 ).reshape(-1,2)*(array(xyshape)-1)
     array_of_depths = random.random( number_of_charges )*(depth_range[1] - depth_range[0]) + depth_range[0]
     array_of_charges = random.random( number_of_charges )*(charge_range[1] - charge_range[0]) + charge_range[0]
     array_of_identities = ['random']*number_of_charges
-    if 'number_of_Cu_charges' in args:
-        if args['number_of_Cu_charges'] > 0:
-            number_of_Cu_charges = args['number_of_Cu_charges']
-            array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
-            array_of_depths = append( array_of_depths, random.random( number_of_Cu_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
-            array_of_charges = append( array_of_charges, [Cu_energy_eV/electron_in_eV]*number_of_Cu_charges )
-            array_of_identities.extend( ['Cu']*number_of_Cu_charges )
-            #print( 'Cu', array_of_charges )
+    
+    if 'number_of_Cu_charges' in args.__dict__:
+        number_of_Cu_charges = args.number_of_Cu_charges
+        array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
+        array_of_depths = append( array_of_depths, random.random( number_of_Cu_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        array_of_charges = append( array_of_charges, [Cu_energy_eV/electron_in_eV]*number_of_Cu_charges )
+        array_of_identities.extend( ['Cu']*number_of_Cu_charges )
+        
+    if 'number_of_Cu2_charges' in args.__dict__:
+        number_of_Cu2_charges = args.number_of_Cu2_charges
+        array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu2_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
+        array_of_depths = append( array_of_depths, random.random( number_of_Cu2_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        array_of_charges = append( array_of_charges, [Cu2_energy_eV/electron_in_eV]*number_of_Cu2_charges )
+        array_of_identities.extend( ['Cu2']*number_of_Cu2_charges )
+        
+    if 'number_of_Si_charges' in args.__dict__:
+        number_of_Si_charges = args.number_of_Si_charges
+        array_of_positions = concatenate( (array_of_positions, random.random( number_of_Si_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
+        array_of_depths = append( array_of_depths, random.random( number_of_Si_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        array_of_charges = append( array_of_charges, [Si_energy_eV/electron_in_eV]*number_of_Si_charges )
+        array_of_identities.extend( ['Si']*number_of_Si_charges )
+
     print( 'total charges created', len( array_of_identities ) )
     
-    if return_simulation:
-        data = []
-        if len(array_of_depths) > 0:
-            data = zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities)
-        return Simulation( data, args )
-        
-    header = str(args)
-    header += '\nx, y, z, q, id'
+    data = empty( (0,5), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
     if len(array_of_depths) > 0:
-        data = zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities)
-        savetxt( args['simulation_output'], data, delimiter = ', ', header = header, fmt = ['%s']*4 + ['%s'] )
-    else:
-        open( args['simulation_output'], 'w' ).writelines( header )
-    return args['simulation_output']
-    #return Events( array_of_positions, array_of_depths, array_of_charges, array_of_identities, args )
+        data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
+        
+    if args.sim:
+        output = args.output_fits + '.csv'
+        header = str(vars(args))
+        print( 'header', header )
+        header += '\nx, y, z, q, id'
+        if len(array_of_depths) > 0:
+            savetxt( output, data, delimiter = ', ', header = header, fmt = ['%s']*4 + ['%s'] )
+        else:
+            open( output, 'w' ).writelines( header )
+    return Simulation( data, args )
 
 def simulation_from_file( input_file ):
     args = json.loads( open( input_file ).readline().strip(' #').replace('\'','"') )
@@ -57,13 +84,10 @@ def simulation_from_file( input_file ):
 class Simulation( recarray ):
     
     def __new__(cls, data, args ):
-        #args = json.loads( open( input_file ).readline().strip(' #').replace('\'','"') )
-        
-        #obj = genfromtxt( input_file, delimiter= ', ', names = True, skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
 
         obj = data.view(Simulation)
         
-        for key, arg in args.items():
+        for key, arg in vars(args).items():
             setattr( obj, key, arg )
             
         obj.xyrebinshape = array(obj.xyshape)/obj.rebin
@@ -87,10 +111,10 @@ class Simulation( recarray ):
             return array( ([self.x], [self.y]) ).T
         return array( (self.x, self.y) ).T
 
-    def get_xy_rebin( self ):
-        if self.count == 1:
-            return (array( ([self.x], [self.y]) )/self.rebin[:,None]).T
-        return (array( (self.x, self.y) )/self.rebin[:,None]).T
+    #def get_xy_rebin( self ):
+        #if self.count == 1:
+            #return (array( ([self.x], [self.y]) )/self.rebin[:,None]).T
+        #return (array( (self.x, self.y) )/self.rebin[:,None]).T
 
     def get_E( self ):
         return self.q*self.charge_gain
@@ -106,8 +130,7 @@ class Simulation( recarray ):
             return self.diffusion_function( self.z )
         return self.diffusion_function( entry.z )
         
-    def generate_image( self, output = None, pdf_output = None, return_image = False ):
-        #print( 'count', self.count )
+    def generate_image( self, output = None, pdf_output = None ):
         if self.count > 1:
             sigma_per_event = self.get_sigma()
             charge_per_event = self.get_charge()
@@ -136,14 +159,12 @@ class Simulation( recarray ):
             image = histogramdd( xy, bins = bins )[0] * self.charge_gain
         else:
             image = zeros( self.xyshape )
-        #print( 'shape', image.shape )
             
         if self.dark_current > 0:
             dark_current_image = scipy.stats.poisson.rvs( self.dark_current, size = self.xyshape[0]*self.xyshape[1] ).reshape(self.xyshape)
             image += dark_current_image * self.charge_gain
         
         image = image.reshape( (self.xyrebinshape[0], self.xyrebinshape[1], -1) ).sum(axis = -1)
-        #print( 'shape rebin', image.shape )
         
         new_image = zeros( self.fullshape )
         new_image[self.fullshape[0]-self.xyrebinshape[0]:, :self.xyrebinshape[1]] = image
@@ -155,132 +176,190 @@ class Simulation( recarray ):
         
         print( 'image shapes', self.xyshape, self.xyrebinshape, self.fullshape )
         vertical_modulation = array([ self.vertical_modulation_function(y) for y in range(self.fullshape[0]) ])[:,None]
-        #print( 'vertical_modulation', vertical_modulation.shape )
         image += vertical_modulation
-        horizontal_modulation = array([ self.horizontal_modulation_function(x) for x in range(self.fullshape[1]) ])[None,:]
-        #print( 'horizontal_modulation', horizontal_modulation.shape )
-        image += horizontal_modulation
-        
-        if return_image:
-            return self.save_fits( output, image, return_image = True )
-        else:
-            self.save_fits( output, image, return_image = False )
-        if 'image_pdf_output' in self.__dict__:
-            if self.image_pdf_output != 'none':
-                self.save_pdf( pdf_output, image )
-        return output
 
-    def save_fits( self, output, image, return_image ):
-        header = astropy.io.fits.Header()
-        header['OHDU'] = 0
-        header['biasW'] = self.horizontal_overscan
-        header['biasH'] = self.vertical_overscan
-        header['rebin'] = max(self.rebin)
-        header['gain'] = self.charge_gain
-        primary = astropy.io.fits.PrimaryHDU(header=header)
-        header['OHDU'] = -1
-        fits_image = astropy.io.fits.ImageHDU( image.astype(int), header=header )
-        if return_image:
+        horizontal_modulation = array([ self.horizontal_modulation_function(x) for x in range(self.fullshape[1]) ])[None,:]
+        image += horizontal_modulation
+
+        if pdf_output:
+            self.save_pdf( output, image )
+        
+        fits = self.make_fits( image )
+        if output: self.save_fits( fits, output )
+        return fits
+
+    def make_fits( self, image ):
+        with Timer('generated fits'):
+            header = astropy.io.fits.Header()
+            header['OHDU'] = 0
+            header['biasW'] = self.horizontal_overscan
+            header['biasH'] = self.vertical_overscan
+            header['rebin'] = max(self.rebin)
+            header['gain'] = self.charge_gain
+            header['noise'] = self.readout_noise
+            header['dc'] = self.dark_current
+            header['OHDU'] = -1
+
+            fits_image = astropy.io.fits.ImageHDU( image.astype(int), header=header )
             return fits_image
-        with Timer('writing ' + output ):
+    
+    def save_fits( self, fits_image, output ):
+        with Timer('saved ' + output ):
+            if os.path.exists( output ): os.remove(output)
+            header = fits_image.header
+            header['OHDU'] = 0
+            primary = astropy.io.fits.PrimaryHDU( header=header )
             hdu_list = astropy.io.fits.HDUList([primary, fits_image])
             hdu_list.writeto( output, overwrite=True )
             return
     
     def save_pdf(self, output, image ):
-        from matplotlib import pylab as plt
-        from matplotlib.patches import Ellipse
-        from matplotlib.colors import LogNorm
+        output += '.pdf'
+        with Timer( 'saved ' + output ):
+            from matplotlib import pylab as plt
+            from matplotlib.patches import Ellipse
+            from matplotlib.colors import LogNorm
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
 
-        #x, y = self.x-.5, self.y-.5
-        #ax.scatter( x, y, c='r', s=1 )
-        #if self.count == 1:
-            #sigma = sqrt( self.get_sigma() )*5
-            #ax.add_artist( Ellipse((self.y-.5, self.x-.5), sigma, sigma, fill=False ) )
-        #else:
-            #for event in self:
-                #sigma = sqrt( self.get_sigma(event) )*5
-                #ax.add_artist( Ellipse((event.y-.5, event.x-.5), sigma, sigma, fill=False ) )
-        im = log(image - image.min() + 1)
-        #im = image
-        ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
-        fig.savefig( output )
+            #x, y = self.x-.5, self.y-.5
+            #ax.scatter( x, y, c='r', s=1 )
+            #if self.count == 1:
+                #sigma = sqrt( self.get_sigma() )*5
+                #ax.add_artist( Ellipse((self.y-.5, self.x-.5), sigma, sigma, fill=False ) )
+            #else:
+                #for event in self:
+                    #sigma = sqrt( self.get_sigma(event) )*5
+                    #ax.add_artist( Ellipse((event.y-.5, event.x-.5), sigma, sigma, fill=False ) )
+            im = log(image - image.min() + 1)
+            #im = image
+            ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
+            fig.savefig( output )
         return
-        
-default_diffusion_function = 'sqrt(-923.666*log1p(-0.000441113*z))/15 if z < 670 else 0'
-default_charge_efficiency_function = '1. if z < 670 else .9'
-default_vertical_modulation_function = '50*cos(y/2/pi/20)'
-default_horizontal_modulation_function = '-1e3*(x/1000. - 1)**2 if x < 1000. else 0'
+
+def image( args ):
+    del args.func
+    for option, value in vars(args).items():
+        print( '\t%s: %s' % ( text(option, mode='B'), value) )
+
+    sim = simulate_events( args )
+    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf )
+    
+
+default_diffusion_function = u'sqrt(-923.666*log1p(-0.000441113*z))/15 if z < 670 else 0'
+default_charge_efficiency_function = u'1. if z < 670 else .9'
+default_vertical_modulation_function = u'50*cos(y/2/pi/20)'
+default_horizontal_modulation_function = u'-1e3*(x/1000. - 1)**2 if x < 1000. else 0'
 
 if __name__ == '__main__':
     import argparse
     import sys
-    parser = argparse.ArgumentParser(
-        description = 'simulate events and generates image',
-        formatter_class = argparse.ArgumentDefaultsHelpFormatter,
-        )
-    def tuple_of_int( x ):
-        return map( int, eval(x.replace('\"', '')) )
+
+    def tuple_of( type_ ):
+        return lambda x: map( type_, eval(x.replace('\"', '')) )
+
+    parser = argparse.ArgumentParser( description = 'simulation tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
+    subparsers = parser.add_subparsers( help = 'major options' )
+
+
+    parser_simulate = subparsers.add_parser('image', help='generate image')    
+    parser_simulate.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
+    parser_simulate.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
+    parser_simulate.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
+    parser_simulate.add_argument('--expose-hours', type=float, default = '1', help = 'number of images to be generated' )
+    parser_simulate.add_argument('--output-fits', type=str, default = None, help = 'set to generate a fits output' )
+    parser_simulate.add_argument('--sim', action='store_true', help = 'generate csv output' )
+    parser_simulate.add_argument('--pdf', action='store_true', help = 'generate pdf output' )
+    parser_simulate.add_argument('--spectrum', action='store_true', help = 'generate energy spectrum' )
+    parser_simulate.set_defaults( func=image )
     
-    parser.add_argument('number_of_charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
-    parser.add_argument('--number-of-Cu-charges', 
-                        type=int, 
-                        default = '0', 
-                        help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
-                        )
-    parser.add_argument('--number-of-Cu2-charges', 
-                        type=int, 
-                        default = '0', 
-                        help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' 
-                        )
-    parser.add_argument('--number-of-Si-charges', 
-                        type=int, 
-                        default = '0', 
-                        help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' 
-                        )
-    parser.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
-    parser.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
-    parser.add_argument('--xyshape', type=tuple_of_int, default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
-    parser.add_argument('--rebin', type=tuple_of_int, default = '\"[1,1]\"', help = '2d rebinning strides' )
-    parser.add_argument('--charge-range', type=tuple_of_int, default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
-    parser.add_argument('--depth-range', type=tuple_of_int, default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
-    parser.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
-    parser.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
-    parser.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
-    parser.add_argument('--simulation-output', type=str, default = 'simulation.csv', help = 'csv file with the events generation data' )
-    parser.add_argument('--image-fits-output', type=str, default = 'simulation.fits', help = 'set to "none" not to generate a fits output' )
-    parser.add_argument('--image-pdf-output', type=str, default = 'simulation.pdf', help = 'set to "none" not to generate a pdf output' )
-    parser.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
-    parser.add_argument('--diffusion-function',
-                        type=str, 
-                        default = default_diffusion_function,
-                        help = 'function to map z-depth into sigma' 
-                        )
-    parser.add_argument('--charge-efficiency-function',
-                        type=str,
-                        default = default_charge_efficiency_function,
-                        help = 'function to map z-depth into sigma' 
-                        )
-    parser.add_argument('--vertical-modulation-function',
-                        type=str, 
-                        default = default_vertical_modulation_function,
-                        help = 'function to modulate the vertical axis' 
-                        )    
-    parser.add_argument('--horizontal-modulation-function',
-                        type=str, 
-                        default = default_horizontal_modulation_function,
-                        help = 'function to modulate the horizontal axis' 
-                        )
-    if len(sys.argv) == 1:
-        parser.print_help()
-        exit(1)
+
+    parser_folder = subparsers.add_parser('folder', help='generate folder')
+    parser_folder.add_argument('--number-of-images', type=int, default = None, help = 'number of images to be generated' )
+    parser_folder.add_argument('--output-pattern', type=str, default = 'simulation_*.fits', help = 'pattern for output file names' )
+    parser_folder.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout_noise range' )
+    parser_folder.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
+    parser_folder.set_defaults( func=generate_folder )
+    
+
+    for p in [parser_simulate, parser_folder]:
+        p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
+        p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
+        p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
+        p.add_argument('--number-of-Cu-charges',
+                            type=int,
+                            default = '0',
+                            help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
+                            )
+        p.add_argument('--number-of-Cu2-charges', 
+                            type=int, 
+                            default = '0', 
+                            help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' 
+                            )
+        p.add_argument('--number-of-Si-charges', 
+                            type=int, 
+                            default = '0', 
+                            help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' 
+                            )
+        p.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
+        p.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
+        p.add_argument('--xyshape', type=tuple_of(int), default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
+        p.add_argument('--rebin', type=tuple_of(int), default = '\"[1,1]\"', help = '2d rebinning strides' )
+        p.add_argument('--depth-range', type=tuple_of(int), default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
+        p.add_argument('--diffusion-function',
+                            type=str, 
+                            default = default_diffusion_function,
+                            help = 'function to map z-depth into sigma' 
+                            )
+        p.add_argument('--charge-efficiency-function',
+                            type=str,
+                            default = default_charge_efficiency_function,
+                            help = 'function to map z-depth into sigma' 
+                            )
+        p.add_argument('--vertical-modulation-function',
+                            type=str, 
+                            default = default_vertical_modulation_function,
+                            help = 'function to modulate the vertical axis' 
+                            )    
+        p.add_argument('--horizontal-modulation-function',
+                            type=str, 
+                            default = default_horizontal_modulation_function,
+                            help = 'function to modulate the horizontal axis' 
+                            )
+        p.add_argument('--no-vertical-modulation', action='store_true', help = 'set vertical modulation to "0"' )
+        p.add_argument('--no-horizontal-modulation', action='store_true', help = 'set horizontal modulation to "0"' )
+        p.add_argument('--no-modulation', action='store_true', help = 'set modulations to "0"' )
+
+    #if len(sys.argv) == 1:
+        #parser.print_help()
+        #exit(1)
     args = parser.parse_args()
     
-    print( vars(args) )
+    if args.image_mode is '1':
+        args.rebin = [1,1]
+        args.horizontal_overscan = 150
+        args.vertical_overscan = 90
+        args.xyshape = [4150,4120]
+    elif args.image_mode is '5':
+        args.rebin = [5,1]
+        args.horizontal_overscan = 450
+        args.vertical_overscan = 70
+        args.xyshape = [4150,4120]
+    
+    del args.image_mode
+    
+    if args.no_vertical_modulation:
+        args.vertical_modulation_function = '0'
+    if args.no_horizontal_modulation: 
+        args.horizontal_modulation_function = '0'
+    if args.no_modulation:
+        args.vertical_modulation_function = '0'
+        args.horizontal_modulation_function = '0'
 
-    simulate_events( vars(args) )
-    simulation = Simulation( vars(args)['simulation_output'] )
-    simulation.generate_image( vars(args)['image_fits_output'], vars(args)['image_pdf_output'] )
+    del args.no_vertical_modulation
+    del args.no_horizontal_modulation
+    del args.no_modulation
+    
+    args.func(args)
+    

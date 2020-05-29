@@ -236,32 +236,6 @@ eIonization = 3.745 #eV/e-
 eV_e = eIonization
 
 odict = lambda x: OrderedDict(x)
-class term:
-    #HEADER = '\033[95m'
-    #OKBLUE = '\033[94m'
-    #OKGREEN = '\033[92m'
-    #ARNING = '\033[93m'
-    #FAIL = '\033[91m'
-    cmd = lambda x: '\033[%dm'%x
-    Q = cmd(0)
-    B = cmd(1)
-    I = cmd(3)
-    U = cmd(4)
-    #r = '\e[31m'
-    r = cmd(91)
-    g = cmd(32)
-    y = cmd(33)
-    b = cmd(34)
-    #colorscale = staticmethod( lambda x: '\033[48;2;0;0;%dm \033[0m'%int(x) )
-    #colorscale = staticmethod( lambda x, min_, max_: '\033[48;5;%dm \033[0m'%int( ( 51 - 16 )*( x - min_)/( max_ - min_ ) + 16 ) )
-    colorscaleYR = staticmethod( lambda x, min_, max_: '\033[48;5;%dm \033[0m' % (1+6*int( (( 196/6 - 226/6 )*( x - min_)/( max_ - min_ ) + 226/6 ))) )
-    colorscaleGray = staticmethod( lambda x, min_, max_: ('\033[48;5;%dm \033[0m' % (int( (( 255 - 232 )*( x - min_)/( max_ - min_ ) + 232 ))) )*2 )
-    
-    red = staticmethod( lambda x: term.r + x + term.Q )
-    bold = staticmethod( lambda x: term.B + x + term.Q )
-    italic = staticmethod( lambda x: term.I + x + term.Q )
-    green = staticmethod( lambda x: term.g + x + term.Q )
-    yellow = staticmethod( lambda x: term.y + x + term.Q )
 
 def str_with_err(value, error):
     if error == 0.:

@@ -102,6 +102,7 @@ class poisson_norm:
             if poisson_weight/poisson_sum < tol: break
             k += 1
         if cls.verbose: print 'took', k, 'iteractions'
+        if debug: print 'took', k, 'iteractions', result
         return result
 
     @classmethod
