@@ -20,6 +20,7 @@ import Statistics as stats
 from Timer import Timer
 from TerminalColor import text
 from matplotlib import pylab as plt
+np.warnings.filterwarnings("ignore")
 
 bias_from_width = { 9340: 450, 8540: 150 }
 bin_from_width = { 9340: 5, 8540: 1 }
@@ -128,9 +129,9 @@ def outliers2nan_1d( x, step=1, abs_err = .5 ):
 
 def outliers2nan( x, axis=None, abs_err = .25 ):
     y = np.apply_along_axis( lambda x: outliers2nan_1d(x, abs_err=abs_err), axis, x )
-    print( 'outliers2nan' )
-    print( 'x', x.shape, np.sum(np.isnan(x)) )
-    print( 'y', y.shape, np.sum(np.isnan(y)) )
+    #print( 'outliers2nan' )
+    #print( 'x', x.shape, np.sum(np.isnan(x)) )
+    #print( 'y', y.shape, np.sum(np.isnan(y)) )
     return y
 
 def outliers2nanp_1d( x, step=1, pmin = 1e-2 ):
@@ -145,14 +146,14 @@ def outliers2nanp_1d( x, step=1, pmin = 1e-2 ):
         median = np.nanmedian(y)
         std = np.nanstd(y)
         p = scipy.stats.norm.pdf( y, loc=mean, scale=std )
-        print( 'minp', np.sum(np.isnan(y)), np.sum(np.isnan(p)), np.nanmin(p) )
+        #print( 'minp', np.sum(np.isnan(y)), np.sum(np.isnan(p)), np.nanmin(p) )
     return y
 
 def outliers2nanp( x, axis=None, pmin = 1e-2 ):
     y = np.apply_along_axis( lambda x: outliers2nanp_1d(x, pmin=pmin), axis, x )
-    print( 'outliers2nan' )
-    print( 'x', x.shape, np.sum(np.isnan(x)) )
-    print( 'y', y.shape, np.sum(np.isnan(y)) )
+    #print( 'outliers2nan' )
+    #print( 'x', x.shape, np.sum(np.isnan(x)) )
+    #print( '%s outliers with p<%s' % ( np.sum(np.isnan(y)), pmin ) )
     return y
     
 def crop_std_1d( x, step = 1, abs_tol = .5 ):
@@ -283,23 +284,6 @@ def read_image_from_fits( path, ohdu ):
         imagesHDU.append( get_imageHDU( fits_dir, ohdu ) )
     return imagesHDU
     
-def correct_global_by_bias( data, bias ):
-    correction = np.nanmedian( bias )
-    return [ datum - correction for datum in data ]
-
-def correct_lines_by_bias( data, bias, size = 0, func = np.nanmedian ):
-    correction_of_lines = func( bias, axis = 1 )
-    if size > 2:
-        correction_of_lines = scipy.ndimage.filters.uniform_filter1d( correction_of_lines, size = size, mode='nearest' )
-    return [ datum - correction_of_lines[:,None] for datum in data ]
-
-def correct_rows_by_bias( data, bias, size = 0, func = np.nanmedian ):
-    correction_of_rows = func( bias, axis = 0 )
-    #print( 'correction_of_rows', correction_of_rows.shape )
-    if size > 2: 
-        correction_of_rows = scipy.ndimage.filters.uniform_filter1d( correction_of_rows, size = size, mode='nearest' )
-    return [ datum - correction_of_rows[None,:] for datum in data ]
-
 def label_clusters( condition_image ):
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
     return scipy.ndimage.label( condition_image, structure=s33 )[0]
@@ -324,6 +308,9 @@ class Part:
         self.data = Section( imageHDU.data[ :-1, :half_width - bias_width ] )
         self.bias = Section( imageHDU.data[ :-1, half_width -bias_width: half_width ] )
 
+    def remove_outliers_from_bias( self, pmin = 1e-5 ):
+        self.bias = Section(outliers2nanp( self.bias, axis=1, pmin=pmin ))
+        
     def correct_lines( self, func = np.nanmedian, smoothening_length = 0 ):
         if func is None:
             self.data -= self.bias.get_global_bias( func ) 
@@ -366,6 +353,9 @@ class Image:
         self.dbias = self.bias[:self.vbias_height,:].view(Section)
         self.bias = self.bias[self.vbias_height:,:].view(Section)
     
+    def remove_outliers_from_vbias(self, pmin=1e-5):
+        self.vbias = Section(outliers2nanp( self.vbias, axis=0, pmin=pmin ))
+        
     def correct_rows( self, func = np.nanmedian, smoothening_length = 0 ):
         if not func is None:
             data_rows_correction = self.vbias.get_rows_bias( func, smoothening_length )
@@ -806,37 +796,8 @@ def analyse( args ):
             if args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
             if args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
             part = Part(HDU)
-            
-            nanbias = Section(outliers2nanp( part.bias, axis=1, pmin=1e-5 ))
-            print( 'shape', nanbias.shape )
-            biasG = part.bias - part.bias.get_global_bias()
-            biasMedian = part.bias - part.bias.get_lines_bias(np.median)
-            biasMedian10 = part.bias - part.bias.get_lines_bias(np.median, smoothening_length=10)
-            biasMean = part.bias - part.bias.get_lines_bias(np.mean)
-            
-            nanbiasMean = nanbias - nanbias.get_lines_bias(np.nanmean)
-        
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            hG = biasG.get_binned_distribution()
-            hMedian = biasMedian.get_binned_distribution()
-            hMedian10 = biasMedian10.get_binned_distribution()
-            hMean = biasMean.get_binned_distribution()
-            
-            hnanMean = nanbiasMean.get_binned_distribution()
-            
-            ax.step(hG[0], hG[1], label='global')
-            ax.step(hMedian[0], hMedian[1], label='median')
-            ax.step(hMedian10[0], hMedian10[1], label='median10')
-            #ax.step(hMean[0], hMean[1], label='mean')
-            
-            ax.step(hnanMean[0], hnanMean[1], label='nanmean')
-            #ax.set_xlim(( 1.1*np.min(hnanMean[0]), 1.1*np.max(hnanMean[0]) ))
-            ax.set_yscale('log')
-            ax.legend()
-            plt.show()
-            
-            part.correct_lines()
+            part.remove_outliers_from_bias()
+            part.correct_lines(np.nanmean)
             try: parts_dict[i].append(part)
             except KeyError: parts_dict[i] = [part]
 
@@ -845,7 +806,39 @@ def analyse( args ):
     
     first = True
     for i, parts in parts_dict.items():
-        image = Image( parts ).correct_rows()
+        image = Image( parts )
+
+        biasMedian = part.bias - part.bias.get_lines_bias(np.nanmedian)
+        biasMedian10 = part.bias - part.bias.get_lines_bias(np.nanmedian, smoothening_length=10)
+        biasMean = part.bias - part.bias.get_lines_bias(np.nanmean)
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        biasH = image.bias.get_binned_distribution()
+        #vbiasH = image.vbias.get_binned_distribution()
+        #dataH = image.data.get_binned_distribution()
+        
+        ax.step(biasH[0], biasH[1], label='bias')
+        #ax.step(vbiasH[0], vbiasH[1], label='vbias')
+        #ax.step(dataH[0], dataH[1], label='data')
+
+        image.remove_outliers_from_vbias(pmin=1e-5)
+        image.correct_rows( np.nanmean )
+
+        cbiasH = image.bias.get_binned_distribution()
+        cvbiasH = image.vbias.get_binned_distribution()
+        cdataH = image.data.get_binned_distribution()
+
+        ax.step(cbiasH[0], cbiasH[1], label='cbias')
+        ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
+        ax.step(cdataH[0], cdataH[1], label='cdata')
+        
+        ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
+        ax.set_yscale('log')
+        ax.legend()
+        plt.show()
+        
+        
         params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
         if first:
             columns = zip(*params)[0]

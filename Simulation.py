@@ -20,7 +20,7 @@ def generate_folder( args ):
         print( 'generating image', count+1, 'out of', args.number_of_images )
         args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
         args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
-        args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:0.4}DC{dark_current:0.4}'.format(**vars(args)) )
+        args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:.2f}DC{dark_current:.4f}'.format(**vars(args)) )
         sim = simulate_events( args )
         sim.generate_image( output = args.output_file )
     return
