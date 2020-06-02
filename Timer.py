@@ -1,6 +1,7 @@
 from __future__ import print_function
 import time
 import datetime
+from TerminalColor import text
 
 class Timer:
     def __init__(self, msg='elapsed'):
@@ -12,7 +13,7 @@ class Timer:
     
     def __exit__(self, type, value, traceback):
         s = [ self.msg ]
-        s += [ self.time() ]
+        s += [ text(self.time(), color='y') ]
         if value:
             s += [ '%s'%type ]
             s += [ '%s'%value ]

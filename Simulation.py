@@ -16,16 +16,13 @@ Cu2_energy_eV = 8904
 Si_energy_eV = 1740
 
 def generate_folder( args ):
-    count = 1
     for count in range( args.number_of_images ):
-        print( 'generating image', count, 'out of', args.number_of_images )
+        print( 'generating image', count+1, 'out of', args.number_of_images )
         args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
         args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
-        args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:.3}DC{dark_current:.3}'.format(vars(args)) )
-        print( args.image_fits_output )
+        args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:0.4}DC{dark_current:0.4}'.format(**vars(args)) )
         sim = simulate_events( args )
         sim.generate_image( output = args.output_file )
-        count += 1
     return
 
 def simulate_events( args ):
@@ -256,12 +253,10 @@ def tuple_of( type_ ):
     return lambda x: map( type_, eval(x.replace('\"', '')) )
 
 def add_image_options( p, func ):
-    p.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
     p.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
     p.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
     p.add_argument('--expose-hours', type=float, default = '1', help = 'number of images to be generated' )
     p.add_argument('--output-fits', type=str, default = None, help = 'set to generate a fits output' )
-    p.add_argument('--sim', action='store_true', help = 'generate csv output' )
     p.add_argument('--pdf', action='store_true', help = 'generate pdf output' )
     p.add_argument('--spectrum', action='store_true', help = 'generate energy spectrum' )
     add_general_options( p )
@@ -276,6 +271,8 @@ def add_folder_options( p, func ):
     p.set_defaults( func=generate_folder )
 
 def add_general_options( p ):
+    p.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
+    p.add_argument('--sim', action='store_true', help = 'generate csv output' )
     p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
     p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
     p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
@@ -357,8 +354,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser( description = 'simulation tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
     subparsers = parser.add_subparsers( help = 'major options' )
 
-    add_image_options( subparsers.add_parser('image', help='generate image'), image )
-    add_folder_options( subparsers.add_parser('folder', help='generate folder'), generate_folder )
+    add_image_options( subparsers.add_parser('image', help='generate image', formatter_class = argparse.ArgumentDefaultsHelpFormatter), image )
+    add_folder_options( subparsers.add_parser('folder', help='generate folder', formatter_class = argparse.ArgumentDefaultsHelpFormatter), generate_folder )
 
     args = parser.parse_args()
     args = postprocess( args )
