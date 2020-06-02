@@ -15,16 +15,16 @@ Cu_energy_eV = 8046
 Cu2_energy_eV = 8904
 Si_energy_eV = 1740
 
-def generate_folder( number_of_images, readout_noise_range, dark_current_range, output_pattern, **kwargs ):
+def generate_folder( args ):
     count = 1
-    for count in range( number_of_images ):
-        print( 'generating image', count, 'out of', number_of_images )
-        kwargs['readout_noise'] = (readout_noise_range[1] - readout_noise_range[0])*random.random() + readout_noise_range[0]
-        kwargs['dark_current'] = (dark_current_range[1] - dark_current_range[0])*random.random() + dark_current_range[0]
-        kwargs['output_file'] = output_pattern.replace('*', 'RN{readout_noise:.3}DC{dark_current:.3}'.format(**kwargs) )
-        print( kwargs['image_fits_output'] )
-        sim = simulate_events( **kwargs )
-        sim.generate_image( output = kwargs['output_file'] )
+    for count in range( args.number_of_images ):
+        print( 'generating image', count, 'out of', args.number_of_images )
+        args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
+        args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
+        args.output_file = output_pattern.replace('*', 'RN{readout_noise:.3}DC{dark_current:.3}'.format(vars(args)) )
+        print( args.image_fits_output )
+        sim = simulate_events( args )
+        sim.generate_image( output = args.output_file )
         count += 1
     return
 
@@ -272,7 +272,7 @@ def add_folder_options( p, func ):
     p.add_argument('--output-pattern', type=str, default = 'simulation_*.fits', help = 'pattern for output file names' )
     p.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout_noise range' )
     p.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
-    add_general_options( p )
+    add_general_options(p)
     p.set_defaults( func=generate_folder )
 
 def add_general_options( p ):
