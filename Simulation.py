@@ -252,90 +252,78 @@ default_charge_efficiency_function = u'1. if z < 670 else .9'
 default_vertical_modulation_function = u'50*cos(y/2/pi/20)'
 default_horizontal_modulation_function = u'-1e3*(x/1000. - 1)**2 if x < 1000. else 0'
 
-if __name__ == '__main__':
-    import argparse
-    import sys
+def tuple_of( type_ ):
+    return lambda x: map( type_, eval(x.replace('\"', '')) )
 
-    def tuple_of( type_ ):
-        return lambda x: map( type_, eval(x.replace('\"', '')) )
+def add_image_options( p, func ):
+    p.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
+    p.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
+    p.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
+    p.add_argument('--expose-hours', type=float, default = '1', help = 'number of images to be generated' )
+    p.add_argument('--output-fits', type=str, default = None, help = 'set to generate a fits output' )
+    p.add_argument('--sim', action='store_true', help = 'generate csv output' )
+    p.add_argument('--pdf', action='store_true', help = 'generate pdf output' )
+    p.add_argument('--spectrum', action='store_true', help = 'generate energy spectrum' )
+    add_general_options( p )
+    p.set_defaults( func=func )
 
-    parser = argparse.ArgumentParser( description = 'simulation tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
-    subparsers = parser.add_subparsers( help = 'major options' )
-
-
-    parser_simulate = subparsers.add_parser('image', help='generate image')    
-    parser_simulate.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
-    parser_simulate.add_argument('--readout-noise', type=eval, default = '0', help = 'sigma of the normal noise distribution in ADU' )
-    parser_simulate.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
-    parser_simulate.add_argument('--expose-hours', type=float, default = '1', help = 'number of images to be generated' )
-    parser_simulate.add_argument('--output-fits', type=str, default = None, help = 'set to generate a fits output' )
-    parser_simulate.add_argument('--sim', action='store_true', help = 'generate csv output' )
-    parser_simulate.add_argument('--pdf', action='store_true', help = 'generate pdf output' )
-    parser_simulate.add_argument('--spectrum', action='store_true', help = 'generate energy spectrum' )
-    parser_simulate.set_defaults( func=image )
-    
-
-    parser_folder = subparsers.add_parser('folder', help='generate folder')
+def add_folder_options( p, func ):
     parser_folder.add_argument('--number-of-images', type=int, default = None, help = 'number of images to be generated' )
     parser_folder.add_argument('--output-pattern', type=str, default = 'simulation_*.fits', help = 'pattern for output file names' )
     parser_folder.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout_noise range' )
     parser_folder.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
+    add_general_options( p )
     parser_folder.set_defaults( func=generate_folder )
-    
 
-    for p in [parser_simulate, parser_folder]:
-        p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
-        p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
-        p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
-        p.add_argument('--number-of-Cu-charges',
-                            type=int,
-                            default = '0',
-                            help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
-                            )
-        p.add_argument('--number-of-Cu2-charges', 
-                            type=int, 
-                            default = '0', 
-                            help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' 
-                            )
-        p.add_argument('--number-of-Si-charges', 
-                            type=int, 
-                            default = '0', 
-                            help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' 
-                            )
-        p.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
-        p.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
-        p.add_argument('--xyshape', type=tuple_of(int), default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
-        p.add_argument('--rebin', type=tuple_of(int), default = '\"[1,1]\"', help = '2d rebinning strides' )
-        p.add_argument('--depth-range', type=tuple_of(int), default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
-        p.add_argument('--diffusion-function',
-                            type=str, 
-                            default = default_diffusion_function,
-                            help = 'function to map z-depth into sigma' 
-                            )
-        p.add_argument('--charge-efficiency-function',
-                            type=str,
-                            default = default_charge_efficiency_function,
-                            help = 'function to map z-depth into sigma' 
-                            )
-        p.add_argument('--vertical-modulation-function',
-                            type=str, 
-                            default = default_vertical_modulation_function,
-                            help = 'function to modulate the vertical axis' 
-                            )    
-        p.add_argument('--horizontal-modulation-function',
-                            type=str, 
-                            default = default_horizontal_modulation_function,
-                            help = 'function to modulate the horizontal axis' 
-                            )
-        p.add_argument('--no-vertical-modulation', action='store_true', help = 'set vertical modulation to "0"' )
-        p.add_argument('--no-horizontal-modulation', action='store_true', help = 'set horizontal modulation to "0"' )
-        p.add_argument('--no-modulation', action='store_true', help = 'set modulations to "0"' )
+def add_general_options( p ):
+    p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
+    p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
+    p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
+    p.add_argument('--number-of-Cu-charges',
+                        type=int,
+                        default = '0',
+                        help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
+                        )
+    p.add_argument('--number-of-Cu2-charges', 
+                        type=int, 
+                        default = '0', 
+                        help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' 
+                        )
+    p.add_argument('--number-of-Si-charges', 
+                        type=int, 
+                        default = '0', 
+                        help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' 
+                        )
+    p.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
+    p.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
+    p.add_argument('--xyshape', type=tuple_of(int), default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
+    p.add_argument('--rebin', type=tuple_of(int), default = '\"[1,1]\"', help = '2d rebinning strides' )
+    p.add_argument('--depth-range', type=tuple_of(int), default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
+    p.add_argument('--diffusion-function',
+                        type=str, 
+                        default = default_diffusion_function,
+                        help = 'function to map z-depth into sigma' 
+                        )
+    p.add_argument('--charge-efficiency-function',
+                        type=str,
+                        default = default_charge_efficiency_function,
+                        help = 'function to map z-depth into sigma' 
+                        )
+    p.add_argument('--vertical-modulation-function',
+                        type=str, 
+                        default = default_vertical_modulation_function,
+                        help = 'function to modulate the vertical axis' 
+                        )    
+    p.add_argument('--horizontal-modulation-function',
+                        type=str, 
+                        default = default_horizontal_modulation_function,
+                        help = 'function to modulate the horizontal axis' 
+                        )
+    p.add_argument('--no-vertical-modulation', action='store_true', help = 'set vertical modulation to "0"' )
+    p.add_argument('--no-horizontal-modulation', action='store_true', help = 'set horizontal modulation to "0"' )
+    p.add_argument('--no-modulation', action='store_true', help = 'set modulations to "0"' )
 
-    #if len(sys.argv) == 1:
-        #parser.print_help()
-        #exit(1)
-    args = parser.parse_args()
-    
+def postprocess( args ):
     if args.image_mode is '1':
         args.rebin = [1,1]
         args.horizontal_overscan = 150
@@ -360,6 +348,19 @@ if __name__ == '__main__':
     del args.no_vertical_modulation
     del args.no_horizontal_modulation
     del args.no_modulation
+    return args
     
+if __name__ == '__main__':
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser( description = 'simulation tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
+    subparsers = parser.add_subparsers( help = 'major options' )
+
+    add_image_options( subparsers.add_parser('image', help='generate image'), image )
+    add_folder_options( subparsers.add_parser('folder', help='generate folder'), generate_folder )
+
+    args = parser.parse_args()
+    args = postprocess( args )
     args.func(args)
     

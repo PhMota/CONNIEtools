@@ -18,6 +18,8 @@ matplotlib.use('gtk3agg')
 #from SimulateImage import Hits
 import Statistics as stats
 from Timer import Timer
+from TerminalColor import text
+from matplotlib import pylab as plt
 
 bias_from_width = { 9340: 450, 8540: 150 }
 bin_from_width = { 9340: 5, 8540: 1 }
@@ -41,11 +43,10 @@ def crop_var( x, axis = None, mode = None ):
 
 def crop_std( x, axis = None, mode = None): return np.sqrt( crop_var( x, axis, mode ) )
 
-def crop_mean( x, axis = None, mode = None ):
-    if mode == None:
-        return np.apply_along_axis( crop_mean_1d, axis, x )
-    elif mode == 'partition':
-        return crop_mean_1d_partition( x )
+def crop_mean( x, axis = None ):
+    a = np.apply_along_axis( crop_mean_1d, axis, x )
+    #print( 'a', a )
+    return a
 
 #def crop_var_1d( x, step = 1 ):
     #x2 = crop_mean_1d(x**2, step)
@@ -59,13 +60,59 @@ def crop_mean_1d( x, step = 1 ):
     mean = np.nanmean(x)
     median = np.nanmedian(x)
 
-    while abs(mean - median) >= .5:
+    while True:
         if mean > median: right -= step
         else: left += step
 
         mean = np.nanmean( x[left:right] )
         median = np.nanmedian( x[left:right] )
+        if abs(mean - median) < .5: break
     return mean
+
+def norm_mean_1d( x, step = 1, abs_err = 0 ):
+    mean = np.nanmean(x)
+    median = np.nanmedian(x)
+    while True:
+        if mean > median: x[ x == np.nanmax(x) ] = np.nan
+        else: x[ x == np.nanmin(x) ] = np.nan
+
+        mean = np.nanmean(x)
+        median = np.nanmedian(x)
+        if abs( mean - median ) < abs_err: break
+    return mean
+
+def norm_mean_1d( x, step = 1, abs_err = 0 ):
+    mean = [ np.nanmean(x) ]
+    median = [ np.nanmedian(x) ]
+    diff = [ mean[-1] - median[-1] ]
+    ddiff = []
+    count = 0
+    while True:
+        if mean[-1] > median[-1]: x[ x == np.nanmax(x) ] = np.nan
+        else: x[ x == np.nanmin(x) ] = np.nan
+
+        mean.append( np.nanmean(x) )
+        median.append( np.nanmedian(x) )
+        diff.append( mean[-1] - median[-1] )
+        ddiff.append( diff[-2] - diff[-1] )
+        #print( np.sum(np.isnan(x)), mean[-1], median[-1], diff[-1], diff[-2]-diff[-1] )
+        #if abs(diff[-1]) > abs(diff[-2]): break
+        if abs( diff[-1] ) < abs_err: break
+        if count > 1100: break
+        count += 1
+    from matplotlib import pylab as plt
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    #ax.plot( mean, label='mean' )
+    #ax.plot( median, label='median' )
+    #ax.plot( diff, label='diff' )
+    ax.plot( ddiff, label='ddiff' )
+    ax.legend()
+    plt.show()
+    return mean[-1], x
+
+def norm_mean( x, axis=None, step = 1 ):
+    np.apply_along_axis( norm_mean_1d, axis, x )
 
 def crop_std_1d( x, step = 1, abs_tol = .5 ):
     x = np.sort( x.flatten() )
@@ -187,29 +234,6 @@ def statistics( data ):
             float(crop_std_1d(data, step=10, abs_tol = 1)),
             )
 
-def parse_image( imagesHDU, correct_lines_by_bias_median = np.nanmedian, smoothening_length = 0, correct_rows_by_bias_median = None, row_correction_function = np.nanmedian ):
-    with Timer('read and process') as t:
-        header = None
-        data = None
-        for imageHDU in imagesHDU:
-            datum, header = parse_single_image( imageHDU, correct_lines_by_bias_median, smoothening_length )
-            if data:
-                data = { key: np.concatenate( [ data[key], datum[key] ], axis=0 ) for key in data.keys() }
-            else:
-                data = datum
-        data['bias'] = data['bias'].view(Image)
-        #print( 'header', header )
-        if 'BIASH' in header:
-            vbias_width = header['BIASH']
-        else:
-            vbias_width = vbias_from_height[ data['data'].shape[0] ]
-        data['vbias'] = data['data'][:vbias_width,:].view(Image)
-        data['data'] = data['data'][vbias_width:,:].view(Image)
-        data['bias'] = data['bias'][vbias_width:,:].view(Image)
-        if correct_rows_by_bias_median:
-            data['data'], data['vbias'] = correct_rows_by_bias( [ data['data'], data['vbias'] ], data['vbias'], func = correct_rows_by_bias_median, size = smoothening_length )
-    return data, dict(header)
-
 def read_image_from_fits( path, ohdu ):
     paths = glob( expr )[::-1]
     imagesHDU = []
@@ -218,26 +242,6 @@ def read_image_from_fits( path, ohdu ):
         imagesHDU.append( get_imageHDU( fits_dir, ohdu ) )
     return imagesHDU
     
-def parse_single_image( imageHDU, correct_lines_by_bias_median = np.nanmedian, smoothening_length = 0 ):
-    section = {}
-    if imageHDU.header['ohdu'] == -1:
-        half_width = imageHDU.data.shape[1]
-        bias_width = imageHDU.header['biasW']
-        bin_width = imageHDU.header['rebin']
-    else:
-        half_width = imageHDU.data.shape[1]/2
-        bias_width = bias_from_width[ imageHDU.data.shape[1] ]
-        bin_width = bin_from_width[ imageHDU.data.shape[1] ]
-
-    section['data'] = Section( imageHDU.data[ :-1, :half_width - bias_width ] )#/bin_width
-    section['bias'] = Section( imageHDU.data[ :-1, half_width -bias_width: half_width ] )#/bin_width
-
-    if correct_lines_by_bias_median is None:
-        section['data'], section['bias'] = correct_global_by_bias( [section['data'], section['bias']], section['bias'] )
-    else:
-        section['data'], section['bias'] = correct_lines_by_bias( [section['data'], section['bias']], section['bias'], func = correct_lines_by_bias_median, size = smoothening_length )
-    return section, dict(imageHDU.header)
-
 def correct_global_by_bias( data, bias ):
     correction = np.nanmedian( bias )
     return [ datum - correction for datum in data ]
@@ -259,22 +263,25 @@ def label_clusters( condition_image ):
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
     return scipy.ndimage.label( condition_image, structure=s33 )[0]
 
+def mean_err( x ):
+    return np.nanmean(x), np.nanstd(x)/np.sqrt(len(x))
+
 class Part:
     def __init__( self, imageHDU ):
         self.header = dict( imageHDU.header )
         if imageHDU.header['ohdu'] == -1:
             half_width = imageHDU.data.shape[1]
             bias_width = imageHDU.header['biasW']
-            bin_width = imageHDU.header['rebin']
+            self.rebin = imageHDU.header['rebin']
             self.vbias_height = imageHDU.header['biasH']
         else:
             half_width = imageHDU.data.shape[1]/2
             bias_width = Part.get_bias_width_from_width( imageHDU.data.shape[1] )
-            bin_width = Part.get_rebin_from_height( imageHDU.data.shape[0] )
+            self.rebin = Part.get_rebin_from_height( imageHDU.data.shape[0] )
             self.vbias_height = Part.get_vbias_height_from_height( imageHDU.data.shape[0] )
-
-        self.data = Section( imageHDU.data[ :-1, :half_width - bias_width ] )#/bin_width
-        self.bias = Section( imageHDU.data[ :-1, half_width -bias_width: half_width ] )#/bin_width
+        
+        self.data = Section( imageHDU.data[ :-1, :half_width - bias_width ] )
+        self.bias = Section( imageHDU.data[ :-1, half_width -bias_width: half_width ] )
 
     def correct_lines( self, func = np.nanmedian, smoothening_length = 0 ):
         if func is None:
@@ -308,6 +315,7 @@ class Image:
             if self.data is None:
                 self.data = part.data
                 self.bias = part.bias
+                self.rebin = part.rebin
             else:
                 self.data = np.concatenate( [ self.data, part.data ], axis=0 )
                 self.bias = np.concatenate( [ self.bias, part.bias ], axis=0 )
@@ -327,7 +335,18 @@ class Image:
             self.dbias -= bias_rows_correction
         return self
     
-    def get_params( self, mode = None, half = False, gain = 1, factor = 1, remove_hits = False, **kwargs ):
+    def get_params( self, mode = None, half = False, gain = 1, remove_hits = False, **kwargs ):
+        ret = []
+        height, width = self.data.shape
+        _, osw = self.bias.shape
+        osh,_ = self.vbias.shape
+        rebin = self.rebin
+        ret.append( ['height', height] )
+        ret.append( ['width', width] )
+        ret.append( ['osw', osw] )
+        ret.append( ['osh', osh] )
+        ret.append( ['rebin', rebin] )
+        
         if 'GAIN' in self.header:
             gain = self.header['GAIN']
 
@@ -338,48 +357,56 @@ class Image:
         if remove_hits: data = data.remove_hits(60, 3)
         #data /= factor
         
-        if mode == 'mean&std':
-            mu = np.nanmean( self.bias )
-            stds = np.nanstd( self.bias, axis=1 )
-            sigma = np.nanmean( stds )
-            sigma_err = np.nanstd( stds )/np.sqrt(len(stds))
-            
-            diff_means = np.nanmean( data, axis=1 ) - np.nanmean( self.bias, axis=1 )
-            g_lamb = np.nanmean( diff_means )
-            g_lamb_err = np.nanstd( diff_means )/np.sqrt( len( diff_means ) )
-            
-            diff_vars = np.nanvar( data, axis=1 ) - np.nanvar( self.bias, axis=1 )
-            g2_lamb = np.nanmean( diff_vars )
-            g2_lamb_err = np.nanstd( diff_vars )/np.sqrt( len( diff_vars ) )
-            
-            return {'mu': mu, 
-                    'sigma': sigma, 
-                    'sigma_err':sigma_err, 
-                    'g': g2_lamb/g_lamb,
-                    'lambda': g_lamb/gain/factor,
-                    'lambda_err': g_lamb_err/gain/factor,
-                    }
+        if mode == 'mean':
+            mu, mu_err = mean_err( np.nanmean( self.bias, axis=1 ) )
+            sigma, sigma_err = mean_err( np.nanstd( self.bias, axis=1) )
+            vmu, vmu_err = mean_err( np.nanmean( self.vbias, axis=0 ) )
+            vsigma, vsigma_err = mean_err( np.nanstd( self.vbias, axis=0) )
+            g_lamb, g_lamb_err = mean_err( np.nanmean( data, axis=1) - np.nanmean( self.bias, axis=1) )
+            g2_lamb, g2_lamb_err = mean_err( np.nanstd( data, axis=1) - np.nanstd( self.bias, axis=1) )
+            return ret + [ 
+                    ['mu', mu], 
+                    ['mu_err', mu_err], 
+                    ['sigma', sigma], 
+                    ['sigma_err', sigma_err], 
+                    ['vsigma', vsigma], 
+                    ['vsigma_err', vsigma_err], 
+                    ['g_lambda', g_lamb],
+                    ['g_lambda_err', g_lamb_err],
+                    ['g2_lambda', g2_lamb],
+                    ['g2_lambda_err', g2_lamb_err],
+                    ]
 
-        if mode == 'median&MAD':
-            mu = np.nanmedian( np.nanmedian( self.bias, axis=1 ) )
-            mads = MAD( self.bias, axis=1)
-            sigma = np.nanmean( mads )
-            sigma_err = np.nanstd( mads )/np.sqrt(len(mads))
+        if mode == 'median':
+            mu, mu_err = mean_err( np.nanmedian( self.bias, axis=1 ) )
+            sigma, sigma_err = mean_err( MAD( self.bias, axis=1) )
             
-            diff_medians = np.nanmedian( data, axis=1) - np.nanmedian( self.bias, axis=1)
-            g_lamb = np.nanmean( diff_medians )
-            g_lamb_err = np.nanstd( diff_medians )/np.sqrt( len( diff_medians ) )
+            vmu, vmu_err = mean_err( np.nanmedian( self.vbias, axis=0 ) )
+            vsigma, vsigma_err = mean_err( MAD( self.vbias, axis=0) )
             
-            diff_mads = MAD( data, axis=1) - MAD( self.bias, axis=1)
-            g2_lamb = np.nanmean( diff_mads )
-            g2_lamb_err = np.nanstd( diff_mads )/np.sqrt( len( diff_mads ) )
-            return {'mu':mu, 
-                    'sigma':sigma, 
-                    'sigma_err':sigma_err, 
-                    'g': g2_lamb/g_lamb,
-                    'lambda': g_lamb/gain/factor,
-                    'lambda_err': g_lamb_err/gain/factor,
-                    }
+            dmu, dmu_err = mean_err( np.nanmedian( self.data, axis=0 ) )
+            dsigma, dsigma_err = mean_err( MAD( self.data, axis=0) )
+            
+            g_lamb, g_lamb_err = mean_err( np.nanmedian( data, axis=1) - np.nanmedian( self.bias, axis=1) )
+            g2_lamb, g2_lamb_err = mean_err( MAD( data, axis=1) - MAD( self.bias, axis=1) )
+            return ret + [ 
+                    ['mu', mu], 
+                    ['mu_err', mu_err], 
+                    ['sigma', sigma], 
+                    ['sigma_err', sigma_err], 
+                    ['vmu', vmu], 
+                    ['vmu_err', vmu_err], 
+                    ['vsigma', vsigma], 
+                    ['vsigma_err', vsigma_err], 
+                    ['dmu', dmu], 
+                    ['dmu_err', dmu_err], 
+                    ['dsigma', dsigma], 
+                    ['dsigma_err', dsigma_err], 
+                    ['g_lambda', g_lamb],
+                    ['g_lambda_err', g_lamb_err],
+                    ['g2_lambda', g2_lamb],
+                    ['g2_lambda_err', g2_lamb_err],
+                    ]
         
         if mode == 'fit':
             a, mu, sigma = self.bias.fit_norm_binned()[0]
@@ -393,12 +420,38 @@ class Image:
             loc, lamb = data.mle_poisson_norm( gain=gain, sigma=sigma, p0 = [0, g_lamb/gain] )
             return { 'mu':mu, 'sigma':sigma, 'lambda': lamb/factor, 'g': gain }
     
+        raise Exception( 'mode not recognized {}'.format(mode) ) 
+    
     def save_pdf( self, output ):
         data = np.concatenate([self.vbias, self.data], axis=0)
         bias = np.concatenate([self.dbias, self.bias], axis=0)
         image = Section( np.concatenate([data, bias], axis=1) )
         image.save_pdf( output )
+    
+    def histograms( self ):
+        bias = self.bias.get_binned_distribution()
+        vbias = self.vbias.get_binned_distribution()
+        data = self.data.get_binned_distribution()
         
+        #_, crop_bias = norm_mean_1d( self.bias )
+        #hist = crop_bias.get_binned_distribution()
+        #print( 'pixels', np.sum(bias[1]), np.sum(hist[1]) )
+        from matplotlib import pylab as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.step( bias[0], bias[1]/float(np.sum(bias[1])), where='mid', label='bias' )
+        #ax.step( hist[0], hist[1]/float(np.sum(hist[1])), where='mid', label='crop' )
+        
+        
+        xlim = ax.get_xlim()
+        print('xlim',xlim)
+        #ax.step( vbias[0], vbias[1]/float(np.sum(vbias[1])), where='mid', label='vbias' )
+        #ax.step( data[0], data[1]/float(np.sum(data[1])), where='mid', label='data' )
+        
+        ax.set_xlim((xlim[0],-xlim[0]))
+        ax.set_yscale('log')
+        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
+        plt.show()
     
 class Section( np.ndarray ):
     def __new__( cls, input_array ):
@@ -413,7 +466,7 @@ class Section( np.ndarray ):
 
     def get_half( self ):
         return self[:, self.shape[1]/2:]
-    
+        
     #def mean(self, axis = None):
         #print( self.shape )
         #print( type(self) )
@@ -444,7 +497,7 @@ class Section( np.ndarray ):
         return rows_bias[None,:]
             
     def get_binned_distribution( self, binsize = 1):
-        bins = np.arange( self.min(), self.max(), binsize)
+        bins = np.arange( np.nanmin(self), np.nanmax(self), binsize)
         distribution, _ = np.histogram(self, bins)
         return .5*(bins[:-1] + bins[1:]), distribution
         
@@ -498,11 +551,11 @@ class Section( np.ndarray ):
 
     def get_clusters( self, threshold, border ):
         labeled_clusters = label_clusters( self >= threshold )
-        print( 'number of clusters above threshold', labeled_clusters.max() )
+        #print( 'number of clusters above threshold', labeled_clusters.max() )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
-        print( 'number of clusters with border', labeled_clusters.max() )
+        #print( 'number of clusters with border', labeled_clusters.max() )
         return labeled_clusters, distances_to_cluster
 
     def get_background( self, threshold, border ):
@@ -512,7 +565,7 @@ class Section( np.ndarray ):
     def remove_hits( self, threshold, border ):
         labeled_clusters, _ = self.get_clusters( threshold, border )
         data = Section( np.where( labeled_clusters == 0, self, np.nan ) )
-        print('hits removed', len(self.flatten()), len(self[labeled_clusters == 0]) )
+        #print('hits removed', len(self.flatten()), len(self[labeled_clusters == 0]) )
         return data
         
     def _extract_clusters_( self, threshold, border ):
@@ -566,7 +619,7 @@ class Section( np.ndarray ):
         ax.axvline( std_robust, ymin, ymax, color='b', label = 'lambda %.3f' % (mean_robust**2/(std_robust**2 - sigma**2)) )
         
         ax.set_yscale('log')
-        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )        
+        legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
 
     def save_pdf( self, output ):
@@ -608,7 +661,6 @@ class Section( np.ndarray ):
         plt.show()
 
 def display( data, mode, delta = None, labels = None, nbins = None, log = False ):
-    from matplotlib import pylab as plt
     from matplotlib.colors import LogNorm
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -689,9 +741,71 @@ def simulate( args ):
     Plot.generate_plot( [args.output_table], xcolumn = 'readout_noise', ycolumns = ['sigma'], yerrcolumns = ['sigma_err'], labels = ['sigma'], output_file = args.output_table + '.readout_noise.pdf', figscale = [1,1], diagonal_line = True, legend_loc = 'lower right' )
     Plot.generate_plot( [args.output_table], xcolumn = 'dark_current', ycolumns = ['lambda'], yerrcolumns = ['lambda_err'], labels = ['lambda'], output_file = args.output_table + '.dark_current.pdf', figscale = [1,1], diagonal_line = True, legend_loc = 'lower right' )
         
+def read_header( args ):
+    listHDU = astropy.io.fits.open( args.input_file )
+    for i in range(len(listHDU)) if args.indices is None else args.indices:
+        print( text( 'HDU %s' % i, mode='B', color='g' ) )
+        for key, value in listHDU[i].header.items():
+            if key in args.exclude: continue
+            if key in args.include or len(args.include) is 0:
+                print( text( '%s' % key, color='g' ), '%s' % value, end=' ' )
+        print()
+    return
+
+def analyse( args ):
+    import glob
+    from collections import OrderedDict
+    paths = glob.glob( args.input_file )
+    partlistHDU = [ astropy.io.fits.open( path ) for path in paths[::-1] ]
+    
+    parts_dict = OrderedDict()
+    for listHDU in partlistHDU:
+        for i, HDU in enumerate(listHDU):
+            if HDU.data is None: continue
+            if args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
+            if args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
+            part = Part(HDU)
+            
+            biasG = part.bias - part.bias.get_global_bias()
+            biasMedian = part.bias - part.bias.get_lines_bias(np.median)
+            biasMedian10 = part.bias - part.bias.get_lines_bias(np.median, smoothening_length=10)
+            biasMean = part.bias - part.bias.get_lines_bias(np.mean)
+            biasCrop = part.bias - part.bias.get_lines_bias(crop_mean)
         
-def analyse( **kargs ):
-    pass
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            hG = biasG.get_binned_distribution()
+            hMedian = biasMedian.get_binned_distribution()
+            hMean = biasMean.get_binned_distribution()
+            hCrop = biasCrop.get_binned_distribution()
+            
+            ax.step(hG[0], hG[1], label='global')
+            ax.step(hMedian[0], hMedian[1], label='median')
+            ax.step(hMean[0], hMean[1], label='mean')
+            ax.step(hCrop[0], hCrop[1], label='crop')
+            
+            ax.set_yscale('log')
+            ax.legend()
+            plt.show()
+            
+            part.correct_lines()
+            try: parts_dict[i].append(part)
+            except KeyError: parts_dict[i] = [part]
+
+    fmt = lambda x: {int:'{:4}', float:'{: .1e}', Section:'{: .1e}'}[type(x)]
+    sfmt = lambda x: {int:'{:4.4}', float:'{:8.8}', Section:'{:8.8}'}[type(x)]
+    
+    first = True
+    for i, parts in parts_dict.items():
+        image = Image( parts ).correct_rows()
+        params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
+        if first:
+            columns = zip(*params)[0]
+            max_length = max( map(len, columns) )
+            print( ' '.join( ['  '] + [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
+            first = False
+        column_head = text('%2d' % image.header['OHDU'], mode='B' )
+        print( ' '.join( [column_head] + [ fmt(v).format(v) for keys, v in params ] ) )
 
 def main( args ):
 
@@ -802,99 +916,121 @@ def main( args ):
         )
     
     exit(0)
- 
+
+def tuple_of( type_ ):
+    return lambda x: map( type_, eval(x.replace('\"', '')) )
+
+def add_simulate_options( p, func ):
+    p.add_argument('number_of_images', type=int, help = 'charge gain range' )
+    p.add_argument('--params-mode', type=str, default = 'median&MAD', help = 'modes for parameter estimation' )
+    p.add_argument('--output-table', type=str, default = 'analysis.csv', help = 'csv output file' )
+    p.add_argument('--charge-gain-range', type=tuple_of(float), default = '\"[5,9]\"', help = 'charge gain range' )
+    p.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout noise range' )
+    p.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
+    p.add_argument('--rebin', type=tuple_of(int), default = '\"[1,1]\"', help = 'rebin' )
+    p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
+    p.add_argument('--remove-hits', action='store_true', help = 'remove hits above 60ADU 3border' )
+    p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
+    p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
+    p.add_argument('--number-of-Cu-charges',
+                        type=int,
+                        default = '0',
+                        help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
+                        )
+    p.add_argument('--number-of-Cu2-charges', 
+                        type=int, 
+                        default = '0', 
+                        help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' 
+                        )
+    p.add_argument('--number-of-Si-charges', 
+                        type=int, 
+                        default = '0', 
+                        help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' 
+                        )
+    p.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
+    p.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
+    p.add_argument('--xyshape', type=tuple_of(int), default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
+    p.add_argument('--depth-range', type=tuple_of(int), default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
+    p.add_argument('--diffusion-function',
+                        type=str, 
+                        default = Simulation.default_diffusion_function,
+                        help = 'function to map z-depth into sigma' 
+                        )
+    p.add_argument('--charge-efficiency-function',
+                        type=str,
+                        default = Simulation.default_charge_efficiency_function,
+                        help = 'function to map z-depth into sigma' 
+                        )
+    p.add_argument('--vertical-modulation-function',
+                        type=str, 
+                        default = Simulation.default_vertical_modulation_function,
+                        help = 'function to modulate the vertical axis' 
+                        )    
+    p.add_argument('--horizontal-modulation-function',
+                        type=str, 
+                        default = Simulation.default_horizontal_modulation_function,
+                        help = 'function to modulate the horizontal axis' 
+                        )
+    p.set_defaults( func=func )
+    
+    
+def add_analyse_options( p, func ):
+    p.add_argument('input_file', default = '/share/storage2/connie/data/runs/029/runID_029_03326_Int-400_Exp-10800_11Mar18_18:06_to_11Mar18_21:10_p*.fits.fz', help = 'fits file input' )
+    
+    #p.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/047/runID_047_12750_Int-400_Exp-3600_22Mar20_08:05_to_22Mar20_09:09_p1.fits.fz', help = 'fits file input' )
+    
+    p.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
+    p.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
+    p.add_argument('--params-mode', type=str, default = 'median', help = 'modes for parameter estimation' )
+    p.add_argument('--remove-hits', action='store_true', help = 'remove hits above 60ADU 3border' )
+    p.add_argument( '--exclude', nargs='*', type=int, default = None, help = 'ohdus not to be analysed' )
+    p.add_argument( '--ohdu', nargs='*', type=int, default = None, help = 'ohdus to be analysed' )
+    
+    p.set_defaults( func=func )
+    return
+
+def add_header_options( p, func ):
+    p.add_argument( 'input_file' )
+    p.add_argument( '--indices', nargs='*', default = None, type=int, help='indexes to be shown' )
+    p.add_argument( '--include', nargs='*', default = '', help='fields to be shown' )
+    p.add_argument( '--exclude', nargs='*', default = '', help='fields not to be shown' )
+    p.set_defaults( func=func )
+    return
+
+def postprocess( args ):
+    if 'image_mode' in args:
+        if args.image_mode is '1':
+            args.rebin = [1,1]
+            args.horizontal_overscan = 150
+            args.vertical_overscan = 90
+            args.xyshape = [4150,4120]
+        elif args.image_mode is '5':
+            args.rebin = [5,1]
+            args.horizontal_overscan = 450
+            args.vertical_overscan = 70
+            args.xyshape = [4150,4120]
+    return args
+
 if __name__ == '__main__':
     import argparse
     import sys
     import Simulation
-
-    def tuple_of( type_ ):
-        return lambda x: map( type_, eval(x.replace('\"', '')) )
 
     parser = argparse.ArgumentParser(
         description = 'image tools',
         formatter_class = argparse.ArgumentDefaultsHelpFormatter,
         )
     subparsers = parser.add_subparsers( help = 'major options' )
-    parser_simulate = subparsers.add_parser('simulate', help='simulate and analyse random')
-    parser_simulate.add_argument('number_of_images', type=int, help = 'charge gain range' )
-    parser_simulate.add_argument('--params-mode', type=str, default = 'median&MAD', help = 'modes for parameter estimation' )
-    parser_simulate.add_argument('--output-table', type=str, default = 'analysis.csv', help = 'csv output file' )
-    parser_simulate.add_argument('--charge-gain-range', type=tuple_of(float), default = '\"[5,9]\"', help = 'charge gain range' )
-    parser_simulate.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout noise range' )
-    parser_simulate.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
-    parser_simulate.add_argument('--rebin', type=tuple_of(int), default = '\"[1,1]\"', help = 'rebin' )
-    parser_simulate.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
-    parser_simulate.add_argument('--remove-hits', action='store_true', help = 'remove hits above 60ADU 3border' )
-    parser_simulate.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
-    parser_simulate.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
-    parser_simulate.add_argument('--number-of-Cu-charges',
-                        type=int,
-                        default = '0',
-                        help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
-                        )
-    parser_simulate.add_argument('--number-of-Cu2-charges', 
-                        type=int, 
-                        default = '0', 
-                        help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' 
-                        )
-    parser_simulate.add_argument('--number-of-Si-charges', 
-                        type=int, 
-                        default = '0', 
-                        help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' 
-                        )
-    parser_simulate.add_argument('--horizontal-overscan', type=int, default = '150', help = 'size of the horizontal overscan in pixels' )
-    parser_simulate.add_argument('--vertical-overscan', type=int, default = '90', help = 'size of the vertical overscan in pixels' )
-    parser_simulate.add_argument('--xyshape', type=tuple_of(int), default = '\"[4000,4000]\"', help = 'shape of the image as 2d pixels' )
-    parser_simulate.add_argument('--depth-range', type=tuple_of(int), default = '\"[0,670]\"', help = 'range into which to randomly generate depths' )
-    parser_simulate.add_argument('--diffusion-function',
-                        type=str, 
-                        default = Simulation.default_diffusion_function,
-                        help = 'function to map z-depth into sigma' 
-                        )
-    parser_simulate.add_argument('--charge-efficiency-function',
-                        type=str,
-                        default = Simulation.default_charge_efficiency_function,
-                        help = 'function to map z-depth into sigma' 
-                        )
-    parser_simulate.add_argument('--vertical-modulation-function',
-                        type=str, 
-                        default = Simulation.default_vertical_modulation_function,
-                        help = 'function to modulate the vertical axis' 
-                        )    
-    parser_simulate.add_argument('--horizontal-modulation-function',
-                        type=str, 
-                        default = Simulation.default_horizontal_modulation_function,
-                        help = 'function to modulate the horizontal axis' 
-                        )
-    parser_simulate.set_defaults(func=simulate)
     
-    
-    
-    parser_analyse = subparsers.add_parser('analyse', help='analyse image')
-    parser_analyse.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/029/runID_029_03326_Int-400_Exp-10800_11Mar18_18:06_to_11Mar18_21:10_p*.fits.fz', help = 'fits file input' )
-    #parser.add_argument('--input-fits', type=str, default = '/share/storage2/connie/data/runs/047/runID_047_12750_Int-400_Exp-3600_22Mar20_08:05_to_22Mar20_09:09_p1.fits.fz', help = 'fits file input' )
-    parser_analyse.add_argument('--ohdu', type=int, default = '3', help = 'ohdu to be read' )
-    parser_analyse.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
-    parser_analyse.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
-    parser_analyse.set_defaults(func=analyse)
-
-
+    add_simulate_options( subparsers.add_parser('simulate', help='simulate and analyse random'), simulate )
+    add_analyse_options( subparsers.add_parser('analyse', help='analyse image'), analyse )
+    add_header_options( subparsers.add_parser('header', help='read image header'), read_header )
 
     if len(sys.argv) == 1:
         parser.print_help()
         exit(1)
+
     args = parser.parse_args()
-    if args.image_mode is '1':
-        args.rebin = [1,1]
-        args.horizontal_overscan = 150
-        args.vertical_overscan = 90
-        args.xyshape = [4150,4120]
-    elif args.image_mode is '5':
-        args.rebin = [5,1]
-        args.horizontal_overscan = 450
-        args.vertical_overscan = 70
-        args.xyshape = [4150,4120]
-    
+    args = postprocess( args )
     args.func( args )
     
