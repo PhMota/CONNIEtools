@@ -268,12 +268,12 @@ def add_image_options( p, func ):
     p.set_defaults( func=func )
 
 def add_folder_options( p, func ):
-    parser_folder.add_argument('--number-of-images', type=int, default = None, help = 'number of images to be generated' )
-    parser_folder.add_argument('--output-pattern', type=str, default = 'simulation_*.fits', help = 'pattern for output file names' )
-    parser_folder.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout_noise range' )
-    parser_folder.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
+    p.add_argument('--number-of-images', type=int, default = None, help = 'number of images to be generated' )
+    p.add_argument('--output-pattern', type=str, default = 'simulation_*.fits', help = 'pattern for output file names' )
+    p.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout_noise range' )
+    p.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
     add_general_options( p )
-    parser_folder.set_defaults( func=generate_folder )
+    p.set_defaults( func=generate_folder )
 
 def add_general_options( p ):
     p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )

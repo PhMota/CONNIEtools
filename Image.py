@@ -44,8 +44,7 @@ def crop_var( x, axis = None, mode = None ):
 def crop_std( x, axis = None, mode = None): return np.sqrt( crop_var( x, axis, mode ) )
 
 def crop_mean( x, axis = None ):
-    a = np.apply_along_axis( crop_mean_1d, axis, x )
-    #print( 'a', a )
+    a = np.apply_along_axis( lambda x: crop_mean_1d(x, abs_err=.25), axis, x )
     return a
 
 #def crop_var_1d( x, step = 1 ):
@@ -53,7 +52,7 @@ def crop_mean( x, axis = None ):
     #m = crop_mean_1d(x, step)**2
     #return x2 - m**2    
 
-def crop_mean_1d( x, step = 1 ):
+def crop_mean_1d( x, step = 1, abs_err = .5 ):
     x = np.sort( x.flatten() )
     left, right = 0, len(x)
 
@@ -66,22 +65,23 @@ def crop_mean_1d( x, step = 1 ):
 
         mean = np.nanmean( x[left:right] )
         median = np.nanmedian( x[left:right] )
-        if abs(mean - median) < .5: break
-    return mean
+        if abs(mean - median) < abs_err: break
+    return mean, mean
 
-def norm_mean_1d( x, step = 1, abs_err = 0 ):
-    mean = np.nanmean(x)
-    median = np.nanmedian(x)
+def norm_mean_1d( x, step = 1, abs_err = .25 ):
+    y = np.array(x)
+    mean = np.nanmean(y)
+    median = np.nanmedian(y)
     while True:
-        if mean > median: x[ x == np.nanmax(x) ] = np.nan
-        else: x[ x == np.nanmin(x) ] = np.nan
+        if mean > median: y[ y == np.nanmax(y) ] = np.nan
+        else: y[ y == np.nanmin(y) ] = np.nan
 
-        mean = np.nanmean(x)
-        median = np.nanmedian(x)
+        mean = np.nanmean(y)
+        median = np.nanmedian(y)
         if abs( mean - median ) < abs_err: break
-    return mean
+    return mean, y
 
-def norm_mean_1d( x, step = 1, abs_err = 0 ):
+def norm_mean_1d2( x, step = 1, abs_err = 0 ):
     mean = [ np.nanmean(x) ]
     median = [ np.nanmedian(x) ]
     diff = [ mean[-1] - median[-1] ]
@@ -114,6 +114,47 @@ def norm_mean_1d( x, step = 1, abs_err = 0 ):
 def norm_mean( x, axis=None, step = 1 ):
     np.apply_along_axis( norm_mean_1d, axis, x )
 
+def outliers2nan_1d( x, step=1, abs_err = .5 ):
+    y = np.array(x)
+    mean = np.nanmean(y)
+    median = np.nanmedian(y)
+    while abs( mean - median ) >= abs_err:
+        if mean > median: y[ y == np.nanmax(y) ] = np.nan
+        else: y[ y == np.nanmin(y) ] = np.nan
+
+        mean = np.nanmean(y)
+        median = np.nanmedian(y)
+    return y
+
+def outliers2nan( x, axis=None, abs_err = .25 ):
+    y = np.apply_along_axis( lambda x: outliers2nan_1d(x, abs_err=abs_err), axis, x )
+    print( 'outliers2nan' )
+    print( 'x', x.shape, np.sum(np.isnan(x)) )
+    print( 'y', y.shape, np.sum(np.isnan(y)) )
+    return y
+
+def outliers2nanp_1d( x, step=1, pmin = 1e-2 ):
+    y = np.array(x)
+    mean = np.nanmean(y)
+    std = np.nanstd(y)
+    median = np.nanmedian(y)
+    p = scipy.stats.norm.pdf( y, loc=mean, scale=std )
+    while np.nanmin(p) <= pmin:
+        y[ np.argwhere( p < pmin ) ] = np.nan
+        mean = np.nanmean(y)
+        median = np.nanmedian(y)
+        std = np.nanstd(y)
+        p = scipy.stats.norm.pdf( y, loc=mean, scale=std )
+        print( 'minp', np.sum(np.isnan(y)), np.sum(np.isnan(p)), np.nanmin(p) )
+    return y
+
+def outliers2nanp( x, axis=None, pmin = 1e-2 ):
+    y = np.apply_along_axis( lambda x: outliers2nanp_1d(x, pmin=pmin), axis, x )
+    print( 'outliers2nan' )
+    print( 'x', x.shape, np.sum(np.isnan(x)) )
+    print( 'y', y.shape, np.sum(np.isnan(y)) )
+    return y
+    
 def crop_std_1d( x, step = 1, abs_tol = .5 ):
     x = np.sort( x.flatten() )
     left, right = 0, len(x)
@@ -766,24 +807,31 @@ def analyse( args ):
             if args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
             part = Part(HDU)
             
+            nanbias = Section(outliers2nanp( part.bias, axis=1, pmin=1e-5 ))
+            print( 'shape', nanbias.shape )
             biasG = part.bias - part.bias.get_global_bias()
             biasMedian = part.bias - part.bias.get_lines_bias(np.median)
             biasMedian10 = part.bias - part.bias.get_lines_bias(np.median, smoothening_length=10)
             biasMean = part.bias - part.bias.get_lines_bias(np.mean)
-            biasCrop = part.bias - part.bias.get_lines_bias(crop_mean)
+            
+            nanbiasMean = nanbias - nanbias.get_lines_bias(np.nanmean)
         
             fig = plt.figure()
             ax = fig.add_subplot(111)
             hG = biasG.get_binned_distribution()
             hMedian = biasMedian.get_binned_distribution()
+            hMedian10 = biasMedian10.get_binned_distribution()
             hMean = biasMean.get_binned_distribution()
-            hCrop = biasCrop.get_binned_distribution()
+            
+            hnanMean = nanbiasMean.get_binned_distribution()
             
             ax.step(hG[0], hG[1], label='global')
             ax.step(hMedian[0], hMedian[1], label='median')
-            ax.step(hMean[0], hMean[1], label='mean')
-            ax.step(hCrop[0], hCrop[1], label='crop')
+            ax.step(hMedian10[0], hMedian10[1], label='median10')
+            #ax.step(hMean[0], hMean[1], label='mean')
             
+            ax.step(hnanMean[0], hnanMean[1], label='nanmean')
+            #ax.set_xlim(( 1.1*np.min(hnanMean[0]), 1.1*np.max(hnanMean[0]) ))
             ax.set_yscale('log')
             ax.legend()
             plt.show()
