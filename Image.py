@@ -22,6 +22,10 @@ from TerminalColor import text
 from matplotlib import pylab as plt
 np.warnings.filterwarnings("ignore")
 
+import warnings
+#warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
+warnings.filterwarnings("ignore")
+
 bias_from_width = { 9340: 450, 8540: 150 }
 bin_from_width = { 9340: 5, 8540: 1 }
 vbias_from_height = { 900: 70, 900-1: 70, 4*1055: 90, 4*1055-4: 90 }
@@ -153,6 +157,7 @@ def outliers2nanp( x, axis=None, pmin = 1e-2 ):
     y = np.apply_along_axis( lambda x: outliers2nanp_1d(x, pmin=pmin), axis, x )
     #print( 'outliers2nan' )
     #print( 'x', x.shape, np.sum(np.isnan(x)) )
+    #print( 'y', y.shape, np.sum(np.isnan(y)) )
     #print( '%s outliers with p<%s' % ( np.sum(np.isnan(y)), pmin ) )
     return y
     
@@ -381,18 +386,23 @@ class Image:
         if 'GAIN' in self.header:
             gain = self.header['GAIN']
 
-            #if remove_hits:
-                #data['data'] = data['data'].get_background( threshold, border )
         if half: data = self.data.get_half()
         else: data = self.data
         if remove_hits: data = data.remove_hits(60, 3)
-        #data /= factor
         
         if mode == 'mean':
             mu, mu_err = mean_err( np.nanmean( self.bias, axis=1 ) )
             sigma, sigma_err = mean_err( np.nanstd( self.bias, axis=1) )
+            
+            mug, mug_err = mean_err(self.bias)
+            sigmag = np.nanstd( self.bias )
+
             vmu, vmu_err = mean_err( np.nanmean( self.vbias, axis=0 ) )
             vsigma, vsigma_err = mean_err( np.nanstd( self.vbias, axis=0) )
+
+            vmug, vmug_err = mean_err( self.vbias )
+            vsigmag = np.nanstd( self.vbias )
+
             g_lamb, g_lamb_err = mean_err( np.nanmean( data, axis=1) - np.nanmean( self.bias, axis=1) )
             g2_lamb, g2_lamb_err = mean_err( np.nanstd( data, axis=1) - np.nanstd( self.bias, axis=1) )
             return ret + [ 
@@ -400,8 +410,18 @@ class Image:
                     ['mu_err', mu_err], 
                     ['sigma', sigma], 
                     ['sigma_err', sigma_err], 
+                    ['mug', mug], 
+                    ['mug_err', mug_err], 
+                    ['sigmag', sigmag], 
+
+                    ['vmu', vmu], 
+                    ['vmu_err', vmu_err], 
                     ['vsigma', vsigma], 
                     ['vsigma_err', vsigma_err], 
+                    ['vmug', vmug], 
+                    ['vmug_err', vmug_err], 
+                    ['vsigmag', vsigmag], 
+
                     ['g_lambda', g_lamb],
                     ['g_lambda_err', g_lamb_err],
                     ['g2_lambda', g2_lamb],
@@ -808,33 +828,32 @@ def analyse( args ):
     for i, parts in parts_dict.items():
         image = Image( parts )
 
-        biasMedian = part.bias - part.bias.get_lines_bias(np.nanmedian)
-        biasMedian10 = part.bias - part.bias.get_lines_bias(np.nanmedian, smoothening_length=10)
-        biasMean = part.bias - part.bias.get_lines_bias(np.nanmean)
-        
+        row_bias = image.vbias.get_rows_bias(np.nanmean)
+        row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
+        row_indices += np.nonzero( abs(row_bias - np.nanmean(row_bias)) < 1 )
+        print( 'indices', row_indices )
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        biasH = image.bias.get_binned_distribution()
-        #vbiasH = image.vbias.get_binned_distribution()
-        #dataH = image.data.get_binned_distribution()
         
-        ax.step(biasH[0], biasH[1], label='bias')
-        #ax.step(vbiasH[0], vbiasH[1], label='vbias')
-        #ax.step(dataH[0], dataH[1], label='data')
+        for ind in row_indices:
+            ax.plot(image.vbias[:,ind], label=ind)
 
-        image.remove_outliers_from_vbias(pmin=1e-5)
-        image.correct_rows( np.nanmean )
+        #image.remove_outliers_from_vbias(pmin=1e-3)
+        #image.correct_rows( np.nanmean )
 
-        cbiasH = image.bias.get_binned_distribution()
-        cvbiasH = image.vbias.get_binned_distribution()
-        cdataH = image.data.get_binned_distribution()
+        #cbiasH = image.bias.get_binned_distribution()
+        #cvbiasH = image.vbias.get_binned_distribution()
+        #cdataH = image.data.get_binned_distribution()
 
-        ax.step(cbiasH[0], cbiasH[1], label='cbias')
-        ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
-        ax.step(cdataH[0], cdataH[1], label='cdata')
+        #ax.plot( np.nanmin(image.vbias,axis=0), '.', label = 'vbias min' )
+        #ax.plot( np.nanmean(image.vbias,axis=0), '.', label = 'vbias mean' )
+        #ax.plot( np.nanmax(image.vbias,axis=0), '.', label = 'vbias max' )
+        #ax.step(cbiasH[0], cbiasH[1], label='cbias')
+        #ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
+        #ax.step(cdataH[0], cdataH[1], label='cdata')
         
-        ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
-        ax.set_yscale('log')
+        #ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
+        #ax.set_yscale('log')
         ax.legend()
         plt.show()
         
