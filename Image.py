@@ -7,15 +7,10 @@ import scipy.stats
 import scipy.ndimage
 from glob import glob
 import re
-import gi
-#gi.require_version('Gtk', '3.0')
-#from gi.repository import Gtk, Gdk, GdkPixbuf, GObject, GLib
 
 import matplotlib
 matplotlib.use('gtk3agg')
-#from matplotlib.backends.backend_gtk3cairo import (FigureCanvasGTK3Cairo as FigureCanvas)
 
-#from SimulateImage import Hits
 import Statistics as stats
 from Timer import Timer
 from TerminalColor import text
@@ -673,14 +668,14 @@ class Section( np.ndarray ):
         legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper left' )
         fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
 
-    def save_pdf( self, output ):
-        output += '.pdf'
+    def save_pdf( self, output, title=None ):
+        #output += '.pdf'
         with Timer( 'saved ' + output ):
             from matplotlib import pylab as plt
 
             fig = plt.figure()
             ax = fig.add_subplot(111)
-
+            if title: ax.set_title(title)
             im = np.log(self - self.min() + 1)
             ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
             fig.savefig( output )
@@ -810,11 +805,15 @@ def analyse( args ):
     partlistHDU = [ astropy.io.fits.open( path ) for path in paths[::-1] ]
     
     parts_dict = OrderedDict()
-    for listHDU in partlistHDU:
+    for j, listHDU in enumerate(partlistHDU):
         for i, HDU in enumerate(listHDU):
             if HDU.data is None: continue
             if args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
             if args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
+            if 'plot_part' in args: 
+                Section(HDU.data).save_pdf( 
+                args.plot_part.replace( '*', 'o{}p{}'.format(HDU.header['OHDU'],j) ),
+                title=('part %s' % i) )
             part = Part(HDU)
             part.remove_outliers_from_bias()
             part.correct_lines(np.nanmean)
@@ -827,37 +826,37 @@ def analyse( args ):
     first = True
     for i, parts in parts_dict.items():
         image = Image( parts )
+        if 'debug' in args:
+            row_bias = image.vbias.get_rows_bias(np.nanmean)
+            row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
+            row_indices += np.nonzero( abs(row_bias - np.nanmean(row_bias)) < 1 )
+            print( 'indices', row_indices )
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            
+            for ind in row_indices:
+                ax.plot(image.vbias[:,ind], label=ind)
 
-        row_bias = image.vbias.get_rows_bias(np.nanmean)
-        row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
-        row_indices += np.nonzero( abs(row_bias - np.nanmean(row_bias)) < 1 )
-        print( 'indices', row_indices )
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        
-        for ind in row_indices:
-            ax.plot(image.vbias[:,ind], label=ind)
+            #image.remove_outliers_from_vbias(pmin=1e-3)
+            #image.correct_rows( np.nanmean )
 
-        #image.remove_outliers_from_vbias(pmin=1e-3)
-        #image.correct_rows( np.nanmean )
+            #cbiasH = image.bias.get_binned_distribution()
+            #cvbiasH = image.vbias.get_binned_distribution()
+            #cdataH = image.data.get_binned_distribution()
 
-        #cbiasH = image.bias.get_binned_distribution()
-        #cvbiasH = image.vbias.get_binned_distribution()
-        #cdataH = image.data.get_binned_distribution()
-
-        #ax.plot( np.nanmin(image.vbias,axis=0), '.', label = 'vbias min' )
-        #ax.plot( np.nanmean(image.vbias,axis=0), '.', label = 'vbias mean' )
-        #ax.plot( np.nanmax(image.vbias,axis=0), '.', label = 'vbias max' )
-        #ax.step(cbiasH[0], cbiasH[1], label='cbias')
-        #ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
-        #ax.step(cdataH[0], cdataH[1], label='cdata')
+            #ax.plot( np.nanmin(image.vbias,axis=0), '.', label = 'vbias min' )
+            #ax.plot( np.nanmean(image.vbias,axis=0), '.', label = 'vbias mean' )
+            #ax.plot( np.nanmax(image.vbias,axis=0), '.', label = 'vbias max' )
+            #ax.step(cbiasH[0], cbiasH[1], label='cbias')
+            #ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
+            #ax.step(cdataH[0], cdataH[1], label='cdata')
+            
+            #ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
+            #ax.set_yscale('log')
+            ax.legend()
+            plt.show()
         
-        #ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
-        #ax.set_yscale('log')
-        ax.legend()
-        plt.show()
-        
-        
+        image.correct_rows( np.nanmean )
         params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
         if first:
             columns = zip(*params)[0]
@@ -1046,6 +1045,7 @@ def add_analyse_options( p, func ):
     p.add_argument( '--exclude', nargs='*', type=int, default = None, help = 'ohdus not to be analysed' )
     p.add_argument( '--ohdu', nargs='*', type=int, default = None, help = 'ohdus to be analysed' )
     
+    p.add_argument( '--plot-part', type=str, default=argparse.SUPPRESS, help = 'plot parts' )
     p.set_defaults( func=func )
     return
 

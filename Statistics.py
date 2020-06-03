@@ -503,7 +503,7 @@ class ufloat:
     #def __float__(self):
         #return float(self.ceil())
 
-ufloat.add_conversion( 'e-', 'eV', 3.745 )
+#ufloat.add_conversion( 'e-', 'eV', 3.745 )
 
 class uarray:
     '''
