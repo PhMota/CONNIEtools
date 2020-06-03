@@ -815,8 +815,11 @@ def analyse( args ):
                 args.plot_part.replace( '*', 'o{}p{}'.format(HDU.header['OHDU'],j) ),
                 title=('part %s' % i) )
             part = Part(HDU)
-            part.remove_outliers_from_bias()
-            part.correct_lines(np.nanmean)
+            if args.params_mode is 'median':
+                part.correct_lines()
+            else:
+                part.remove_outliers_from_bias()
+                part.correct_lines(np.nanmean)
             try: parts_dict[i].append(part)
             except KeyError: parts_dict[i] = [part]
 
@@ -856,7 +859,10 @@ def analyse( args ):
             ax.legend()
             plt.show()
         
-        image.correct_rows( np.nanmean )
+        if args.params_mode is 'median':
+            image.correct_rows()
+        else:
+            image.correct_rows( np.nanmean )
         params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
         if first:
             columns = zip(*params)[0]
