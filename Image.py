@@ -47,11 +47,6 @@ def crop_mean( x, axis = None ):
     a = np.apply_along_axis( lambda x: crop_mean_1d(x, abs_err=.25), axis, x )
     return a
 
-#def crop_var_1d( x, step = 1 ):
-    #x2 = crop_mean_1d(x**2, step)
-    #m = crop_mean_1d(x, step)**2
-    #return x2 - m**2    
-
 def crop_mean_1d( x, step = 1, abs_err = .5 ):
     x = np.sort( x.flatten() )
     left, right = 0, len(x)
@@ -292,69 +287,123 @@ def mean_err( x ):
     return np.nanmean(x), np.nanstd(x)/np.sqrt(len(x))
 
 class Part:
+    '''
+    deals with the image HDU parts
+    '''
+    ccd_width = 4120
+    ccd_height = 4150
+    
     def __init__( self, imageHDU ):
         self.header = dict( imageHDU.header )
-        if imageHDU.header['ohdu'] == -1:
-            half_width = imageHDU.data.shape[1]
-            bias_width = imageHDU.header['biasW']
-            self.rebin = imageHDU.header['rebin']
-            self.vbias_height = imageHDU.header['biasH']
-        else:
-            half_width = imageHDU.data.shape[1]/2
-            bias_width = Part.get_bias_width_from_width( imageHDU.data.shape[1] )
-            self.rebin = Part.get_rebin_from_height( imageHDU.data.shape[0] )
-            self.vbias_height = Part.get_vbias_height_from_height( imageHDU.data.shape[0] )
-        
-        self.data = Section( imageHDU.data[ :-1, :half_width - bias_width ] )
-        self.bias = Section( imageHDU.data[ :-1, half_width -bias_width: half_width ] )
+        self.parse_shape( imageHDU.data.shape )
 
+        #if imageHDU.header['ohdu'] == -1:
+            #half_width = imageHDU.data.shape[1]
+            #bias_width = imageHDU.header['biasW']
+            #self.rebin = imageHDU.header['rebin']
+            #self.vbias_height = imageHDU.header['biasH']
+        
+        self.data = Section( imageHDU.data[ None:-1, None:(self.width-self.bias_width) ] )
+        self.bias = Section( imageHDU.data[ None:-1, (self.width-self.bias_width): self.width ] )
+        
+        if self.has_right:
+            self.dataR = Section( imageHDU.data[:,::-1][ None:-1, None:(self.width-self.bias_width) ] )
+            self.biasR = Section( imageHDU.data[:,::-1][ None:-1, (self.width-self.bias_width):self.width ] )
+        
     def remove_outliers_from_bias( self, pmin = 1e-5 ):
         self.bias = Section(outliers2nanp( self.bias, axis=1, pmin=pmin ))
+        if self.has_right:
+            self.biasR = Section(outliers2nanp( self.biasR, axis=1, pmin=pmin ))
         
     def correct_lines( self, func = np.nanmedian, smoothening_length = 0 ):
         if func is None:
             self.data -= self.bias.get_global_bias( func ) 
             self.bias -= self.bias.get_global_bias( func )
+            if self.has_right:
+                self.dataR -= self.biasR.get_global_bias( func ) 
+                self.biasR -= self.biasR.get_global_bias( func )
         else:
             lines_correction = self.bias.get_lines_bias( func, smoothening_length )
             self.data -= lines_correction
             self.bias -= lines_correction
+            if self.has_right:
+                lines_correctionR = self.biasR.get_lines_bias( func, smoothening_length )
+                self.dataR -= lines_correctionR
+                self.biasR -= lines_correctionR
         return self
-        
-    @staticmethod
-    def get_rebin_from_height( height ):
-        return { 900: 5, 1055: 1 }[height]
     
-    @staticmethod
-    def get_bias_width_from_width( width ):
-        return { 9340: 450, 8540: 150 }[width]
+    def parse_shape( self, shape ):
+        self.parse_height( shape[0] )
+        self.parse_width( shape[1] )
+    
+    def parse_height( self, height ):
+        '''
+        Attempts to guess what are the bias height and if the image is rebinned from the image height. If it fails if falls back to 90 of height and no rebinning
+        '''
+        try:
+            self.bias_height, self.rebin = {
+                900: [70, 5],
+                1055: [70, 1], 
+                }[height]
+        except KeyError:
+            print( 'image height {} is not recognized. Assuming rebin 1 and bias height of 90'.format(height) )
+            self.bias_height, self.rebin = 90, 1
+        return
+    
+    def parse_width( self, width ):
+        '''
+        Attempts to guess what are the bias width, image width and if there is a right side image from the width of the input image. If it fails, it falls back to 150 bias width, width and no righ side
+        '''
+        try:
+            self.bias_width, self.has_right, self.width = {
+                (Part.ccd_width+550)*2: [550, True, (Part.ccd_width+550)],
+                (Part.ccd_width+150)*2: [150, True, (Part.ccd_width+150)],
+                (Part.ccd_width+550): [550, False, (Part.ccd_width+550)],
+                (Part.ccd_width+150): [150, False, (Part.ccd_width+150)],
+                }[width]
+        except KeyError:
+            print( 'image width {} is not recognized. Assuming bias width of 150 and no right side'.format(width) )
+            self.bias_width, self.has_right = 150, False
+            self.width = width
+        return
 
-    @staticmethod
-    def get_vbias_height_from_height( height ):
-        return { 900: 70, 1055: 90 }[height]
 
 class Image:
     def __init__( self, parts ):
-        self.data = None
-        self.bias = None
-        self.header = parts[0].header
-        self.vbias_height = parts[0].vbias_height
         for part in parts:
-            if self.data is None:
-                self.data = part.data
-                self.bias = part.bias
-                self.rebin = part.rebin
-            else:
+            try:
                 self.data = np.concatenate( [ self.data, part.data ], axis=0 )
                 self.bias = np.concatenate( [ self.bias, part.bias ], axis=0 )
+                if self.has_right:
+                    self.dataR = np.concatenate( [ self.dataR, part.dataR ], axis=0 )
+                    self.biasR = np.concatenate( [ self.biasR, part.biasR ], axis=0 )
+            except AttributeError:
+                self.has_right = part.has_right
+                self.rebin = part.rebin
+                self.header = part.header
+                self.bias_height = part.bias_height
+                self.data = part.data
+                self.bias = part.bias
+                if self.has_right:
+                    self.dataR = part.dataR
+                    self.biasR = part.biasR
+                    
 
-        self.vbias = self.data[:self.vbias_height,:].view(Section)
-        self.data = self.data[self.vbias_height:,:].view(Section)
-        self.dbias = self.bias[:self.vbias_height,:].view(Section)
-        self.bias = self.bias[self.vbias_height:,:].view(Section)
+        self.vbias = self.data[ None:self.bias_height-1, : ].view(Section)
+        self.data = self.data[ self.bias_height-1:None, : ].view(Section)
+        self.dbias = self.bias[ None:self.bias_height-1, : ].view(Section)
+        self.bias = self.bias[ self.bias_height-1:None, : ].view(Section)
+        if self.has_right:
+            self.vbiasR = self.dataR[ None:self.bias_height-1, : ].view(Section)
+            self.dataR = self.dataR[ self.bias_height-1:None, : ].view(Section)
+            self.dbiasR = self.biasR[ None:self.bias_height-1, : ].view(Section)
+            self.biasR = self.biasR[ self.bias_height-1:None, : ].view(Section)
+            
     
     def remove_outliers_from_vbias(self, pmin=1e-5):
         self.vbias = Section(outliers2nanp( self.vbias, axis=0, pmin=pmin ))
+        if self.has_right:
+            self.vbiasR = Section(outliers2nanp( self.vbiasR, axis=0, pmin=pmin ))
         
     def correct_rows( self, func = np.nanmedian, smoothening_length = 0 ):
         if not func is None:
@@ -364,13 +413,39 @@ class Image:
             bias_rows_correction = self.dbias.get_rows_bias( func, smoothening_length )
             self.bias -= bias_rows_correction
             self.dbias -= bias_rows_correction
+            if self.has_right:
+                data_rows_correctionR = self.vbiasR.get_rows_bias( func, smoothening_length )
+                self.dataR -= data_rows_correctionR
+                self.vbiasR -= data_rows_correctionR
+                bias_rows_correctionR = self.dbiasR.get_rows_bias( func, smoothening_length )
+                self.biasR -= bias_rows_correctionR
+                self.dbiasR -= bias_rows_correctionR
         return self
     
-    def get_params( self, mode = None, half = False, gain = 1, remove_hits = False, **kwargs ):
+    def get_params( self, mode = None, half = False, gain = 1, remove_hits = False, right_side = False, **kwargs ):
         ret = []
-        height, width = self.data.shape
-        _, osw = self.bias.shape
-        osh,_ = self.vbias.shape
+        if right_side:
+            data = self.dataR
+            bias = self.biasR
+            vbias = self.vbiasR
+            dbias = self.dbias
+        else:
+            data = self.data
+            bias = self.bias
+            vbias = self.vbias
+            dbias = self.dbias
+            
+        if half: 
+            data = data.get_half()
+            vbias = vbias.get_half()
+        
+        try:
+            height, width = data.shape
+        except:
+            print('data.shape', data.shape)
+            exit(1)
+        _, osw = bias.shape
+        osh,_ = vbias.shape
         rebin = self.rebin
         ret.append( ['height', height] )
         ret.append( ['width', width] )
@@ -381,73 +456,74 @@ class Image:
         if 'GAIN' in self.header:
             gain = self.header['GAIN']
 
-        if half: data = self.data.get_half()
-        else: data = self.data
-        if remove_hits: data = data.remove_hits(60, 3)
+        if remove_hits:
+            data = data.remove_hits(60, 3)
         
         if mode == 'mean':
-            mu, mu_err = mean_err( np.nanmean( self.bias, axis=1 ) )
-            sigma, sigma_err = mean_err( np.nanstd( self.bias, axis=1) )
+            mu, mu_err = mean_err( np.nanmean( bias, axis=1 ) )
+            sigma, sigma_err = mean_err( np.nanstd( bias, axis=1) )
             
-            mug, mug_err = mean_err(self.bias)
-            sigmag = np.nanstd( self.bias )
+            mug, mug_err = mean_err(bias)
+            sigmag = np.nanstd(bias)
 
-            vmu, vmu_err = mean_err( np.nanmean( self.vbias, axis=0 ) )
-            vsigma, vsigma_err = mean_err( np.nanstd( self.vbias, axis=0) )
+            vmu, vmu_err = mean_err( np.nanmean(vbias, axis=0 ) )
+            vsigma, vsigma_err = mean_err( np.nanstd(vbias, axis=0) )
 
-            vmug, vmug_err = mean_err( self.vbias )
-            vsigmag = np.nanstd( self.vbias )
+            vmug, vmug_err = mean_err(vbias)
+            vsigmag = np.nanstd(vbias)
 
-            g_lamb, g_lamb_err = mean_err( np.nanmean( data, axis=1) - np.nanmean( self.bias, axis=1) )
-            g2_lamb, g2_lamb_err = mean_err( np.nanstd( data, axis=1) - np.nanstd( self.bias, axis=1) )
+            g_lamb, g_lamb_err = mean_err( np.nanmedian( data, axis=1) - np.nanmean(bias, axis=1) )
+            g2_lamb, g2_lamb_err = mean_err( MAD( data, axis=1) - np.nanstd(bias, axis=1) )
             return ret + [ 
                     ['mu', mu], 
-                    ['mu_err', mu_err], 
+                    #['mu_err', mu_err], 
                     ['sigma', sigma], 
-                    ['sigma_err', sigma_err], 
-                    ['mug', mug], 
-                    ['mug_err', mug_err], 
+                    #['sigma_err', sigma_err], 
+                    #['mug', mug], 
+                    #['mug_err', mug_err], 
                     ['sigmag', sigmag], 
 
-                    ['vmu', vmu], 
-                    ['vmu_err', vmu_err], 
+                    #['vmu', vmu], 
+                    #['vmu_err', vmu_err], 
                     ['vsigma', vsigma], 
-                    ['vsigma_err', vsigma_err], 
-                    ['vmug', vmug], 
-                    ['vmug_err', vmug_err], 
+                    #['vsigma_err', vsigma_err], 
+                    #['vmug', vmug], 
+                    #['vmug_err', vmug_err], 
                     ['vsigmag', vsigmag], 
 
                     ['g_lambda', g_lamb],
                     ['g_lambda_err', g_lamb_err],
                     ['g2_lambda', g2_lamb],
                     ['g2_lambda_err', g2_lamb_err],
+
+                    ['g', g2_lamb/g_lamb],
                     ]
 
         if mode == 'median':
-            mu, mu_err = mean_err( np.nanmedian( self.bias, axis=1 ) )
-            sigma, sigma_err = mean_err( MAD( self.bias, axis=1) )
+            mu, mu_err = mean_err( np.nanmedian( bias, axis=1 ) )
+            sigma, sigma_err = mean_err( MAD( bias, axis=1 ) )
             
-            vmu, vmu_err = mean_err( np.nanmedian( self.vbias, axis=0 ) )
-            vsigma, vsigma_err = mean_err( MAD( self.vbias, axis=0) )
+            #vmu, vmu_err = mean_err( np.nanmedian( vbias, axis=0 ) )
+            #vsigma, vsigma_err = mean_err( MAD( vbias, axis=0) )
             
-            dmu, dmu_err = mean_err( np.nanmedian( self.data, axis=0 ) )
-            dsigma, dsigma_err = mean_err( MAD( self.data, axis=0) )
+            #dmu, dmu_err = mean_err( np.nanmedian( data, axis=0 ) )
+            #dsigma, dsigma_err = mean_err( MAD( data, axis=0) )
             
-            g_lamb, g_lamb_err = mean_err( np.nanmedian( data, axis=1) - np.nanmedian( self.bias, axis=1) )
-            g2_lamb, g2_lamb_err = mean_err( MAD( data, axis=1) - MAD( self.bias, axis=1) )
+            g_lamb, g_lamb_err = mean_err( np.median( data, axis=1) - np.median( bias, axis=1) )
+            g2_lamb, g2_lamb_err = mean_err( MAD( data, axis=1) - MAD( bias, axis=1) )
             return ret + [ 
                     ['mu', mu], 
                     ['mu_err', mu_err], 
                     ['sigma', sigma], 
                     ['sigma_err', sigma_err], 
-                    ['vmu', vmu], 
-                    ['vmu_err', vmu_err], 
-                    ['vsigma', vsigma], 
-                    ['vsigma_err', vsigma_err], 
-                    ['dmu', dmu], 
-                    ['dmu_err', dmu_err], 
-                    ['dsigma', dsigma], 
-                    ['dsigma_err', dsigma_err], 
+                    #['vmu', vmu], 
+                    #['vmu_err', vmu_err], 
+                    #['vsigma', vsigma], 
+                    #['vsigma_err', vsigma_err], 
+                    #['dmu', dmu], 
+                    #['dmu_err', dmu_err], 
+                    #['dsigma', dsigma], 
+                    #['dsigma_err', dsigma_err], 
                     ['g_lambda', g_lamb],
                     ['g_lambda_err', g_lamb_err],
                     ['g2_lambda', g2_lamb],
@@ -473,6 +549,12 @@ class Image:
         bias = np.concatenate([self.dbias, self.bias], axis=0)
         image = Section( np.concatenate([data, bias], axis=1) )
         image.save_pdf( output )
+    
+    def save_sections( self, output ):
+        for sec in ['data', 'bias', 'vbias', 'dbias']:
+            getattr( self, sec ).save_pdf( output.replace( '*', sec ), title = sec )
+            if self.has_right:
+                getattr( self, sec+'R' ).save_pdf( output.replace( '*', sec+'R' ), title = sec+'R' )
     
     def histograms( self ):
         bias = self.bias.get_binned_distribution()
@@ -501,7 +583,7 @@ class Image:
     
 class Section( np.ndarray ):
     def __new__( cls, input_array ):
-        if type(input_array) is float: return input_array
+        if type(input_array) is float: return float(input_array)
         obj = np.asarray(input_array).astype(float).view(cls)
         return obj
         
@@ -669,18 +751,21 @@ class Section( np.ndarray ):
         fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
 
     def save_pdf( self, output, title=None ):
-        #output += '.pdf'
         with Timer( 'saved ' + output ):
             from matplotlib import pylab as plt
-
             fig = plt.figure()
             ax = fig.add_subplot(111)
             if title: ax.set_title(title)
             im = np.log(self - self.min() + 1)
-            ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
-            fig.savefig( output )
+            try:
+                ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
+            except:
+                print( 'im.shape', im.shape, self.shape )
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+            fig.savefig( output, bbox_inches='tight', pad_inches=0 )
         return
-        
+
     def display( self, mode, delta = None ):
         from matplotlib import pylab as plt
         from matplotlib.colors import LogNorm
@@ -798,6 +883,31 @@ def read_header( args ):
         print()
     return
 
+def monitor( args ):
+    import ConnieImage
+    print( args.runID, args.ohdu )
+    fmt = lambda x: {int:'{:5}', float:'{: .3e}', Section:'{: .3e}'}[type(x)]
+    sfmt = lambda x: {int:'{:5.5}', float:'{:10.10}', Section:'{:10.10}'}[type(x)]
+    
+    first = True
+    for _runID in args.runID:
+        for _ohdu in args.ohdu:
+            params = []
+            params.append([ 'runID', _runID ])
+            params.append(['ohdu', _ohdu ])
+            params.append(['rn', float(ConnieImage.FullImage( runID=_runID, ohdu=_ohdu, imageType='raw' ).readoutNoiseEstimate()) ])
+            dc = float( ConnieImage.FullImage( runID=_runID, ohdu=_ohdu, imageType='raw' ).darkCurrentEstimate() )
+            params.append(['dc', dc ])
+            params.append(['g_lambda', dc**2 ])
+            if first:
+                columns = zip(*params)[0]
+                max_length = max( map(len, columns) )
+                print( ' '.join( [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
+                first = False
+            #column_head = text('%2d' % image.header['OHDU'], mode='B' )
+            print( ' '.join( [ fmt(v).format(v) for keys, v in params ] ) )
+
+
 def analyse( args ):
     import glob
     from collections import OrderedDict
@@ -812,23 +922,25 @@ def analyse( args ):
             if args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
             if 'plot_part' in args: 
                 Section(HDU.data).save_pdf( 
-                args.plot_part.replace( '*', 'o{}p{}'.format(HDU.header['OHDU'],j) ),
-                title=('part %s' % i) )
+                args.plot_part.replace( '*', 'o{}p{}'.format(HDU.header['OHDU'], j+1) ),
+                title=( 'o{} p{}'.format(HDU.header['OHDU'], j+1) ) )
             part = Part(HDU)
             if args.params_mode is 'median':
-                part.correct_lines()
+                pass
             else:
                 part.remove_outliers_from_bias()
                 part.correct_lines(np.nanmean)
             try: parts_dict[i].append(part)
             except KeyError: parts_dict[i] = [part]
 
-    fmt = lambda x: {int:'{:4}', float:'{: .1e}', Section:'{: .1e}'}[type(x)]
-    sfmt = lambda x: {int:'{:4.4}', float:'{:8.8}', Section:'{:8.8}'}[type(x)]
+    fmt = lambda x: {int:'{:4}', float:'{: .3e}', Section:'{: .3e}'}[type(x)]
+    sfmt = lambda x: {int:'{:4.4}', float:'{:10.10}', Section:'{:10.10}'}[type(x)]
     
     first = True
     for i, parts in parts_dict.items():
         image = Image( parts )
+        if 'plot_sides' in args:
+            image.save_sections( args.plot_sides.replace( '*', 'o{}*'.format(image.header['OHDU'] ) ) )
         if 'debug' in args:
             row_bias = image.vbias.get_rows_bias(np.nanmean)
             row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
@@ -860,16 +972,17 @@ def analyse( args ):
             plt.show()
         
         if args.params_mode is 'median':
-            image.correct_rows()
+            params = image.get_params( mode=args.params_mode, remove_hits=False, half=True )
         else:
             image.correct_rows( np.nanmean )
-        params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
+            params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
+        
         if first:
             columns = zip(*params)[0]
             max_length = max( map(len, columns) )
-            print( ' '.join( ['  '] + [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
+            print( ' '.join( [text('ohdu', mode='B')] + [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
             first = False
-        column_head = text('%2d' % image.header['OHDU'], mode='B' )
+        column_head = text('%4d' % image.header['OHDU'], mode='B' )
         print( ' '.join( [column_head] + [ fmt(v).format(v) for keys, v in params ] ) )
 
 def main( args ):
@@ -1052,6 +1165,14 @@ def add_analyse_options( p, func ):
     p.add_argument( '--ohdu', nargs='*', type=int, default = None, help = 'ohdus to be analysed' )
     
     p.add_argument( '--plot-part', type=str, default=argparse.SUPPRESS, help = 'plot parts' )
+    p.add_argument( '--plot-sides', type=str, default=argparse.SUPPRESS, help = 'plot sides' )
+    p.set_defaults( func=func )
+    return
+
+def add_monitor_options( p, func ):
+    p.add_argument( '--runID', nargs='*', type=int, default = None, help = 'runIDs to be analysed' )
+    p.add_argument( '--ohdu', nargs='*', type=int, default = [2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 14], help = 'ohdus to be analysed' )
+    p.add_argument( '--exclude', nargs='*', type=int, default = None, help = 'ohdus not to be analysed' )
     p.set_defaults( func=func )
     return
 
@@ -1091,6 +1212,7 @@ if __name__ == '__main__':
     add_simulate_options( subparsers.add_parser('simulate', help='simulate and analyse random'), simulate )
     add_analyse_options( subparsers.add_parser('analyse', help='analyse image'), analyse )
     add_header_options( subparsers.add_parser('header', help='read image header'), read_header )
+    add_monitor_options( subparsers.add_parser('monitor', help='monitorViewer functions'), monitor )
 
     if len(sys.argv) == 1:
         parser.print_help()

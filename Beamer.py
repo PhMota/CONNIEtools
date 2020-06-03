@@ -68,7 +68,7 @@ B = '\n'
 
 class Beamer:
     def writelines( self, s, mode = 'a' ):
-        open( '%s.tex' % self.fname, mode ).writelines( s )
+        open( '%s.tex' % (self.fname+'/'+self.fname), mode ).writelines( s )
     
     def __init__(self, fname='calculations'):
         self.fname = fname
@@ -86,7 +86,7 @@ class Beamer:
 
     equation_evironment = 'equation'
     def pdflatex( self ):
-        subprocess.check_output(['pdflatex', '%s.tex' % self.fname])
+        subprocess.check_output(['pdflatex', '%s.tex' % (self.fname+'/'+self.fname)])
 
     def section( self, text ):
         self.writelines( [ r'\section{%s}' % text] )
@@ -133,19 +133,31 @@ class Beamer:
         s += c
         s += r'\end{lstlisting}' + B
         return s
+    
+    def column( self, *args ):
+        s = ''
+        s += r'\begin{columns}'+B
+        for arg in args:
+            s += r'\column{%s\textwidth}'%(1./len(args))+B
+            s += arg+B
+        s += r'\end{columns}'+B
+        return s
         
-    def figure( self, path, width=None, height=None, s='' ):
+    def figure( self, path, width=None, height=None, s='', frame=False ):
+        if frame: s += r'\frame{' + B
         s += r'\begin{center}' + B
-        if not os.path.exists(self.fname+'/'+path):
-            print( '%s does not exist' % path )
-            s += r'{{\it figure {path} }}'.format(path=path) + B
+        fname = self.fname+'/'+path
+        if not os.path.exists(fname):
+            print( '%s does not exist' % fname )
+            s += r'{{\it figure {fname} }}'.format(fname=fname) + B
         elif width is not None:
-            s += r'\includegraphics[width={width}\textwidth]{{{fname}/{path}}}'.format(width=width, fname=self.fname, path=path) + B 
+            s += r'\includegraphics[width={width}\textwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
         elif height is not None:
-            s += r'\includegraphics[height={width}\textheight]{{{fname}/{path}}}'.format(width=width, fname=self.fname, path=path) + B
+            s += r'\includegraphics[height={height}\textheight]{{{fname}}}'.format(height=height, fname=fname) + B
         else:
             raise Exception('missing heigh or width')
         s += r'\end{center}' + B
+        if frame: s += '}' + B
         return s
         
 def openBeamer( fname ): return Beamer( fname )

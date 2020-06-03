@@ -65,9 +65,9 @@ class CCDImage:
     def add_voverscan(self, section): return self.add_section(section, 'voverscan_section')
     
 def readImage_raw( runID, ohdu ):
-    print 'readImage_raw, runID=', runID, 'ohdu=', ohdu, 
+    #print 'readImage_raw, runID=', runID, 'ohdu=', ohdu, 
     files = ConniePaths.runIDPath( int(runID) )
-    print 'path=', files[-1]
+    #print 'path=', files[-1]
     return merge_images( files, ohdu )
 
 def readImage_MB( runID, ohdu ):
