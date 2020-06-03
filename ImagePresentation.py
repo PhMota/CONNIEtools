@@ -32,8 +32,8 @@ python Image.py analyse "{fname}" \
     
     doc.frame('sides',
               doc.column(
-                doc.figure('sideo3data.pdf', width=1) + doc.figure('sideo3vbias.pdf', width=1),
-                doc.figure('sideo3bias.pdf', width=1) + doc.figure('sideo3dbias.pdf', width=1),
+                doc.figure('sideo3data.pdf', height=.5) + doc.figure('sideo3vbias.pdf', height=.5),
+                doc.figure('sideo3bias.pdf', height=.5) + doc.figure('sideo3dbias.pdf', height=.5),
                   )
               )
     
