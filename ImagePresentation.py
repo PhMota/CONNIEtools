@@ -30,11 +30,14 @@ python Image.py analyse "{fname}" \
               doc.figure('parto3p4.pdf', height=0.2),
               )
     
+    scale = .35
     doc.frame('sides',
-              doc.column(
-                doc.figure('sideo3data.pdf', height=.5) + doc.figure('sideo3vbias.pdf', height=.5),
-                doc.figure('sideo3bias.pdf', height=.5) + doc.figure('sideo3dbias.pdf', height=.5),
-                  )
+              doc.column( doc.figure('sideo3data.pdf', scale=scale ), doc.figure('sideo3bias.pdf', scale=scale ),),
+              doc.column( doc.figure('sideo3vbias.pdf', scale=scale ), doc.figure('sideo3dbias.pdf', scale=scale ),),
               )
     
+    doc.frame('projections',
+              doc.figure('sideo3proj1.pdf', scale=scale ), 
+              doc.figure('sideo3proj0.pdf', scale=scale ),
+              )
     

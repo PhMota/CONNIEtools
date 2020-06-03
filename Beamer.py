@@ -138,12 +138,12 @@ class Beamer:
         s = ''
         s += r'\begin{columns}'+B
         for arg in args:
-            s += r'\column{%s\textwidth}'%(1./len(args))+B
+            s += r'\column{%s\paperwidth}'%(1./len(args))+B
             s += arg+B
         s += r'\end{columns}'+B
         return s
         
-    def figure( self, path, width=None, height=None, s='', frame=False ):
+    def figure( self, path, width=None, height=None, scale=None, s='', frame=False ):
         if frame: s += r'\frame{' + B
         s += r'\begin{center}' + B
         fname = self.fname+'/'+path
@@ -151,9 +151,11 @@ class Beamer:
             print( '%s does not exist' % fname )
             s += r'{{\it figure {fname} }}'.format(fname=fname) + B
         elif width is not None:
-            s += r'\includegraphics[width={width}\textwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
+            s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
         elif height is not None:
-            s += r'\includegraphics[height={height}\textheight]{{{fname}}}'.format(height=height, fname=fname) + B
+            s += r'\includegraphics[height={height}\paperheight]{{{fname}}}'.format(height=height, fname=fname) + B
+        elif scale is not None:
+            s += r'\includegraphics[scale={scale}]{{{fname}}}'.format(scale=scale, fname=fname) + B
         else:
             raise Exception('missing heigh or width')
         s += r'\end{center}' + B

@@ -752,7 +752,6 @@ class Section( np.ndarray ):
 
     def save_pdf( self, output, title=None ):
         with Timer( 'saved ' + output ):
-            from matplotlib import pylab as plt
             fig = plt.figure()
             ax = fig.add_subplot(111)
             if title: ax.set_title(title)
@@ -761,11 +760,29 @@ class Section( np.ndarray ):
                 ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
             except:
                 print( 'im.shape', im.shape, self.shape )
+                exit()
             ax.set_xticklabels([])
             ax.set_yticklabels([])
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
         return
 
+    def save_projection( self, output, title, axis ):
+        with Timer( 'saved ' + output ):
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.set_title(title)
+            maxs = np.nanmax( self, axis=axis )
+            mins = np.nanmin( self, axis=axis )
+            stds = np.nanstd( self, axis=axis )
+            means = np.nanmean( self, axis=axis )
+            
+            ax.plot( maxs, '.', label='max' )
+            ax.errorbar( range(len(means)), means, yerr=stds, marker='.', label='mean&std' )
+            ax.plot( mins, '.', label='min' )
+            
+            ax.legend()
+            fig.savefig( output, bbox_inches='tight', pad_inches=0 )
+        
     def display( self, mode, delta = None ):
         from matplotlib import pylab as plt
         from matplotlib.colors import LogNorm
@@ -941,6 +958,8 @@ def analyse( args ):
         image = Image( parts )
         if 'plot_sides' in args:
             image.save_sections( args.plot_sides.replace( '*', 'o{}*'.format(image.header['OHDU'] ) ) )
+            image.bias.save_projection( args.plot_sides.replace( '*', 'o{}proj1'.format(image.header['OHDU'] ) ), title='bias', axis=1 )
+            image.vbias.save_projection( args.plot_sides.replace( '*', 'o{}proj0'.format(image.header['OHDU'] ) ), title='vbias', axis=0 )
         if 'debug' in args:
             row_bias = image.vbias.get_rows_bias(np.nanmean)
             row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
