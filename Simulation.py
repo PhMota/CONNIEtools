@@ -8,6 +8,7 @@ import os
 import astropy.io.fits
 from Timer import Timer
 from TerminalColor import text
+from termcolor import colored, cprint
 
 electron_in_eV = 3.745
 electron_in_keV = electron_in_eV*1e-3
@@ -15,63 +16,29 @@ Cu_energy_eV = 8046
 Cu2_energy_eV = 8904
 Si_energy_eV = 1740
 
-def generate_folder( args ):
-    for count in range( args.number_of_images ):
-        print( 'generating image', count+1, 'out of', args.number_of_images )
-        args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
-        args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
-        args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:.2f}DC{dark_current:.4f}'.format(**vars(args)) )
-        sim = simulate_events( args )
-        sim.generate_image( output = args.output_file )
-    return
+rows, columns = os.popen('stty size', 'r').read().split()
+def print_var( var, vars_, end = '\n', line_char='', start_pos=0 ):
+    if not type(var) is str:
+        start_pos = 0
+        for ivar in var:
+            start_pos = print_var( ivar, vars_, end=' ', start_pos=start_pos, line_char=line_char ) + 1
+        print()
+    else:
+        val = vars_[var]
+        if type(val) is float: val = '{:.4f}'.format(val)
+        text = '%s %s' % ( colored(var, 'green' ), val )
+        
+        #print(start_pos)
+        if start_pos == 0:
+            text = line_char + text
+        elif start_pos + len(text) >= int(columns):
+            start_pos = 0
+            print()
+            text = line_char + text
 
-def simulate_events( args ):
-    xyshape = args.xyshape
-    depth_range = args.depth_range
-    charge_range = args.charge_range
-    number_of_charges = args.number_of_charges
-    array_of_positions = random.random( number_of_charges*2 ).reshape(-1,2)*(array(xyshape)-1)
-    array_of_depths = random.random( number_of_charges )*(depth_range[1] - depth_range[0]) + depth_range[0]
-    array_of_charges = random.random( number_of_charges )*(charge_range[1] - charge_range[0]) + charge_range[0]
-    array_of_identities = ['random']*number_of_charges
-    
-    if 'number_of_Cu_charges' in args.__dict__:
-        number_of_Cu_charges = args.number_of_Cu_charges
-        array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
-        array_of_depths = append( array_of_depths, random.random( number_of_Cu_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
-        array_of_charges = append( array_of_charges, [Cu_energy_eV/electron_in_eV]*number_of_Cu_charges )
-        array_of_identities.extend( ['Cu']*number_of_Cu_charges )
-        
-    if 'number_of_Cu2_charges' in args.__dict__:
-        number_of_Cu2_charges = args.number_of_Cu2_charges
-        array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu2_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
-        array_of_depths = append( array_of_depths, random.random( number_of_Cu2_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
-        array_of_charges = append( array_of_charges, [Cu2_energy_eV/electron_in_eV]*number_of_Cu2_charges )
-        array_of_identities.extend( ['Cu2']*number_of_Cu2_charges )
-        
-    if 'number_of_Si_charges' in args.__dict__:
-        number_of_Si_charges = args.number_of_Si_charges
-        array_of_positions = concatenate( (array_of_positions, random.random( number_of_Si_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
-        array_of_depths = append( array_of_depths, random.random( number_of_Si_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
-        array_of_charges = append( array_of_charges, [Si_energy_eV/electron_in_eV]*number_of_Si_charges )
-        array_of_identities.extend( ['Si']*number_of_Si_charges )
+        print( text, end=end )
+        return start_pos + len(text)
 
-    print( 'total charges created', len( array_of_identities ) )
-    
-    data = empty( (0,5), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
-    if len(array_of_depths) > 0:
-        data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
-        
-    if 'sim' in args:
-        output = args.output_fits + '.csv'
-        header = str(vars(args))
-        print( 'header', header )
-        header += '\nx, y, z, q, id'
-        if len(array_of_depths) > 0:
-            savetxt( output, data, delimiter = ', ', header = header, fmt = ['%s']*4 + ['%s'] )
-        else:
-            open( output, 'w' ).writelines( header )
-    return Simulation( data, args )
 
 def simulation_from_file( input_file ):
     args = json.loads( open( input_file ).readline().strip(' #').replace('\'','"') )
@@ -127,7 +94,7 @@ class Simulation( recarray ):
             return self.diffusion_function( self.z )
         return self.diffusion_function( entry.z )
         
-    def generate_image( self, output = None, pdf_output = None ):
+    def generate_image( self, output = None, pdf_output = None, verbose=False ):
         if self.count > 1:
             sigma_per_event = self.get_sigma()
             charge_per_event = self.get_charge()
@@ -156,27 +123,55 @@ class Simulation( recarray ):
             image = histogramdd( xy, bins = bins )[0] * self.charge_gain
         else:
             image = zeros( self.xyshape )
-            
+
+        if verbose:
+            max_ADU = max( image.flatten() )
+            max_charge = max_ADU/self.charge_gain
+            print_var( ['max_charge', 'max_ADU'], locals() )
+        
         if self.dark_current > 0:
             dark_current_image = scipy.stats.poisson.rvs( self.dark_current, size = self.xyshape[0]*self.xyshape[1] ).reshape(self.xyshape)
+            max_charge = max( dark_current_image.flatten() )
             image += dark_current_image * self.charge_gain
+            if verbose:
+                max_ADU = max_charge * self.charge_gain
+                print_var( ['max_charge', 'max_ADU'], locals() )
         
         image = image.reshape( (self.xyrebinshape[0], -1, self.xyrebinshape[1]) ).sum(axis = 1)
-        
+
         new_image = zeros( self.fullshape )
         new_image[self.fullshape[0]-self.xyrebinshape[0]:, :self.xyrebinshape[1]] = image
         image = new_image
+
+        if verbose:
+            print( 'rebin' )
+            print_var( ['xyshape', 'xyrebinshape', 'fullshape'], vars(self) )
+            max_ADU = max( image.flatten() )
+            max_charge = max_ADU/self.charge_gain
+            print_var( ['max_charge', 'max_ADU'], locals() )
         
         if self.readout_noise > 0:
             readout_noise_image = scipy.stats.norm.rvs( size=self.fullshape[0]*self.fullshape[1] ).reshape(self.fullshape)*self.readout_noise
             image += readout_noise_image
-        
-        print( 'image shapes', self.xyshape, self.xyrebinshape, self.fullshape )
+
+        if verbose:
+            max_ADU = max( image.flatten() )
+            max_charge = max_ADU/self.charge_gain
+            print( 'noise' )
+            print_var( ['max_charge', 'max_ADU'], locals() )
+
         vertical_modulation = array([ self.vertical_modulation_function(y) for y in range(self.fullshape[0]) ])[:,None]
         image += vertical_modulation
 
+
         horizontal_modulation = array([ self.horizontal_modulation_function(x) for x in range(self.fullshape[1]) ])[None,:]
         image += horizontal_modulation
+
+        if verbose:
+            print( 'modulations' )
+            max_ADU = max( image.flatten() )
+            max_charge = max_ADU/self.charge_gain
+            print_var( ['max_charge', 'max_ADU'], locals() )
 
         if pdf_output:
             self.save_pdf( pdf_output, image )
@@ -235,9 +230,6 @@ class Simulation( recarray ):
             fig.savefig( output )
         return
 
-def image( args ):
-    sim = simulate_events( args )
-    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf_output )
 
 default_diffusion_function = u'sqrt(-923.666*log1p(-0.000441113*z))/15 if z < 670 else 0'
 default_charge_efficiency_function = u'1. if z < 670 else .9'
@@ -254,8 +246,79 @@ def add_image_options( p, func ):
     p.add_argument('--output-fits', type=str, default = None, help = 'set to generate a fits output' )
     p.add_argument('--pdf-output', type=str, default = None, help = 'generate pdf output' )
     p.add_argument('--spectrum', action='store_true', help = 'generate energy spectrum' )
+    p.add_argument('--verbose', action='store_true', default=argparse.SUPPRESS, help = 'verbose' )
     add_general_options( p )
     p.set_defaults( func=func )
+
+def image( args ):
+    sim = simulate_events( args )
+    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf_output, verbose = 'verbose' in args )
+
+def simulate_events( args ):
+    xyshape = args.xyshape
+    depth_range = args.depth_range
+    charge_range = args.charge_range
+    number_of_charges = args.number_of_charges
+    array_of_positions = random.random( number_of_charges*2 ).reshape(-1,2)*(array(xyshape)-1)
+    array_of_depths = random.random( number_of_charges )*(depth_range[1] - depth_range[0]) + depth_range[0]
+    array_of_charges = random.random( number_of_charges )*(charge_range[1] - charge_range[0]) + charge_range[0]
+    array_of_identities = ['random']*number_of_charges
+    
+    list_of_X_charges = [['number_of_Cu_charges', Cu_energy_eV, 'Cu'], 
+                         ['number_of_Cu2_charges', Cu2_energy_eV, 'Cu2'], 
+                         ['number_of_Si_charges', Si_energy_eV, 'Si'] ]
+    for key, energy_eV, charge_type in list_of_X_charges:
+        if key in args:
+            number_of_X_charges = getattr(args, key)
+            array_of_positions = concatenate( 
+                (array_of_positions, 
+                 random.random( number_of_X_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), 
+                axis=0 )
+            array_of_depths = append( 
+                array_of_depths, 
+                random.random( number_of_X_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] 
+                )
+            array_of_charges = append( array_of_charges, [energy_eV/electron_in_eV]*number_of_X_charges )
+            array_of_identities.extend( [charge_type]*number_of_X_charges )
+        
+    #if 'number_of_Cu_charges' in args.__dict__:
+        #number_of_Cu_charges = args.number_of_Cu_charges
+        #array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
+        #array_of_depths = append( array_of_depths, random.random( number_of_Cu_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        #array_of_charges = append( array_of_charges, [Cu_energy_eV/electron_in_eV]*number_of_Cu_charges )
+        #array_of_identities.extend( ['Cu']*number_of_Cu_charges )
+        
+    #if 'number_of_Cu2_charges' in args.__dict__:
+        #number_of_Cu2_charges = args.number_of_Cu2_charges
+        #array_of_positions = concatenate( (array_of_positions, random.random( number_of_Cu2_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
+        #array_of_depths = append( array_of_depths, random.random( number_of_Cu2_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        #array_of_charges = append( array_of_charges, [Cu2_energy_eV/electron_in_eV]*number_of_Cu2_charges )
+        #array_of_identities.extend( ['Cu2']*number_of_Cu2_charges )
+        
+    #if 'number_of_Si_charges' in args.__dict__:
+        #number_of_Si_charges = args.number_of_Si_charges
+        #array_of_positions = concatenate( (array_of_positions, random.random( number_of_Si_charges*2 ).reshape(-1,2)*(array(xyshape)-1) ), axis=0 )
+        #array_of_depths = append( array_of_depths, random.random( number_of_Si_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] )
+        #array_of_charges = append( array_of_charges, [Si_energy_eV/electron_in_eV]*number_of_Si_charges )
+        #array_of_identities.extend( ['Si']*number_of_Si_charges )
+
+    print( 'total charges created', len( array_of_identities ) )
+    
+    data = empty( (0,5), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
+    if len(array_of_depths) > 0:
+        data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
+        
+    if 'sim' in args:
+        output = args.output_fits + '.csv'
+        header = str(vars(args))
+        print( 'header', header )
+        header += '\nx, y, z, q, id'
+        if len(array_of_depths) > 0:
+            savetxt( output, data, delimiter = ', ', header = header, fmt = ['%s']*4 + ['%s'] )
+        else:
+            open( output, 'w' ).writelines( header )
+    return Simulation( data, args )
+
 
 def add_folder_options( p, func ):
     p.add_argument('--number-of-images', type=int, default = None, help = 'number of images to be generated' )
@@ -264,6 +327,16 @@ def add_folder_options( p, func ):
     p.add_argument('--dark-current-range', type=tuple_of(float), default = '\"[0.01,0.3]\"', help = 'dark current range' )
     add_general_options(p)
     p.set_defaults( func=generate_folder )
+
+def generate_folder( args ):
+    for count in range( args.number_of_images ):
+        print( 'generating image', count+1, 'out of', args.number_of_images )
+        args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
+        args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
+        args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:.2f}DC{dark_current:.4f}'.format(**vars(args)) )
+        sim = simulate_events( args )
+        sim.generate_image( output = args.output_file )
+    return
 
 def add_general_options( p ):
     p.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
@@ -358,7 +431,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args = postprocess( args )
-    for arg, value in vars(args).items():
-        print( '\t' + text(arg,mode='B'), value )
+    print( colored('using parameters:', 'green', attrs=['bold'] ) )
+    print_var( vars(args).keys(), vars(args), line_char='\t' )
+    #for arg, value in vars(args).items():
+        #print( '\t' + text(arg,mode='B'), value )
+    
     args.func(args)
     
