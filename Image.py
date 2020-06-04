@@ -13,6 +13,7 @@ matplotlib.use('gtk3agg')
 import Statistics as stats
 from Timer import Timer
 from TerminalColor import text
+from PrintVar import print_var
 from matplotlib import pylab as plt
 np.warnings.filterwarnings("ignore")
 
@@ -594,9 +595,9 @@ class Image:
     
     def save_sections( self, output ):
         for sec in ['data', 'bias', 'vbias', 'dbias']:
-            getattr( self, sec ).save_pdf( output.replace( '*', sec ), title = sec )
+            getattr( self, sec ).save_pdf( '{}_{}'.format(output, sec), title = sec )
             if self.has_right:
-                getattr( self, sec+'R' ).save_pdf( output.replace( '*', sec+'R' ), title = sec+'R' )
+                getattr( self, sec+'R' ).save_pdf( '{}_{}'.format(output, sec+'R'), title = sec+'R' )
     
     def histograms( self ):
         bias = self.bias.get_binned_distribution()
@@ -803,6 +804,7 @@ class Section( np.ndarray ):
         fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
 
     def save_pdf( self, output, title=None ):
+        if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
             ax = fig.add_subplot(111)
@@ -823,6 +825,7 @@ class Section( np.ndarray ):
         return
 
     def save_projection( self, output, title, axis ):
+        if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
             ax = fig.add_subplot(111)
@@ -845,6 +848,7 @@ class Section( np.ndarray ):
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
 
     def save_spectrum( self, output, title ):
+        if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
             ax = fig.add_subplot(111)
@@ -967,18 +971,6 @@ def simulate( args ):
     Plot.generate_plot( [args.output_table], xcolumn = 'readout_noise', ycolumns = ['sigma'], yerrcolumns = ['sigma_err'], labels = ['sigma'], output_file = args.output_table + '.readout_noise.pdf', figscale = [1,1], diagonal_line = True, legend_loc = 'lower right' )
     Plot.generate_plot( [args.output_table], xcolumn = 'dark_current', ycolumns = ['lambda'], yerrcolumns = ['lambda_err'], labels = ['lambda'], output_file = args.output_table + '.dark_current.pdf', figscale = [1,1], diagonal_line = True, legend_loc = 'lower right' )
         
-def read_header( args ):
-    for file in glob( args.input_file ):
-        listHDU = astropy.io.fits.open( file )
-        for i in range(len(listHDU)) if args.indices is None else args.indices:
-            print( text( 'HDU %s' % i, mode='B', color='g' ) )
-            for key, value in listHDU[i].header.items():
-                if key in args.exclude: continue
-                if key in args.include or len(args.include) is 0:
-                    print( text( '%s' % key, color='g' ), '%s' % value, end=' ' )
-            print()
-    return
-
 def monitor( args ):
     import ConnieImage
     print( args.runID, args.ohdu )
@@ -1003,33 +995,29 @@ def monitor( args ):
             #column_head = text('%2d' % image.header['OHDU'], mode='B' )
             print( ' '.join( [ fmt(v).format(v) for keys, v in params ] ) )
 
-def print_var( var, vars_ ):
-    if not type(var) is str:
-        for ivar in var:
-            print_var( ivar, vars_ )
-    else:
-        print( '%s: %s' % ( text(var, mode='B'), getattr( vars_, var ) ) )
 
-def add_analyse_options( p, func ):
+def add_analyse_options( p ):
     p.add_argument('name', help = 'fits file input (example: runID3326)' )
     p.add_argument('input_file', help = 'fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
+
+    p.add_argument( '--ohdu', nargs='*', type=int, default = None, help = 'ohdus to be analysed' )
+    p.add_argument( '--exclude', nargs='*', type=int, default = None, help = 'ohdus not to be analysed' )
     
-    p.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
-    p.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
     p.add_argument('--params-mode', type=str, default = 'median', help = 'modes for parameter estimation' )
 
-    p.add_argument('--remove-hits', nargs=2, type=float, default=argparse.SUPPRESS, help = 'remove hits above [0]ADU [1]border (example:60 3)' )
+    p.add_argument('--remove-hits', nargs=2, type=float, default=argparse.SUPPRESS, help = 'remove hits above ADU with border (example:60 3)' )
+    
     p.add_argument('--find-hits', action="store_true", default=argparse.SUPPRESS, help = 'hits above ADU border' )
-    p.add_argument( '--exclude', nargs='*', type=int, default = None, help = 'ohdus not to be analysed' )
-    p.add_argument( '--ohdu', nargs='*', type=int, default = None, help = 'ohdus to be analysed' )
     
-    p.add_argument( '--plot-part', default=argparse.SUPPRESS, help = 'plot parts' )
-    p.add_argument( '--plot-sides', default=argparse.SUPPRESS, help = 'plot sides' )
-    p.add_argument( '--plot-spectrum', default=argparse.SUPPRESS, help = 'plot spectrum' )
-    
-    p.set_defaults( func=func )
-    return
+    p.add_argument( '--plot-part', action="store_true", default=argparse.SUPPRESS, help = 'plot parts' )
+    p.add_argument( '--plot-sections', action="store_true", default=argparse.SUPPRESS, help = 'plot sections' )
+    p.add_argument( '--plot-spectrum', action="store_true", default=argparse.SUPPRESS, help = 'plot spectrum' )
+    p.add_argument( '--plot-convolution-spectrum', action="store_true", default=argparse.SUPPRESS, help = 'plot convolution spectrum' )
 
+    #p.add_argument('--extract', nargs=2, default=argparse.SUPPRESS, help = 'set to False to skip the extraction' )
+    
+    p.set_defaults( func=analyse )
+    return
 
 def analyse( args ):
     from collections import OrderedDict
@@ -1038,7 +1026,7 @@ def analyse( args ):
     
     if not os.path.exists(args.name):
         os.mkdir(args.name)
-    args.name = '{0}/{0}'.format(args.name)
+    args.name = '{0}/'.format(args.name)
     
     parts_dict = OrderedDict()
     for j, listHDU in enumerate(partlistHDU):
@@ -1048,7 +1036,7 @@ def analyse( args ):
             if args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
             if 'plot_part' in args:
                 title= 'o{}_p{}'.format(HDU.header['OHDU'], j+1)
-                Section(HDU.data).save_pdf( '{0}_{1}.pdf'.format(args.name, title) )
+                Section(HDU.data).save_pdf( '{0}{1}.pdf'.format(args.name, title) )
             part = Part(HDU)
             if args.params_mode is 'median':
                 pass
@@ -1058,55 +1046,59 @@ def analyse( args ):
             try: parts_dict[i].append(part)
             except KeyError: parts_dict[i] = [part]
 
-    fmt = lambda x: {int:'{:4}', float:'{: .3e}', Section:'{: .3e}'}[type(x)]
-    sfmt = lambda x: {int:'{:4.4}', float:'{:10.10}', Section:'{:10.10}'}[type(x)]
-    
     first = True
     for i, parts in parts_dict.items():
         image = Image( parts )
-        args.name += '_{}'.format( args.params_mode )
+        args.name += '{}'.format( args.params_mode )
         if args.params_mode is 'median':
             params = image.get_params( mode=args.params_mode, remove_hits=False, half=True )
         else:
             image.remove_outliers_from_vbias()
             image.remove_outliers_from_vbias_second_pass()
             image.correct_rows( np.nanmean )
-            if 'remove_hits' in args:
-                args.name += '_e{0}b{border}'.format( args.remove_hits[0], border=args.remove_hits[1] )
-                image.data = image.data.remove_hits( args.remove_hits[0], border=args.remove_hits[1])
-            if 'find_hits' in args:
-                bias_std = np.nanstd(image.bias)
-                print_var( 'bias_std', locals() )
-                outliers2nanPoissonNorm_1d( image.data, sigma = np.nanstd(image.bias), pmin = args.find_hits )
-            
-            params = image.get_params( mode=args.params_mode )
+        if 'remove_hits' in args:
+            args.name += '_e{0}b{border}'.format( args.remove_hits[0], border=args.remove_hits[1] )
+            image.data = image.data.remove_hits( args.remove_hits[0], border=args.remove_hits[1])
 
-        if 'plot_sides' in args:
-            image.save_sections( args.plot_sides.replace( '*', 'o{}*'.format(image.header['OHDU'] ) ) )
-            image.bias.save_projection( args.plot_sides.replace( '*', 'o{}proj1'.format(image.header['OHDU'] ) ), title='bias', axis=1 )
-            image.vbias.save_projection( args.plot_sides.replace( '*', 'o{}proj0'.format(image.header['OHDU'] ) ), title='vbias', axis=0 )
+        params = image.get_params( mode=args.params_mode )
+        if 'find_hits' in args:
+            bias_std = np.nanstd(image.bias)
+            print_var( 'bias_std', locals() )
+            outliers2nanPoissonNorm_1d( image.data, sigma = np.nanstd(image.bias), pmin = args.find_hits )
+            
+
+        if 'plot_sections' in args:
+            image.save_sections( r'{}_o{}'.format( args.name, image.header['OHDU'] ) )
+            image.bias.save_projection( r'{}_o{}_biasProj'.format( args.name, image.header['OHDU'] ), title='bias', axis=1 )
+            image.vbias.save_projection( r'{}_o{}_vbiasProj'.format( args.name, image.header['OHDU'] ), title='vbias', axis=0 )
 
         if 'plot_spectrum' in args:
             for sec in ['dbias', 'vbias', 'bias', 'data']:
-                fname = args.plot_spectrum.replace( '*', 'o{}{}'.format(image.header['OHDU'], '%s_convolve10'%sec ) )
-                getattr( image, sec ).convolve( function=np.nanstd, size=(10,10) ).save_spectrum( fname, title='%s_convolve'%sec )
-                fname = args.plot_spectrum.replace( '*', 'o{}{}'.format(image.header['OHDU'], '%s_convolve5'%sec ) )
-                getattr( image, sec ).convolve( function=np.nanstd, size=(5,5) ).save_spectrum( fname, title='%s_convolve'%sec )
+                title = r'o{}_{}_spectrum'.format( image.header['OHDU'], sec )
+                getattr(image, sec).save_spectrum( '{}_{}'.format(args.name, title ), title=title )
 
+        if 'plot_convolution_spectrum' in args:
             for sec in ['dbias', 'vbias', 'bias', 'data']:
-                fname = args.plot_spectrum.replace( '*', 'o{}{}'.format(image.header['OHDU'], sec ) )
-                getattr(image, sec).save_spectrum( fname, title=sec )
+                for length in [5,10]:
+                    title = r'o{ohdu}_{sec}_convolution{length}'.format( ohdu=image.header['OHDU'], sec=sec, length=length )
+                    getattr( image, sec ).convolve( function=np.nanstd, size=(10,10) )\
+                        .save_spectrum( '{}_{}'.format(args.name, title ), title=title )
+            
+        fmt = lambda x: {int:'{:4}', float:'{: .3e}', Section:'{: .3e}'}[type(x)]
+        sfmt = lambda x: {int:'{:4.4}', float:'{:10.10}', Section:'{:10.10}'}[type(x)]
         
-        if 'output_file' in args: open( args.output_file, 'w' )
+        fname = '{}_params.csv'.format( args.name )
+        open( fname, 'w' )
         if first:
             columns = zip(*params)[0]
             max_length = max( map(len, columns) )
             print( ' '.join( [text('ohdu', mode='B')] + [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
-            if 'output_file' in args: open( args.output_file, 'a' ).write( '# ' + ', '.join( ['ohdu'] + [ key for key, v in params ] ) + '\n' )
+            
+            open( fname, 'a' ).write( '# ' + ', '.join( ['ohdu'] + [ key for key, v in params ] ) + '\n' )
             first = False
         column_head = '%4d' % image.header['OHDU']
         print( ' '.join( [text( column_head, mode='B' )] + [ fmt(v).format(v) for keys, v in params ] ) )
-        if 'output_file' in args: open( args.output_file, 'a' ).write( ', '.join( [column_head] + [ fmt(v).format(v) for keys, v in params ] ) + '\n' )
+        open( fname, 'a' ).write( ', '.join( [column_head] + [ fmt(v).format(v) for keys, v in params ] ) + '\n' )
 
 
 def tuple_of( type_ ):
@@ -1173,12 +1165,24 @@ def add_monitor_options( p, func ):
     p.set_defaults( func=func )
     return
 
-def add_header_options( p, func ):
+def add_header_options( p ):
     p.add_argument( 'input_file' )
     p.add_argument( '--indices', nargs='*', default = None, type=int, help='indexes to be shown' )
     p.add_argument( '--include', nargs='*', default = '', help='fields to be shown' )
     p.add_argument( '--exclude', nargs='*', default = '', help='fields not to be shown' )
-    p.set_defaults( func=func )
+    p.set_defaults( func=read_header )
+    return
+
+def read_header( args ):
+    for file in glob( args.input_file ):
+        listHDU = astropy.io.fits.open( file )
+        for i in range(len(listHDU)) if args.indices is None else args.indices:
+            print( text( 'HDU %s' % i, mode='B', color='g' ) )
+            for key, value in listHDU[i].header.items():
+                if key in args.exclude: continue
+                if key in args.include or len(args.include) is 0:
+                    print( text( '%s' % key, color='g' ), '%s' % value, end=' ' )
+            print()
     return
 
 def postprocess( args ):
@@ -1207,8 +1211,8 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers( help = 'major options' )
     
     add_simulate_options( subparsers.add_parser('simulate', help='simulate and analyse random'), simulate )
-    add_analyse_options( subparsers.add_parser('analyse', help='analyse image'), analyse )
-    add_header_options( subparsers.add_parser('header', help='read image header'), read_header )
+    add_analyse_options( subparsers.add_parser('analyse', help='analyse image') )
+    add_header_options( subparsers.add_parser('header', help='read image header') )
     add_monitor_options( subparsers.add_parser('monitor', help='monitorViewer functions'), monitor )
 
     if len(sys.argv) == 1:
@@ -1217,5 +1221,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args = postprocess( args )
-    args.func( args )
+    print_var( vars(args).keys(), vars(args), line_char='\t' )
+    with Timer('finished'):
+        args.func( args )
     

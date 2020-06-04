@@ -21,6 +21,7 @@ preamble = r'''
 
 \usepackage[english]{babel}
 \usepackage[utf8x]{inputenc}
+\usepackage{grffile}
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage{xcolor}
@@ -155,15 +156,22 @@ class Beamer:
         s += r'\end{center}' + B
         return s
         
+    def set_func( self, func ):
+        self.func = func
+        
+    def check_file( self, fname ):
+        if not os.path.exists(fname):
+            print('file not found', fname)
+            print( 'running function' )
+            self.func()
+            if not os.path.exists(fname):
+                print('file not generated', fname)
+                exit()
+        
     
     def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None ):
-        #if frame: s += r'\frame{' + B
         fname = self.fname+'/'+path
-        if not os.path.exists(fname):
-            print( 'running function' )
-            func()
-            #print( '%s does not exist' % fname )
-            #s += r'{{\it figure {fname} }}'.format(fname=fname) + B
+        self.check_file(fname)
         
         if width is not None:
             s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
@@ -173,25 +181,26 @@ class Beamer:
             s += r'\includegraphics[scale={scale}]{{{fname}}}'.format(scale=scale, fname=fname) + B
         else:
             raise Exception('missing heigh or width')
-        #if frame: s += '}' + B
         return s
         
-    def table( self, file, fontsize=12, spacing=15, func=None ):
+    def table( self, file, fontsize=12, spacing=15, func=None, divide=1 ):
         s = ''
-        if not os.path.exists('%s/%s' % (self.fname,file)):
-            print( 'running function' )
-            func()
-        s += r'{{\fontsize{{{}}}{{{}}}\selectfont'.format(fontsize,spacing)+B
-        s += r'{\setlength{\tabcolsep}{0.5em}'+B
-        for line in open('%s/%s' % (self.fname,file), 'r'):
-            args = line.strip('\n').split(',')
-            if '#' in line:
-                args[0] = args[0].strip('#')
-                s += r'\begin{{tabular}}{{ {} }}'.format('r'*len(args)) +B
-            s += ' & '.join( args ) + r'\\' + B
-        s += r'\end{tabular}'+B
-        s += r'}'+B
-        s += r'}'+B
+        fname = '%s/%s' % (self.fname,file)
+        self.check_file(fname)
+        
+        for d in range(divide):
+            s += r'{{\fontsize{{{}}}{{{}}}\selectfont'.format(fontsize,spacing)+B
+            s += r'{\setlength{\tabcolsep}{0.2em}'+B
+            for line in open(fname, 'r'):
+                args = line.strip('\n').split(',')
+                args = args[ d*len(args)/divide:(d+1)*len(args)/divide ]
+                if '#' in line:
+                    args[0] = args[0].strip('#')
+                    s += r'\begin{{tabular}}{{ {} }}'.format('r'*len(args)) +B
+                s += ' & '.join( args ) + r'\\' + B
+            s += r'\end{tabular}'+B
+            s += r'}'+B
+            s += r'}'+B
         return s
-    
+
 def openBeamer( fname ): return Beamer( fname )

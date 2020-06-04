@@ -7,37 +7,14 @@ import json
 import os
 import astropy.io.fits
 from Timer import Timer
-from TerminalColor import text
 from termcolor import colored, cprint
+from PrintVar import print_var
 
 electron_in_eV = 3.745
 electron_in_keV = electron_in_eV*1e-3
 Cu_energy_eV = 8046
 Cu2_energy_eV = 8904
 Si_energy_eV = 1740
-
-rows, columns = os.popen('stty size', 'r').read().split()
-def print_var( var, vars_, end = '\n', line_char='', start_pos=0 ):
-    if not type(var) is str:
-        start_pos = 0
-        for ivar in var:
-            start_pos = print_var( ivar, vars_, end=' ', start_pos=start_pos, line_char=line_char ) + 1
-        print()
-    else:
-        val = vars_[var]
-        if type(val) is float: val = '{:.4f}'.format(val)
-        text = '%s %s' % ( colored(var, 'green' ), val )
-        
-        #print(start_pos)
-        if start_pos == 0:
-            text = line_char + text
-        elif start_pos + len(text) >= int(columns):
-            start_pos = 0
-            print()
-            text = line_char + text
-
-        print( text, end=end )
-        return start_pos + len(text)
 
 
 def simulation_from_file( input_file ):
@@ -433,8 +410,7 @@ if __name__ == '__main__':
     args = postprocess( args )
     print( colored('using parameters:', 'green', attrs=['bold'] ) )
     print_var( vars(args).keys(), vars(args), line_char='\t' )
-    #for arg, value in vars(args).items():
-        #print( '\t' + text(arg,mode='B'), value )
     
-    args.func(args)
+    with Timer('finished'):
+        args.func(args)
     
