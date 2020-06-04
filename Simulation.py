@@ -161,7 +161,7 @@ class Simulation( recarray ):
             dark_current_image = scipy.stats.poisson.rvs( self.dark_current, size = self.xyshape[0]*self.xyshape[1] ).reshape(self.xyshape)
             image += dark_current_image * self.charge_gain
         
-        image = image.reshape( (self.xyrebinshape[0], self.xyrebinshape[1], -1) ).sum(axis = -1)
+        image = image.reshape( (self.xyrebinshape[0], -1, self.xyrebinshape[1]) ).sum(axis = 1)
         
         new_image = zeros( self.fullshape )
         new_image[self.fullshape[0]-self.xyrebinshape[0]:, :self.xyrebinshape[1]] = image
@@ -179,7 +179,7 @@ class Simulation( recarray ):
         image += horizontal_modulation
 
         if pdf_output:
-            self.save_pdf( output, image )
+            self.save_pdf( pdf_output, image )
         
         fits = self.make_fits( image )
         if output: self.save_fits( fits, output )
@@ -229,20 +229,15 @@ class Simulation( recarray ):
                 #for event in self:
                     #sigma = sqrt( self.get_sigma(event) )*5
                     #ax.add_artist( Ellipse((event.y-.5, event.x-.5), sigma, sigma, fill=False ) )
-            im = log(image - image.min() + 1)
+            im = log(image - nanmin(image) + 1)
             #im = image
-            ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
+            ax.imshow( im, cmap='Blues', origin='lower', vmin=nanmin(im), vmax=nanmax(im) )
             fig.savefig( output )
         return
 
 def image( args ):
-    del args.func
-    for option, value in vars(args).items():
-        print( '\t%s: %s' % ( text(option, mode='B'), value) )
-
     sim = simulate_events( args )
-    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf )
-    
+    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf_output )
 
 default_diffusion_function = u'sqrt(-923.666*log1p(-0.000441113*z))/15 if z < 670 else 0'
 default_charge_efficiency_function = u'1. if z < 670 else .9'
@@ -257,7 +252,7 @@ def add_image_options( p, func ):
     p.add_argument('--dark-current', type=eval, default = '0', help = 'lambda of Poisson distribution dimensionless' )
     p.add_argument('--expose-hours', type=float, default = '1', help = 'number of images to be generated' )
     p.add_argument('--output-fits', type=str, default = None, help = 'set to generate a fits output' )
-    p.add_argument('--pdf', action='store_true', help = 'generate pdf output' )
+    p.add_argument('--pdf-output', type=str, default = None, help = 'generate pdf output' )
     p.add_argument('--spectrum', action='store_true', help = 'generate energy spectrum' )
     add_general_options( p )
     p.set_defaults( func=func )
@@ -364,6 +359,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args = postprocess( args )
     for arg, value in vars(args).items():
-        print( text(arg,mode='B'), value )
+        print( '\t' + text(arg,mode='B'), value )
     args.func(args)
     
