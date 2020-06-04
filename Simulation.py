@@ -62,7 +62,7 @@ def simulate_events( args ):
     if len(array_of_depths) > 0:
         data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
         
-    if args.sim:
+    if 'sim' in args:
         output = args.output_fits + '.csv'
         header = str(vars(args))
         print( 'header', header )
@@ -272,9 +272,9 @@ def add_folder_options( p, func ):
 
 def add_general_options( p ):
     p.add_argument('--charge-gain', type=eval, default = '7.25', help = 'factor to convert charges into ADU' )
-    p.add_argument('--sim', action='store_true', help = 'generate csv output' )
+    p.add_argument('--sim', type=str, default=argparse.SUPPRESS, help = 'generate csv output' )
     p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
-    p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
+    p.add_argument('--number-of-charges', type=int, default = '0', help = 'number of charges to be randomly generated' )
     p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
     p.add_argument('--number-of-Cu-charges',
                         type=int,
@@ -308,29 +308,33 @@ def add_general_options( p ):
                         )
     p.add_argument('--vertical-modulation-function',
                         type=str, 
-                        default = default_vertical_modulation_function,
+                        default = "0",
                         help = 'function to modulate the vertical axis' 
                         )    
     p.add_argument('--horizontal-modulation-function',
                         type=str, 
-                        default = default_horizontal_modulation_function,
+                        default = "0",
                         help = 'function to modulate the horizontal axis' 
                         )
     p.add_argument('--no-vertical-modulation', action='store_true', help = 'set vertical modulation to "0"' )
     p.add_argument('--no-horizontal-modulation', action='store_true', help = 'set horizontal modulation to "0"' )
     p.add_argument('--no-modulation', action='store_true', help = 'set modulations to "0"' )
 
+    p.add_argument('--default-vertical-modulation', type=str, default=argparse.SUPPRESS, help = 'set vertical modulation to "{}"'.format(default_vertical_modulation_function) )
+    p.add_argument('--default-horizontal-modulation', type=str, default=argparse.SUPPRESS, help = 'set horizontal modulation to "{}"'.format(default_horizontal_modulation_function) )
+    p.add_argument('--default-modulation', type=str, default=argparse.SUPPRESS, help = 'set modulations to "{}" and "{}"'.format(default_horizontal_modulation_function, default_vertical_modulation_function) )
+
 def postprocess( args ):
     if args.image_mode is '1':
         args.rebin = [1,1]
         args.horizontal_overscan = 150
         args.vertical_overscan = 90
-        args.xyshape = [4150,4120]
+        args.xyshape = [4130,4120]
     elif args.image_mode is '5':
         args.rebin = [5,1]
         args.horizontal_overscan = 450
-        args.vertical_overscan = 70
-        args.xyshape = [4150,4120]
+        args.vertical_overscan = 74
+        args.xyshape = [4130,4120]
     
     del args.image_mode
     
@@ -359,5 +363,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args = postprocess( args )
+    for arg, value in vars(args).items():
+        print( text(arg,mode='B'), value )
     args.func(args)
     

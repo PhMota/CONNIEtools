@@ -128,7 +128,7 @@ def outliers2nan( x, axis=None, abs_err = .25 ):
     #print( 'y', y.shape, np.sum(np.isnan(y)) )
     return y
 
-def outliers2nanp_1d( x, step=1, pmin = 1e-2 ):
+def outliers2nanp_1d( x, pmin = 1e-2 ):
     y = np.array(x)
     mean = np.nanmean(y)
     std = np.nanstd(y)
@@ -145,11 +145,33 @@ def outliers2nanp_1d( x, step=1, pmin = 1e-2 ):
 
 def outliers2nanp( x, axis=None, pmin = 1e-2 ):
     y = np.apply_along_axis( lambda x: outliers2nanp_1d(x, pmin=pmin), axis, x )
-    #print( 'outliers2nan' )
-    #print( 'x', x.shape, np.sum(np.isnan(x)) )
-    #print( 'y', y.shape, np.sum(np.isnan(y)) )
-    #print( '%s outliers with p<%s' % ( np.sum(np.isnan(y)), pmin ) )
     return y
+
+def outliers2nanPoissonNorm_1d( x, sigma, pmin = 1e-2 ):
+    y = np.array(x)
+    
+    count = 0
+    while True:
+        mean = np.nanmean(y)
+        median = np.nanmedian(y)
+        std = np.nanstd(y)
+        mad = MAD(y)
+        
+        glambda = mean
+        g2lambda = std**2 - sigma**2
+        g = g2lambda/glambda
+        lambda_ = glambda/g
+        
+        p = stats.poisson_norm.pdf( y, loc=median, scale=sigma, mu=lambda_, g=g )
+        p /= np.nanmax(p)
+        print( 'outliers', ' '.join(['{:.4f}'.format(v) for v in [count, sigma, mean, median, std, mad, glambda, g2lambda, lambda_, g]]), np.nanmin(p), pmin, np.nanmax(y) )
+        if np.nanmin(p) > pmin:
+            break
+        y[ np.nonzero( p < pmin ) ] = np.nan
+        print( 'removed', np.sum(np.isnan( y )) )
+        count += 1
+    return y
+
     
 def crop_std_1d( x, step = 1, abs_tol = .5 ):
     x = np.sort( x.flatten() )
@@ -342,8 +364,8 @@ class Part:
         '''
         try:
             self.bias_height, self.rebin = {
-                900: [70, 5],
-                1055: [70, 1], 
+                900: [74, 5],
+                1055: [90, 1], 
                 }[height]
         except KeyError:
             print( 'image height {} is not recognized. Assuming rebin 1 and bias height of 90'.format(height) )
@@ -404,6 +426,11 @@ class Image:
         self.vbias = Section(outliers2nanp( self.vbias, axis=0, pmin=pmin ))
         if self.has_right:
             self.vbiasR = Section(outliers2nanp( self.vbiasR, axis=0, pmin=pmin ))
+
+    def remove_outliers_from_vbias_second_pass(self, pmin=1e-5):
+        self.vbias = Section(outliers2nanp( self.vbias, axis=1, pmin=pmin ))
+        if self.has_right:
+            self.vbiasR = Section(outliers2nanp( self.vbiasR, axis=1, pmin=pmin ))
         
     def correct_rows( self, func = np.nanmedian, smoothening_length = 0 ):
         if not func is None:
@@ -439,11 +466,8 @@ class Image:
             data = data.get_half()
             vbias = vbias.get_half()
         
-        try:
-            height, width = data.shape
-        except:
-            print('data.shape', data.shape)
-            exit(1)
+        height, width = data.shape
+
         _, osw = bias.shape
         osh,_ = vbias.shape
         rebin = self.rebin
@@ -456,9 +480,6 @@ class Image:
         if 'GAIN' in self.header:
             gain = self.header['GAIN']
 
-        if remove_hits:
-            data = data.remove_hits(60, 3)
-        
         if mode == 'mean':
             mu, mu_err = mean_err( np.nanmean( bias, axis=1 ) )
             sigma, sigma_err = mean_err( np.nanstd( bias, axis=1) )
@@ -473,7 +494,7 @@ class Image:
             vsigmag = np.nanstd(vbias)
 
             g_lamb, g_lamb_err = mean_err( np.nanmedian( data, axis=1) - np.nanmean(bias, axis=1) )
-            g2_lamb, g2_lamb_err = mean_err( MAD( data, axis=1) - np.nanstd(bias, axis=1) )
+            g2_lamb, g2_lamb_err = mean_err( np.nanstd( data, axis=1)**2 - np.nanstd(bias, axis=1)**2 )
             return ret + [ 
                     ['mu', mu], 
                     #['mu_err', mu_err], 
@@ -481,20 +502,20 @@ class Image:
                     #['sigma_err', sigma_err], 
                     #['mug', mug], 
                     #['mug_err', mug_err], 
-                    ['sigmag', sigmag], 
+                    #['sigmag', sigmag], 
 
                     #['vmu', vmu], 
                     #['vmu_err', vmu_err], 
-                    ['vsigma', vsigma], 
+                    #['vsigma', vsigma], 
                     #['vsigma_err', vsigma_err], 
                     #['vmug', vmug], 
                     #['vmug_err', vmug_err], 
-                    ['vsigmag', vsigmag], 
+                    #['vsigmag', vsigmag], 
 
                     ['g_lambda', g_lamb],
-                    ['g_lambda_err', g_lamb_err],
+                    #['g_lambda_err', g_lamb_err],
                     ['g2_lambda', g2_lamb],
-                    ['g2_lambda_err', g2_lamb_err],
+                    #['g2_lambda_err', g2_lamb_err],
 
                     ['g', g2_lamb/g_lamb],
                     ]
@@ -755,9 +776,13 @@ class Section( np.ndarray ):
             fig = plt.figure()
             ax = fig.add_subplot(111)
             if title: ax.set_title(title)
-            im = np.log(self - self.min() + 1)
+            im = np.log(self - np.nanmin(self) + 1)
+            
+            cmap = matplotlib.cm.Blues
+            #cmap.set_bad(color='red')
+            cmap.set_bad('red',0)
             try:
-                ax.imshow( im, cmap='Blues', origin='lower', vmin=im.min(), vmax=im.max() )
+                ax.imshow( im, cmap=cmap, origin='lower', vmin=np.nanmin(im), vmax=np.nanmax(im) )
             except:
                 print( 'im.shape', im.shape, self.shape )
                 exit()
@@ -775,11 +800,35 @@ class Section( np.ndarray ):
             mins = np.nanmin( self, axis=axis )
             stds = np.nanstd( self, axis=axis )
             means = np.nanmean( self, axis=axis )
+            medians = np.nanmedian( self, axis=axis )
+            mads = MAD( self, axis=axis )
             
-            ax.plot( maxs, '.', label='max' )
-            ax.errorbar( range(len(means)), means, yerr=stds, marker='.', label='mean&std' )
+            #ax.plot( maxs, '.', label='max' )
+            ax.plot( medians, '.', label='median' )
+            ax.fill_between( range(len(medians)), medians-mads, medians+mads, label='MAD', alpha=.5 )
+            ax.plot( means, '.', label='mean' )
+            ax.fill_between( range(len(means)), means-stds, means+stds, label='std', alpha=.5 )
             ax.plot( mins, '.', label='min' )
             
+            ax.legend()
+            fig.savefig( output, bbox_inches='tight', pad_inches=0 )
+
+    def save_spectrum( self, output, title ):
+        with Timer( 'saved ' + output ):
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.set_title(title)
+            
+            mean = np.nanmean( self )
+            std = np.nanstd( self )
+            median = np.nanmedian( self )
+            mad = MAD( self )
+            
+            x, y = self.get_binned_distribution()
+            ax.step( x, y, where='mid', 
+                    label='mean={mean:.4}\nmedian={median:.4}\nstd={std:.4}\nMAD={mad:.4}\nN={N}'.format(mean=mean, median=median, std=std, mad=mad,N=len(self.flatten())) 
+                    )
+            ax.set_yscale('log')
             ax.legend()
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
         
@@ -890,14 +939,15 @@ def simulate( args ):
     Plot.generate_plot( [args.output_table], xcolumn = 'dark_current', ycolumns = ['lambda'], yerrcolumns = ['lambda_err'], labels = ['lambda'], output_file = args.output_table + '.dark_current.pdf', figscale = [1,1], diagonal_line = True, legend_loc = 'lower right' )
         
 def read_header( args ):
-    listHDU = astropy.io.fits.open( args.input_file )
-    for i in range(len(listHDU)) if args.indices is None else args.indices:
-        print( text( 'HDU %s' % i, mode='B', color='g' ) )
-        for key, value in listHDU[i].header.items():
-            if key in args.exclude: continue
-            if key in args.include or len(args.include) is 0:
-                print( text( '%s' % key, color='g' ), '%s' % value, end=' ' )
-        print()
+    for file in glob( args.input_file ):
+        listHDU = astropy.io.fits.open( file )
+        for i in range(len(listHDU)) if args.indices is None else args.indices:
+            print( text( 'HDU %s' % i, mode='B', color='g' ) )
+            for key, value in listHDU[i].header.items():
+                if key in args.exclude: continue
+                if key in args.include or len(args.include) is 0:
+                    print( text( '%s' % key, color='g' ), '%s' % value, end=' ' )
+            print()
     return
 
 def monitor( args ):
@@ -956,53 +1006,70 @@ def analyse( args ):
     first = True
     for i, parts in parts_dict.items():
         image = Image( parts )
-        if 'plot_sides' in args:
-            image.save_sections( args.plot_sides.replace( '*', 'o{}*'.format(image.header['OHDU'] ) ) )
-            image.bias.save_projection( args.plot_sides.replace( '*', 'o{}proj1'.format(image.header['OHDU'] ) ), title='bias', axis=1 )
-            image.vbias.save_projection( args.plot_sides.replace( '*', 'o{}proj0'.format(image.header['OHDU'] ) ), title='vbias', axis=0 )
-        if 'debug' in args:
-            row_bias = image.vbias.get_rows_bias(np.nanmean)
-            row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
-            row_indices += np.nonzero( abs(row_bias - np.nanmean(row_bias)) < 1 )
-            print( 'indices', row_indices )
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
+        #if 'debug' in args:
+            #row_bias = image.vbias.get_rows_bias(np.nanmean)
+            #row_indices = np.nonzero( row_bias > np.nanmean(row_bias)+10*np.nanstd(row_bias) )
+            #row_indices += np.nonzero( abs(row_bias - np.nanmean(row_bias)) < 1 )
+            #print( 'indices', row_indices )
+            #fig = plt.figure()
+            #ax = fig.add_subplot(111)
             
-            for ind in row_indices:
-                ax.plot(image.vbias[:,ind], label=ind)
+            #for ind in row_indices:
+                #ax.plot(image.vbias[:,ind], label=ind)
 
-            #image.remove_outliers_from_vbias(pmin=1e-3)
-            #image.correct_rows( np.nanmean )
+            ##image.remove_outliers_from_vbias(pmin=1e-3)
+            ##image.correct_rows( np.nanmean )
 
-            #cbiasH = image.bias.get_binned_distribution()
-            #cvbiasH = image.vbias.get_binned_distribution()
-            #cdataH = image.data.get_binned_distribution()
+            ##cbiasH = image.bias.get_binned_distribution()
+            ##cvbiasH = image.vbias.get_binned_distribution()
+            ##cdataH = image.data.get_binned_distribution()
 
-            #ax.plot( np.nanmin(image.vbias,axis=0), '.', label = 'vbias min' )
-            #ax.plot( np.nanmean(image.vbias,axis=0), '.', label = 'vbias mean' )
-            #ax.plot( np.nanmax(image.vbias,axis=0), '.', label = 'vbias max' )
-            #ax.step(cbiasH[0], cbiasH[1], label='cbias')
-            #ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
-            #ax.step(cdataH[0], cdataH[1], label='cdata')
+            ##ax.plot( np.nanmin(image.vbias,axis=0), '.', label = 'vbias min' )
+            ##ax.plot( np.nanmean(image.vbias,axis=0), '.', label = 'vbias mean' )
+            ##ax.plot( np.nanmax(image.vbias,axis=0), '.', label = 'vbias max' )
+            ##ax.step(cbiasH[0], cbiasH[1], label='cbias')
+            ##ax.step(cvbiasH[0], cvbiasH[1], label='cvbias')
+            ##ax.step(cdataH[0], cdataH[1], label='cdata')
             
-            #ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
-            #ax.set_yscale('log')
-            ax.legend()
-            plt.show()
+            ##ax.set_xlim(( 2*np.min(biasH[0]), 4*np.max(biasH[0]) ))
+            ##ax.set_yscale('log')
+            #ax.legend()
+            #plt.show()
         
         if args.params_mode is 'median':
             params = image.get_params( mode=args.params_mode, remove_hits=False, half=True )
         else:
+            image.remove_outliers_from_vbias()
+            image.remove_outliers_from_vbias_second_pass()
             image.correct_rows( np.nanmean )
-            params = image.get_params( mode=args.params_mode, remove_hits=args.remove_hits )
+            if 'remove_hits' in args:
+                image.data = image.data.remove_hits(args.remove_hits[0], border=args.remove_hits[1])
+            if 'find_hits' in args:
+                print( 'bias.mean', np.nanstd(image.bias) )
+                outliers2nanPoissonNorm_1d( image.data, sigma = np.nanstd(image.bias), pmin = args.find_hits )
+            
+            params = image.get_params( mode=args.params_mode )
+
+        if 'plot_sides' in args:
+            image.save_sections( args.plot_sides.replace( '*', 'o{}*'.format(image.header['OHDU'] ) ) )
+            image.bias.save_projection( args.plot_sides.replace( '*', 'o{}proj1'.format(image.header['OHDU'] ) ), title='bias', axis=1 )
+            image.vbias.save_projection( args.plot_sides.replace( '*', 'o{}proj0'.format(image.header['OHDU'] ) ), title='vbias', axis=0 )
+
+        if 'plot_spectrum' in args:
+            for sec in ['dbias', 'vbias', 'bias', 'data']:
+                fname = args.plot_spectrum.replace( '*', 'o{}{}'.format(image.header['OHDU'], sec ) )
+                getattr(image, sec).save_spectrum( fname, title=sec )
         
+        if 'output_file' in args: open( args.output_file, 'w' )
         if first:
             columns = zip(*params)[0]
             max_length = max( map(len, columns) )
             print( ' '.join( [text('ohdu', mode='B')] + [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
+            if 'output_file' in args: open( args.output_file, 'a' ).write( '# ' + ', '.join( ['ohdu'] + [ key for key, v in params ] ) + '\n' )
             first = False
-        column_head = text('%4d' % image.header['OHDU'], mode='B' )
-        print( ' '.join( [column_head] + [ fmt(v).format(v) for keys, v in params ] ) )
+        column_head = '%4d' % image.header['OHDU']
+        print( ' '.join( [text( column_head, mode='B' )] + [ fmt(v).format(v) for keys, v in params ] ) )
+        if 'output_file' in args: open( args.output_file, 'a' ).write( ', '.join( [column_head] + [ fmt(v).format(v) for keys, v in params ] ) + '\n' )
 
 def main( args ):
 
@@ -1179,12 +1246,16 @@ def add_analyse_options( p, func ):
     p.add_argument('--extract', type=bool, default = True, help = 'set to False to skip the extraction' )
     p.add_argument('--image-energy-spectrum', type=str, default = 'image_energy_spectrum.png', help = 'set to "none" not to plot image energy spectrum' )
     p.add_argument('--params-mode', type=str, default = 'median', help = 'modes for parameter estimation' )
-    p.add_argument('--remove-hits', action='store_true', help = 'remove hits above 60ADU 3border' )
+    #p.add_argument('--remove-hits', action='store_true', help = 'remove hits above 60ADU 3border' )
+    p.add_argument('--remove-hits', nargs=2, type=float, default=argparse.SUPPRESS, help = 'remove hits above [0]ADU [1]border (example:60 3)' )
+    p.add_argument('--find-hits', type=float, default=argparse.SUPPRESS, help = 'find hits above ADU border (example:60 3)' )
     p.add_argument( '--exclude', nargs='*', type=int, default = None, help = 'ohdus not to be analysed' )
     p.add_argument( '--ohdu', nargs='*', type=int, default = None, help = 'ohdus to be analysed' )
     
     p.add_argument( '--plot-part', type=str, default=argparse.SUPPRESS, help = 'plot parts' )
     p.add_argument( '--plot-sides', type=str, default=argparse.SUPPRESS, help = 'plot sides' )
+    p.add_argument( '--plot-spectrum', type=str, default=argparse.SUPPRESS, help = 'plot spectrum' )
+    p.add_argument( '--output-file', type=str, default=argparse.SUPPRESS, help = 'csv output file' )
     p.set_defaults( func=func )
     return
 
