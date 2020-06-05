@@ -394,10 +394,11 @@ class Part:
         '''
         try:
             self.bias_width, self.has_right, self.width = {
-                (Part.ccd_width+550)*2: [550, True, (Part.ccd_width+550)],
+                (Part.ccd_width+550)*2: [450, True, (Part.ccd_width+550)],
                 (Part.ccd_width+150)*2: [150, True, (Part.ccd_width+150)],
-                (Part.ccd_width+550): [550, False, (Part.ccd_width+550)],
+                (Part.ccd_width+550): [450, False, (Part.ccd_width+550)],
                 (Part.ccd_width+150): [150, False, (Part.ccd_width+150)],
+                4570: [150, False, 4570],
                 }[width]
         except KeyError:
             print( 'image width {} is not recognized. Assuming bias width of 150 and no right side'.format(width) )

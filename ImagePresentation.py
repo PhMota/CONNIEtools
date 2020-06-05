@@ -27,43 +27,47 @@ with Timer('presentation'):
         func = lambda: subprocess.call( [cmd], shell=True )
         
         doc.set_func(func)
-        #doc.frame('Monitor Viewer Calculation', 
-                #'bash command',
-                #doc.code( cmd, 'Bash'),
-                #'parameters calculated directly on the raw file',
-                #doc.center( doc.table( file= name+'/median_params.csv', fontsize=5, spacing=6, divide=2 ) ),
-                #)
-            
-        scale = .7
-        figs = [ doc.figure( name+'/median_o3_{}.pdf'.format(key), scale=x*scale) for key, x in [['data',1], ['bias',1], ['vbias',.7], ['dbias',.1] ]
-        doc.frame('sections of the raw image', 
+        doc.frame('tool for image analysis', 
+                'sample call',
                 doc.code( cmd, 'Bash'),
-                doc.center( *figs )
-                #doc.figure( name+'/median_o3_data.pdf', scale=scale), 
-                #doc.figure( name+'/median_o3_bias.pdf', scale=scale ), 
-                #doc.figure( name+'/median_o3_vbias.pdf', scale=.7*scale ), 
-                #doc.figure( name+'/median_o3_dbias.pdf', scale=.1*scale ),
-                #)
+                'other functionalities',
+                doc.itemize( 'read header', 'simulate and get params', 'extract hits (next week: comparison with offical extraction)' ),
+                'run locally',
+                doc.code( '\n'.join(( 'git init', 'git pull https://github.com/PhMota/CONNIEtools')), 'Bash' )
+                )
+            
+        scale = .6
+        optsSection = [['data',1], ['bias',1], ['vbias',.7], ['dbias',.1] ]
+        figs = [ doc.figure( name+'/median_o3_{}.pdf'.format(key), scale=x*scale) for key, x in optsSection ]
+        doc.frame('1x1 raw sections', 
+                doc.code( cmd, 'Bash'),
+                doc.column(
+                    doc.center( *figs ),
+                    'vertical modulation is clearly visible',
+                    widths = [.7,-1]
+                )
                 )
         
-        scale = .3
+        scale = .25
+        optsProj = ['dataProj1', 'dataProj0', 'biasProj', 'vbiasProj']
+        figs = [ doc.figure( name+'/median_o3_{}.pdf'.format(key), scale=scale ) for key in optsProj ]
         doc.frame('projections of the raw image', 
                 doc.code( cmd, 'Bash'),
-                doc.center(
-                doc.figure( name+'/median_o3_biasProj.pdf', scale=scale ), 
-                doc.figure( name+'/median_o3_vbiasProj.pdf', scale=scale ),
+                doc.column(
+                    doc.center( *figs ),
+                    'vertical modulation, horizontal modulation, hot columns, (global median subtraction)\n\n\n\
+                    {\small $\sigma = $mean(MADs)\n\
+                    $g\lambda = $mean(med-med)}',
+                    widths = [.6,-1]
                 ))
 
         scale = .3
+        optsSpectrum = ['data', 'bias', 'vbias', 'dbias']
+        figs = [ doc.figure( name+'/median_o3_{}_spectrum.pdf'.format(key), scale=scale ) for key in optsSpectrum ]
         doc.frame('spectra of the raw image', 
                 doc.code( cmd, 'Bash'),
                 'distributions are crowded with outliers',
-                doc.center(
-                doc.figure( name+'/median_o3_data_spectrum.pdf', scale=scale ), 
-                doc.figure( name+'/median_o3_bias_spectrum.pdf', scale=scale ), 
-                doc.figure( name+'/median_o3_vbias_spectrum.pdf', scale=scale ), 
-                doc.figure( name+'/median_o3_dbias_spectrum.pdf', scale=scale ), 
-                ))
+                doc.center( *figs ))
         
         name = 'mean'
         cmd = 'python Image.py analyse {folder}/{name} "{fname}" --ohdu 3 --params-mode mean --plot-sections --plot-spectrum'\
@@ -79,34 +83,37 @@ with Timer('presentation'):
                 'parameters',
                 doc.center( doc.table( file=name+'/mean_params.csv', fontsize=5, spacing=6, divide=2 ) ), 
                 )
-            
-        scale = .7
+
+        scale = .6
+        figs = [ doc.figure( name+'/mean_o3_{}.pdf'.format(key), scale=x*scale) for key, x in optsSection ]
         doc.frame('sides with line and col corrections', 
                 doc.code( cmd, 'Bash'),
-                doc.center(
-                doc.figure(name+'/mean_o3_data.pdf', scale=scale ), 
-                doc.figure(name+'/mean_o3_bias.pdf', scale=scale ), 
-                doc.figure(name+'/mean_o3_vbias.pdf', scale=.7*scale ), 
-                doc.figure(name+'/mean_o3_dbias.pdf', scale=.1*scale ),
-                ))
+                doc.center( *figs ))
+                #doc.figure(name+'/mean_o3_data.pdf', scale=scale ), 
+                #doc.figure(name+'/mean_o3_bias.pdf', scale=scale ), 
+                #doc.figure(name+'/mean_o3_vbias.pdf', scale=.7*scale ), 
+                #doc.figure(name+'/mean_o3_dbias.pdf', scale=.1*scale ),
+                #))
         
         scale = .3
+        figs = [ doc.figure( name+'/mean_o3_{}.pdf'.format(key), scale=scale ) for key in optsProj ]        
         doc.frame('projections with line and col corrections', 
                 doc.code( cmd, 'Bash'),
-                doc.center(
-                doc.figure(name+'/mean_o3_biasProj.pdf', scale=scale ), 
-                doc.figure(name+'/mean_o3_vbiasProj.pdf', scale=scale ),
-                ))
+                doc.center( *figs ))
+                #doc.figure(name+'/mean_o3_biasProj.pdf', scale=scale ), 
+                #doc.figure(name+'/mean_o3_vbiasProj.pdf', scale=scale ),
+                #))
         
         scale = .3
+        figs = [ doc.figure( name+'/mean_o3_{}_spectrum.pdf'.format(key), scale=scale ) for key in optsSpectrum ]
         doc.frame('spectra with line and col corrections', 
                 doc.code( cmd, 'Bash'),
-                doc.center(
-                doc.figure(name+'/mean_o3_data_spectrum.pdf', scale=scale ), 
-                doc.figure(name+'/mean_o3_bias_spectrum.pdf', scale=scale ), 
-                doc.figure(name+'/mean_o3_vbias_spectrum.pdf', scale=scale ), 
-                doc.figure(name+'/mean_o3_dbias_spectrum.pdf', scale=scale ), 
-                ))
+                doc.center( *figs ) )
+                #doc.figure(name+'/mean_o3_data_spectrum.pdf', scale=scale ), 
+                #doc.figure(name+'/mean_o3_bias_spectrum.pdf', scale=scale ), 
+                #doc.figure(name+'/mean_o3_vbias_spectrum.pdf', scale=scale ), 
+                #doc.figure(name+'/mean_o3_dbias_spectrum.pdf', scale=scale ), 
+                #))
 
 
         name = 'mean'

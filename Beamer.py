@@ -140,11 +140,12 @@ class Beamer:
         s += r'\end{lstlisting}' + B
         return s
     
-    def column( self, *args ):
+    def column( self, *args, **kwargs ):
         s = ''
+        widths = kwargs['widths']
         s += r'\begin{columns}'+B
-        for arg in args:
-            s += r'\column{%s\paperwidth}'%(1./len(args))+B
+        for arg, width in zip(args, widths):
+            s += r'\column{%s\paperwidth}'%( width if width>0 else -sum( widths ) )+B
             s += arg+B
         s += r'\end{columns}'+B
         return s
@@ -167,6 +168,13 @@ class Beamer:
             if not os.path.exists(fname):
                 print('file not generated', fname)
                 exit()
+        
+    def itemize( self, *items ):
+        s = r'\begin{itemize}' + B
+        for item in items:
+            s += '\item ' + item + B
+        s += r'\end{itemize}' + B
+        return s
         
     
     def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None ):
