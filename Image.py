@@ -988,13 +988,13 @@ def simulate( args ):
             print( 'values', args.charge_gain, args.readout_noise, args.dark_current )
             with Timer('simulate'):
                 sim = Simulation.simulate_events( args )
-                imageHDU = sim.generate_image()
+                imageHDU = sim.generate_image( type=eval(args.image_type) )
             with Timer('get params'):
                 part = Part( imageHDU ).correct_lines()
                 image = Image( [part] ).correct_cols()
                 params = image.get_params( mode=args.params_mode, factor=args.rebin[0], remove_hits=args.remove_hits )
             if count == 1: image.save_pdf( args.output_table + '.pdf' )
-            print( 'params', params['g'], params['sigma'], params['lambda'] )
+            print( 'params', params )
             for param in params:
                 if param is None: continue
             table = vars(args)
@@ -1185,7 +1185,7 @@ def tuple_of( type_ ):
 
 def add_simulate_options( p, func ):
     p.add_argument('number_of_images', type=int, help = 'charge gain range' )
-    p.add_argument('--params-mode', type=str, default = 'median&MAD', help = 'modes for parameter estimation' )
+    p.add_argument('--params-mode', type=str, default = 'median', help = 'modes for parameter estimation' )
     p.add_argument('--output-table', type=str, default = 'analysis.csv', help = 'csv output file' )
     p.add_argument('--charge-gain-range', type=tuple_of(float), default = '\"[5,9]\"', help = 'charge gain range' )
     p.add_argument('--readout-noise-range', type=tuple_of(float), default = '\"[11,14]\"', help = 'readout noise range' )
@@ -1193,7 +1193,7 @@ def add_simulate_options( p, func ):
     p.add_argument('--rebin', type=tuple_of(int), default = '\"[1,1]\"', help = 'rebin' )
     p.add_argument('--image-mode', type=str, default = 'none', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5' )
     p.add_argument('--remove-hits', action='store_true', help = 'remove hits above 60ADU 3border' )
-    p.add_argument('--number-of-charges', type=int, default = '4000', help = 'number of charges to be randomly generated' )
+    p.add_argument('--number-of-charges', type=int, default = '0', help = 'number of charges to be randomly generated' )
     p.add_argument('--charge-range', type=tuple_of(int), default = '\"[5,200]\"', help = 'range into which to randomly generate charges' )
     p.add_argument('--number-of-Cu-charges',
                         type=int,
@@ -1234,6 +1234,7 @@ def add_simulate_options( p, func ):
                         default = Simulation.default_horizontal_modulation_function,
                         help = 'function to modulate the horizontal axis' 
                         )
+    p.add_argument('--image-type', type=str, default='int', help = 'iamge type' )
     p.set_defaults( func=func )
     
     

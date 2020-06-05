@@ -205,10 +205,10 @@ with Timer('presentation'):
                     )
             )
                     #thr  border noise dc
-        thislist = [[60.0,   3.0, 14.4, 2.41, 15.39**2 - 14.5**2,  ], 
-                    [80.0,   2.0, 14.4, 2.42, 15.39**2 - 14.5**2,  ],
-                    [150.0,  0.0, 14.4, 2.72, 15.6**2 - 14.5**2,  ], 
-                    [5000.0, 0.0, 14.4, 3.42, 16.3**2 - 14.5**2,  ]]
+        thislist = [[60.0,   3.0, 14.4, 2.41, 15.39**2 - 14.5**2, 'values are remarkably stable even though' ], 
+                    [80.0,   2.0, 14.4, 2.42, 15.39**2 - 14.5**2, '' ],
+                    [150.0,  0.0, 14.4, 2.72, 15.6**2 - 14.5**2, '' ], 
+                    [5000.0, 0.0, 14.4, 3.42, 16.3**2 - 14.5**2, '' ]]
         for threshold, border, noise, dc, dc2, text in thislist:
             name = 'mean'
             cmd = 'python Image.py analyse {folder}/{name} "{fname}" --ohdu 3 --params-mode mean --remove-hits {threshold} {border} --plot-spectrum'\
@@ -220,14 +220,14 @@ with Timer('presentation'):
                             
             scale = .3
             doc.frame(
-                '$E<{:.0f}$ADU (+{:.0f} border) spectra'.format(threshold,border), 
+                '$E<{:.0f}$ADU (+{:.0f}) spectra'.format(threshold,border), 
                 doc.code( cmd, 'Bash'),
                 doc.column(
                     doc.center( *figsSpectrum('mean', pre) ),
                     'estimations\n\n\
                     $$\sigma={noise}$$\n\
                     $$g\lambda={dc}$$\n\
-                    $$g^2\lambda={dc2}$$\n\
+                    $$g^2\lambda={dc2:.2f}$$\n\
                     $$g={g:.2f}$$\n\
                     $$\lambda={lamb:.2f}$$'.format(noise=noise, dc=dc, dc2=dc2, g=dc2/dc, lamb=dc**2/dc2)
                     +

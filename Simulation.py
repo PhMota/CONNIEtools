@@ -71,7 +71,7 @@ class Simulation( recarray ):
             return self.diffusion_function( self.z )
         return self.diffusion_function( entry.z )
         
-    def generate_image( self, output = None, pdf_output = None, verbose=False ):
+    def generate_image( self, output = None, pdf_output = None, verbose=False, type=int ):
         if self.count > 1:
             sigma_per_event = self.get_sigma()
             charge_per_event = self.get_charge()
@@ -153,11 +153,11 @@ class Simulation( recarray ):
         if pdf_output:
             self.save_pdf( pdf_output, image )
         
-        fits = self.make_fits( image )
+        fits = self.make_fits( image, type=type )
         if output: self.save_fits( fits, output )
         return fits
 
-    def make_fits( self, image ):
+    def make_fits( self, image, type=int ):
         with Timer('generated fits'):
             header = astropy.io.fits.Header()
             header['OHDU'] = 0
@@ -169,7 +169,7 @@ class Simulation( recarray ):
             header['dc'] = self.dark_current
             header['OHDU'] = -1
 
-            fits_image = astropy.io.fits.ImageHDU( image.astype(int), header=header )
+            fits_image = astropy.io.fits.ImageHDU( image.astype(type), header=header )
             return fits_image
     
     def save_fits( self, fits_image, output ):
@@ -229,7 +229,7 @@ def add_image_options( p, func ):
 
 def image( args ):
     sim = simulate_events( args )
-    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf_output, verbose = 'verbose' in args )
+    return sim.generate_image( output=args.output_fits, pdf_output=args.pdf_output, verbose = 'verbose' in args, type = eval(args.image_type) )
 
 def simulate_events( args ):
     xyshape = args.xyshape
@@ -285,7 +285,7 @@ def simulate_events( args ):
     if len(array_of_depths) > 0:
         data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] )
         
-    if 'sim' in args:
+    if 'sim' in args and 'output_fits' in args and not args.output_fits is None:
         output = args.output_fits + '.csv'
         header = str(vars(args))
         print( 'header', header )
@@ -312,7 +312,7 @@ def generate_folder( args ):
         args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
         args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:.2f}DC{dark_current:.4f}'.format(**vars(args)) )
         sim = simulate_events( args )
-        sim.generate_image( output = args.output_file )
+        sim.generate_image( output = args.output_file, type = eval(args.image_type) )
     return
 
 def add_general_options( p ):
@@ -368,6 +368,7 @@ def add_general_options( p ):
     p.add_argument('--default-vertical-modulation', type=str, default=argparse.SUPPRESS, help = 'set vertical modulation to "{}"'.format(default_vertical_modulation_function) )
     p.add_argument('--default-horizontal-modulation', type=str, default=argparse.SUPPRESS, help = 'set horizontal modulation to "{}"'.format(default_horizontal_modulation_function) )
     p.add_argument('--default-modulation', type=str, default=argparse.SUPPRESS, help = 'set modulations to "{}" and "{}"'.format(default_horizontal_modulation_function, default_vertical_modulation_function) )
+    p.add_argument('--image-type', type=str, default='int', help = 'iamge type' ) 
 
 def postprocess( args ):
     if args.image_mode is '1':
