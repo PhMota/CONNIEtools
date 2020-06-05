@@ -892,8 +892,13 @@ class Section( np.ndarray ):
             mad = MAD( self )
             
             x, y = self.get_binned_distribution( binsize=binsize )
+            halfmax = np.max(y)/2.
+            xwidth = x[ abs(y - halfmax) < .1*np.max(y) ]
+            print_var( 'xwidth', locals() )
+            w = abs( np.mean( xwidth[ xwidth < median ] ) - np.mean( xwidth[ xwidth > median ] ) )
+            w2 = w = abs( np.mean( xwidth[ xwidth < median ] ) + np.mean( xwidth[ xwidth > median ] ) )/2.
             ax.step( x, y, where='mid', 
-                    label='mean={mean:.4}\nmedian={median:.4}\nstd={std:.4}\nMAD={mad:.4}\nN={N}'.format(mean=mean, median=median, std=std, mad=mad,N=len(self.flatten())) 
+                    label='mean={mean:.4}\nmedian={median:.4}\nMHM={mhm:.4}\nstd={std:.4}\nMAD={mad:.4}\nFWHM={fwhm:.4}\nN={N}'.format(mean=mean, median=median, std=std, mad=mad,N=len(self.flatten()), fwhm = w/2.355, mhm=w2) 
                     )
             ax.set_yscale('log')
             ax.legend()
