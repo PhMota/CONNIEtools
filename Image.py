@@ -306,6 +306,21 @@ def label_clusters( condition_image ):
     s33 = [[1,1,1], [1,1,1], [1,1,1]]
     return scipy.ndimage.label( condition_image, structure=s33 )[0]
 
+def blockshaped(arr, nrows, ncols):
+    """
+    Return an array of shape (n, nrows, ncols) where
+    n * nrows * ncols = arr.size
+
+    If arr is a 2D array, the returned array should look like n subblocks with
+    each subblock preserving the "physical" layout of arr.
+    """
+    h, w = arr.shape
+    assert h % nrows == 0, "{} rows is not evenly divisble by {}".format(h, nrows)
+    assert w % ncols == 0, "{} cols is not evenly divisble by {}".format(w, ncols)
+    return (arr.reshape(h//nrows, nrows, -1, ncols)
+               .swapaxes(1,2)
+               .reshape(-1, nrows, ncols))
+
 def mean_err( x ):
     return np.nanmean(x), np.nanstd(x)/np.sqrt(len(x))
 
@@ -326,7 +341,7 @@ class Part:
             #self.rebin = imageHDU.header['rebin']
             #self.vbias_height = imageHDU.header['biasH']
         
-        self.data = Section( imageHDU.data[ None:-1, None:(self.width-self.bias_width) ] )
+        self.data = Section( imageHDU.data[ None:-1, 10:(self.width-self.bias_width) ] )
         self.bias = Section( imageHDU.data[ None:-1, (self.width-self.bias_width): self.width ] )
         
         if self.has_right:
@@ -340,11 +355,11 @@ class Part:
         
     def correct_lines( self, func = np.nanmedian, smoothening_length = 0 ):
         if func is None:
-            self.data -= self.bias.get_global_bias( func ) 
-            self.bias -= self.bias.get_global_bias( func )
+            self.data -= self.bias.get_global_bias( np.nanmedian ) 
+            self.bias -= self.bias.get_global_bias( np.nanmedian )
             if self.has_right:
-                self.dataR -= self.biasR.get_global_bias( func ) 
-                self.biasR -= self.biasR.get_global_bias( func )
+                self.dataR -= self.biasR.get_global_bias( np.nanmedian ) 
+                self.biasR -= self.biasR.get_global_bias( np.nanmedian )
         else:
             lines_correction = self.bias.get_lines_bias( func, smoothening_length )
             self.data -= lines_correction
@@ -433,21 +448,21 @@ class Image:
         if self.has_right:
             self.vbiasR = Section(outliers2nanp( self.vbiasR, axis=1, pmin=pmin ))
         
-    def correct_rows( self, func = np.nanmedian, smoothening_length = 0 ):
+    def correct_cols( self, func = np.nanmedian, smoothening_length = 0 ):
         if not func is None:
-            data_rows_correction = self.vbias.get_rows_bias( func, smoothening_length )
-            self.data -= data_rows_correction
-            self.vbias -= data_rows_correction
-            bias_rows_correction = self.dbias.get_rows_bias( func, smoothening_length )
-            self.bias -= bias_rows_correction
-            self.dbias -= bias_rows_correction
+            data_cols_correction = self.vbias.get_cols_bias( func, smoothening_length )
+            self.data -= data_cols_correction
+            self.vbias -= data_cols_correction
+            bias_cols_correction = self.dbias.get_cols_bias( func, smoothening_length )
+            self.bias -= bias_cols_correction
+            self.dbias -= bias_cols_correction
             if self.has_right:
-                data_rows_correctionR = self.vbiasR.get_rows_bias( func, smoothening_length )
-                self.dataR -= data_rows_correctionR
-                self.vbiasR -= data_rows_correctionR
-                bias_rows_correctionR = self.dbiasR.get_rows_bias( func, smoothening_length )
-                self.biasR -= bias_rows_correctionR
-                self.dbiasR -= bias_rows_correctionR
+                data_cols_correctionR = self.vbiasR.get_cols_bias( func, smoothening_length )
+                self.dataR -= data_cols_correctionR
+                self.vbiasR -= data_cols_correctionR
+                bias_cols_correctionR = self.dbiasR.get_cols_bias( func, smoothening_length )
+                self.biasR -= bias_cols_correctionR
+                self.dbiasR -= bias_cols_correctionR
         return self
     
     def get_params( self, mode = None, half = False, gain = 1, remove_hits = False, right_side = False, **kwargs ):
@@ -647,16 +662,16 @@ class Section( np.ndarray ):
 
     def mean_of_lines( self ): return np.nanmedian(self, axis=1)
     def mean_of_halflines( self ): return np.nanmedian(self.get_half(), axis=1)
-    def mean_of_rows( self ): return np.nanmedian(self, axis=1)
+    def mean_of_cols( self ): return np.nanmedian(self, axis=1)
 
     def std_of_lines( self ): return np.nanstd(self, axis=1)
     def std_of_halflines( self ): return np.nanstd(self.get_half(), axis=1)
-    def std_of_rows( self ): return np.nanstd(self, axis=1)
+    def std_of_cols( self ): return np.nanstd(self, axis=1)
 
     def convolve( self, function=lambda x: np.nansum(x), footprint=None, size=(7,7), origin=0 ):
         image = scipy.ndimage.filters.generic_filter(self, function, size=size, footprint=footprint, output=None, mode='constant', cval=np.nan, origin=origin, extra_arguments=(), extra_keywords=None)
         return Section(image)
-    
+            
     def median( self, axis = None ):
         return np.nanmedian( self, axis=axis )
 
@@ -672,11 +687,11 @@ class Section( np.ndarray ):
             lines_bias = scipy.ndimage.filters.uniform_filter1d( lines_bias, size = smoothening_length, mode='nearest' )
         return lines_bias[:,None]
     
-    def get_rows_bias( self, func = np.nanmedian, smoothening_length = 0 ):
-        rows_bias = func( self, axis = 0 )
+    def get_cols_bias( self, func = np.nanmedian, smoothening_length = 0 ):
+        cols_bias = func( self, axis = 0 )
         if smoothening_length > 2:
-            rows_bias = scipy.ndimage.filters.uniform_filter1d( rows_bias, size = smoothening_length, mode='nearest' )
-        return rows_bias[None,:]
+            cols_bias = scipy.ndimage.filters.uniform_filter1d( cols_bias, size = smoothening_length, mode='nearest' )
+        return cols_bias[None,:]
             
     def get_binned_distribution( self, binsize = 1):
         bins = np.arange( np.nanmin(self), np.nanmax(self), binsize)
@@ -824,7 +839,7 @@ class Section( np.ndarray ):
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
         return
 
-    def save_projection( self, output, title, axis ):
+    def save_projection( self, output, title, axis, no_max=False, no_mean=False, no_min=False, do_regress=False ):
         if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
@@ -837,17 +852,33 @@ class Section( np.ndarray ):
             medians = np.nanmedian( self, axis=axis )
             mads = MAD( self, axis=axis )
             
-            #ax.plot( maxs, '.', label='max' )
+            if not no_max:
+                ax.plot( maxs, '.', label='max' )
             ax.plot( medians, '.', label='median' )
             ax.fill_between( range(len(medians)), medians-mads, medians+mads, label='MAD', alpha=.5 )
-            ax.plot( means, '.', label='mean' )
-            ax.fill_between( range(len(means)), means-stds, means+stds, label='std', alpha=.5 )
-            ax.plot( mins, '.', label='min' )
-            
+            if not no_mean:
+                ax.plot( means, '.', label='mean' )
+                ax.fill_between( range(len(means)), means-stds, means+stds, label='std', alpha=.5 )
+            if not no_min:
+                ax.plot( mins, '.', label='min' )
+                
+            if do_regress:
+                x = np.array(range(len(medians)))
+                y = medians
+                mask = ~np.isnan(y)
+                a, b = scipy.stats.linregress(x[mask],y[mask])[:2]
+                ax.plot( x[mask], a*x[mask]+b, '-', label='median\na={:.4e}\nb={:.4e}'.format(a, b) )
+                x = np.array(range(len(mads)))
+                y = mads
+                mask = ~np.isnan(y)
+                a, b = scipy.stats.linregress(x[mask],y[mask])[:2]
+                ax.plot( x[mask], a*x[mask]+b, '-', label='mad\na={:.4e}\nb={:.4e}'.format(a, b) )
+                
+            ax.grid()
             ax.legend()
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
 
-    def save_spectrum( self, output, title ):
+    def save_spectrum( self, output, title, binsize=1 ):
         if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
@@ -859,7 +890,7 @@ class Section( np.ndarray ):
             median = np.nanmedian( self )
             mad = MAD( self )
             
-            x, y = self.get_binned_distribution()
+            x, y = self.get_binned_distribution( binsize=binsize )
             ax.step( x, y, where='mid', 
                     label='mean={mean:.4}\nmedian={median:.4}\nstd={std:.4}\nMAD={mad:.4}\nN={N}'.format(mean=mean, median=median, std=std, mad=mad,N=len(self.flatten())) 
                     )
@@ -927,7 +958,7 @@ def display( data, mode, delta = None, labels = None, nbins = None, log = False 
     legend = ax.legend( fancybox=True, framealpha=0, bbox_to_anchor=(1.,1.), loc='upper right' )
     plt.show()
 
-def simulate_and_test( correct_lines_by_bias_median, correct_rows_by_bias_median, smoothening_length, mean_function, std_function, median_diff_function, var_diff_function, output_file ):
+def simulate_and_test( correct_lines_by_bias_median, correct_cols_by_bias_median, smoothening_length, mean_function, std_function, median_diff_function, var_diff_function, output_file ):
     pass
 
 def simulate( args ):
@@ -954,7 +985,7 @@ def simulate( args ):
                 imageHDU = sim.generate_image()
             with Timer('get params'):
                 part = Part( imageHDU ).correct_lines()
-                image = Image( [part] ).correct_rows()
+                image = Image( [part] ).correct_cols()
                 params = image.get_params( mode=args.params_mode, factor=args.rebin[0], remove_hits=args.remove_hits )
             if count == 1: image.save_pdf( args.output_table + '.pdf' )
             print( 'params', params['g'], params['sigma'], params['lambda'] )
@@ -1013,6 +1044,12 @@ def add_analyse_options( p ):
     p.add_argument( '--plot-sections', action="store_true", default=argparse.SUPPRESS, help = 'plot sections' )
     p.add_argument( '--plot-spectrum', action="store_true", default=argparse.SUPPRESS, help = 'plot spectrum' )
     p.add_argument( '--plot-convolution-spectrum', action="store_true", default=argparse.SUPPRESS, help = 'plot convolution spectrum' )
+    p.add_argument( '--convolution-function', type=str, default=argparse.SUPPRESS, help = 'plot convolution function' )
+    
+    p.add_argument( '--plot-block-spectrum', action="store_true", default=argparse.SUPPRESS, help = 'plot block spectrum' )
+    p.add_argument( '--block-function', type=str, default=argparse.SUPPRESS, help = 'function applied to each block' )
+
+    p.add_argument( '--plot-convolutionfft-spectrum', action="store_true", default=argparse.SUPPRESS, help = 'plot convolution spectrum' )
 
     #p.add_argument('--extract', nargs=2, default=argparse.SUPPRESS, help = 'set to False to skip the extraction' )
     
@@ -1039,7 +1076,7 @@ def analyse( args ):
                 Section(HDU.data).save_pdf( '{0}{1}.pdf'.format(args.name, title) )
             part = Part(HDU)
             if args.params_mode is 'median':
-                pass
+                part.correct_lines(None)
             else:
                 part.remove_outliers_from_bias()
                 part.correct_lines(np.nanmean)
@@ -1055,10 +1092,18 @@ def analyse( args ):
         else:
             image.remove_outliers_from_vbias()
             image.remove_outliers_from_vbias_second_pass()
-            image.correct_rows( np.nanmean )
+            image.correct_cols( np.nanmean )
         if 'remove_hits' in args:
             args.name += '_e{0}b{border}'.format( args.remove_hits[0], border=args.remove_hits[1] )
             image.data = image.data.remove_hits( args.remove_hits[0], border=args.remove_hits[1])
+
+        #if 'remove_norm_like' in args:
+            #for sec in ['data']:
+                #size = (5,5)
+                #def center( x ):
+                    #y = x.reshape( size )
+                    
+                #mean = getattr( image, sec ).convolve( function=center, size=size )
 
         params = image.get_params( mode=args.params_mode )
         if 'find_hits' in args:
@@ -1069,8 +1114,10 @@ def analyse( args ):
 
         if 'plot_sections' in args:
             image.save_sections( r'{}_o{}'.format( args.name, image.header['OHDU'] ) )
-            image.bias.save_projection( r'{}_o{}_biasProj'.format( args.name, image.header['OHDU'] ), title='bias', axis=1 )
-            image.vbias.save_projection( r'{}_o{}_vbiasProj'.format( args.name, image.header['OHDU'] ), title='vbias', axis=0 )
+            image.bias.save_projection( r'{}_o{}_biasProj'.format( args.name, image.header['OHDU'] ), title='bias', axis=1, no_max=True, no_mean = True, no_min = True, do_regress=True )
+            image.vbias.save_projection( r'{}_o{}_vbiasProj'.format( args.name, image.header['OHDU'] ), title='vbias', axis=0, no_max=True, no_mean = True, no_min = True, do_regress=True )
+            image.data.save_projection( r'{}_o{}_dataProj1'.format( args.name, image.header['OHDU'] ), title='data', axis=1, no_max=True, no_mean = True, no_min = True, do_regress=True )
+            image.data.save_projection( r'{}_o{}_dataProj0'.format( args.name, image.header['OHDU'] ), title='data', axis=0, no_max=True, no_mean = True, no_min = True, do_regress=True )
 
         if 'plot_spectrum' in args:
             for sec in ['dbias', 'vbias', 'bias', 'data']:
@@ -1078,12 +1125,38 @@ def analyse( args ):
                 getattr(image, sec).save_spectrum( '{}_{}'.format(args.name, title ), title=title )
 
         if 'plot_convolution_spectrum' in args:
+            func = np.nansum
+            if 'convolution_function' in args:
+                func = eval( 'lambda x:' + args.convolution_function )
             for sec in ['dbias', 'vbias', 'bias', 'data']:
                 for length in [5,10]:
                     title = r'o{ohdu}_{sec}_convolution{length}'.format( ohdu=image.header['OHDU'], sec=sec, length=length )
-                    getattr( image, sec ).convolve( function=np.nanstd, size=(10,10) )\
+                    getattr( image, sec ).convolve( function=func, size=(length,length) )\
                         .save_spectrum( '{}_{}'.format(args.name, title ), title=title )
-            
+
+        if 'plot_block_spectrum' in args:
+            func = np.nansum
+            if 'block_function' in args:
+                func = eval( 'lambda x:' + args.block_function )
+            for sec in ['dbias', 'vbias', 'bias', 'data']:
+                for length in [5,10]:
+                    title = r'o{ohdu}_{sec}_block{length}'.format( ohdu=image.header['OHDU'], sec=sec, length=length )
+                    section = getattr( image, sec )
+                    h, w = section.shape
+                    section = section[ :-(h%length), :( -(w%length) if (w%length)>0 else None) ]
+                    blocks = blockshaped( section, length, length )
+                    ret = [ func(block) for block in blocks ]
+                    Section(ret).save_spectrum( '{}_{}'.format(args.name, title ), title=title, binsize=.01 )
+
+        if 'plot_dark_current_evolution' in args:
+            func = np.nanmedian
+            for sec in ['dbias', 'vbias', 'bias', 'data']:
+                for length in [5,10]:
+                    title = r'o{ohdu}_{sec}_block{length}'.format( ohdu=image.header['OHDU'], sec=sec, length=length )
+                    section = getattr( image, sec )
+                    medians = func( section, axis = 1 )
+                    Section(ret).save_spectrum( '{}_{}'.format(args.name, title ), title=title, binsize=.01 )
+                    
         fmt = lambda x: {int:'{:4}', float:'{: .3e}', Section:'{: .3e}'}[type(x)]
         sfmt = lambda x: {int:'{:4.4}', float:'{:10.10}', Section:'{:10.10}'}[type(x)]
         
