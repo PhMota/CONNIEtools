@@ -140,7 +140,7 @@ with Timer('presentation'):
                     #doc.center( doc.table( file=name+'/mean_params.csv', fontsize=5, spacing=6, divide=2 ) ), 
                     #)
 
-            doc.frame('sides with line and col corrections', 
+            doc.frame('sections with line and col corrections', 
                     doc.code( cmd, 'Bash'),
                     doc.column(
                         doc.center( *figsSection('mean', 'mean') ),
@@ -160,7 +160,7 @@ with Timer('presentation'):
                     doc.code( cmd, 'Bash'),
                     doc.column( 
                         doc.center( *figsSpectrum('mean','mean') ),
-                        'this proceedure over the overscans succesfully removes their outliers allowing us to use redundant estimators to control the estimations',
+                        'this proceedure over the overscans succesfully removes their outliers allowing for the use of redundant estimators to control the estimations',
                         widths = [.7,-1]
                         )
                     )
@@ -181,7 +181,7 @@ with Timer('presentation'):
                     doc.code( cmd, 'Bash'),
                     doc.column(
                         doc.center( *figsSection('mean', pre) ),
-                        'in the data region we use a cluster removal algorithm and experiment with border of 3 pixels following the offical extractor approach',
+                        'in the data region, a cluster removal algorithm is applied',
                         widths = [.6,-1]
                         )
             )
@@ -205,10 +205,10 @@ with Timer('presentation'):
                     )
             )
                     #thr  border noise dc
-        thislist = [[60.0,   3.0, 14.4, 2.41, 15.39**2 - 14.5**2, 'values are remarkably stable even though' ], 
-                    [80.0,   2.0, 14.4, 2.42, 15.39**2 - 14.5**2, '' ],
-                    [150.0,  0.0, 14.4, 2.72, 15.6**2 - 14.5**2, '' ], 
-                    [5000.0, 0.0, 14.4, 3.42, 16.3**2 - 14.5**2, '' ]]
+        thislist = [[60.0,   3.0, 14.4, 2.41, 15.39**2 - 14.5**2, 'values are remarkably stable even though the value for the gain is higher than $\sim 7$ expected from the independent Cu estimation' ], 
+                    [80.0,   2.0, 14.4, 2.42, 15.39**2 - 14.5**2, 'values are remarkably stable, although stable does not mean correct' ],
+                    [150.0,  0.0, 14.4, 2.72, 15.6**2 - 14.5**2, 'values are remarkably stable' ], 
+                    [5000.0, 0.0, 14.4, 3.42, 16.3**2 - 14.5**2, 'sanity check: yes, it breaks! yupi' ]]
         for threshold, border, noise, dc, dc2, text in thislist:
             name = 'mean'
             cmd = 'python Image.py analyse {folder}/{name} "{fname}" --ohdu 3 --params-mode mean --remove-hits {threshold} {border} --plot-spectrum'\
@@ -276,12 +276,20 @@ with Timer('presentation'):
             g2l10 = 15.2**2-sig10**2
 
             blocks = [
-                ['blockmean', 'np.nanmean(x)', 'mean', 5, '$$g\lambda={}$$'.format(gl5)], 
-                ['blockstd', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))', 'std', 5, 
-                 '$$\sigma={}$$\n$$g^2\lambda={:.0f}$$\n$$g={:.2f}$$\n$$\lambda={:.2f}$$'.format(sig5, g2l5, g2l5/gl5, gl5**2/g2l5 ) ],
-                ['blockmean', 'np.nanmean(x)', 'mean', 10,  '$$g\lambda={}$$'.format(gl10)],
+                ['blockmean', 'np.nanmean(x)', 'mean', 5, 
+                 'the previous estimation was global and relies on the homogeneity of the estimation throught the CCD. This plots show the distribution of the mean estimation for partitions of 5x5 of the image' + '$$g\lambda={}$$'.format(gl5)
+                 ], 
+                ['blockstd', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))', 'std', 5,
+                 'distribution of the stds' +
+                 '$$\sigma={}$$\n$$g^2\lambda={:.0f}$$\n$$g={:.2f}$$\n$$\lambda={:.2f}$$'.format(sig5, g2l5, g2l5/gl5, gl5**2/g2l5 ) +
+                 'this result can be estimated with properly calculated errorbars!\n {\\tiny dramatic pause for appreciation}'
+                 ],
+                ['blockmean', 'np.nanmean(x)', 'mean', 10, 
+                 'sanity check, repeat the calculations for 10x10 partitions' + '$$g\lambda={}$$'.format(gl10)],
                 ['blockstd', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))', 'std', 10, 
-                 '$$\sigma={}$$\n$$g^2\lambda={:.0f}$$\n$$g={:.2f}$$\n$$\lambda={:.2f}$$'.format(sig10, g2l10, g2l10/gl10, gl10**2/g2l10 )],
+                 '$$\sigma={}$$\n$$g^2\lambda={:.0f}$$\n$$g={:.2f}$$\n$$\lambda={:.2f}$$'.format(sig10, g2l10, g2l10/gl10, gl10**2/g2l10 )
+                 + 'there is a dependence on the size of the partition'
+                 ],
                     ]
             for _name_, _func_, funclabel, D, text in blocks:
                 cmd = 'python Image.py analyse {folder}/{name} "{fname}" --ohdu 3 --params-mode mean --remove-hits {threshold} {border} --plot-block-spectrum --block-function "{_func_}"'\
@@ -313,8 +321,8 @@ with Timer('presentation'):
                 doc.code( cmd, 'Bash'),
                 doc.column(
                     doc.center( *figsProj('dcevo', pre ) ),
-                    '',
-                    widths = [.7,1]))
+                    'the obvious question you might be making me now is: can I plot the DC for time?\n\\\\[1cm] YES!\nthere is a shift of $g\lambda=0.5$ comparing the first read line to the last and it is one order of magnitude higher than the shifts in the overscan sections. Promising!',
+                    widths = [.7,-1]))
                     
         fname = r'/share/storage2/connie/data/runs/*/runID_*_12000_*_p*.fits.fz'
         with Timer():
@@ -327,8 +335,10 @@ with Timer('presentation'):
             scale = 1.2
             optsSection = [['data',1*scale], ['bias',.25*scale], ['vbias',1*scale], ['dbias',.15*scale] ]
             doc.frame('1x5 ', 
+                    'before you ask, here is the analysis on rebinned images',
                     doc.code( cmd, 'Bash'),
-                    doc.center( *figsSection(name, 'median', optsSection=optsSection) )
+                    doc.center( *figsSection(name, 'median', optsSection=optsSection) ),
+                    'raw image'
                     )
             
             text = ''
@@ -336,7 +346,7 @@ with Timer('presentation'):
                     doc.code( cmd, 'Bash'),
                     doc.column(
                         doc.center( *figsProj(name, 'median') ),
-                        text,
+                        'before the line and column corrections data show am interesting modulation on time and a sharp rise of baseline in the beginning of each line (this is also present in 1x1, but here it is more evident)',
                         widths=[.7,-1] ))
 
             text = ''
@@ -345,7 +355,7 @@ with Timer('presentation'):
                     doc.code( cmd, 'Bash'),
                     doc.column(
                         doc.center( *figsSpectrum(name, 'median') ),
-                        text,
+                        'which leads to terrible outliers in the vertical overscan. The overscan looks clean, but it is actually convoluted with a sharp modulation',
                         widths=[.7,-1] ))
 
         with Timer('evolution'):
@@ -362,7 +372,7 @@ with Timer('presentation'):
                 doc.code( cmd, 'Bash'),
                 doc.column(
                         doc.center( *figsSpectrum('dcevo1x5', pre, kind='_spectrum') ),
-                        text,
+                        'the algorithm manages to succesfully correct for the vertical overscan outliers, but there is a visible bump at negative energies of the data distribution. Let us investigate!',
                         widths=[.7,-1]
                     ))
             
@@ -371,20 +381,33 @@ with Timer('presentation'):
                 doc.code( cmd, 'Bash'),
                 doc.column(
                     doc.center( *figsProj('dcevo1x5', pre ) ),
-                    '',
+                    'although the horizontal modulation was succesfully subtracted from the vertical overscan, the data still displays a dip. Interestingly, even in the overscan, the fluctuations collapse close to the beginning of the reading. This is not compatible with a simple baseline shift. Could this be a gain variation?!',
                     widths = [.7,1]))
 
 
         with Timer('blocks'):
             threshold = 100.0
             border = 3.0
+            gl5 = 0.58
+            sig5 = 14.1
+            g2l5 = 14.3**2 - sig5**2
+            g5 = g2l5/gl5
+            
+            gl10 = 0.62
+            sig10 = 14.4
+            g2l10 = 14.7**2 - sig10**2
+            g10 = g2l10/gl10
             thislist = [
-                ['blockmean1x5', 'np.nanmean(x)',5], 
-                ['blockstd1x5', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))',5],
-                ['blockmean1x5', 'np.nanmean(x)',10], 
-                ['blockstd1x5', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))',10],
+                ['blockmean1x5', 'mean', 'np.nanmean(x)',5, 'the spatial partition algorithm is robust enough to ignore the modulation'], 
+                ['blockstd1x5', 'std', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))',5, 
+                 'estimation\n $$g\lambda={gl5}$$ $$\sigma={sig5}$$ $$g^2\lambda={g2l5:.2f}$$ $$g={g5:.2f}$$ $$\lambda={l5:.2f}$$'.format(gl5=gl5, sig5=sig5, g2l5=g2l5, g5=g5, l5=gl5/g5)
+                 ],
+                ['blockmean1x5', 'mean', 'np.nanmean(x)',10, 'repeating the a analysis for larger partitions'], 
+                ['blockstd1x5', 'std', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))',10, 
+                 'estimation\n $$g\lambda={gl10}$$ $$\sigma={sig10}$$ $$g^2\lambda={g2l10:.2f}$$ $$g={g10:.2f}$$ $$\lambda={l10:.2f}$$'.format(gl10=gl10, sig10=sig10, g2l10=g2l10, g10=g10, l10=gl10/g10)
+                 ],
                 ]
-            for _name_, _func_, D in thislist:
+            for _name_, label, _func_, D, text in thislist:
                 cmd = 'python Image.py analyse {folder}/{name} "{fname}" --ohdu 3 --params-mode mean --remove-hits {threshold} {border} --plot-block-spectrum --block-function "{_func_}"'\
                     .format( fname=fname, folder=folder, name=_name_, threshold=threshold, border=border, _func_=_func_ )
                 print( cmd )
@@ -393,7 +416,7 @@ with Timer('presentation'):
                 
                 pre = 'mean_e{threshold}b{border}'.format(threshold=threshold, border=border)
                 scale = .3
-                doc.frame('1x5 block {D}x{D} $E<{}$ADU (+{})'.format(threshold,border,D=D), 
+                doc.frame('1x5 {} block {D}x{D} $E<{}$ADU (+{})'.format(label, threshold,border,D=D), 
                 doc.code( cmd, 'Bash'),
                     doc.column(
                         doc.center( *figsSpectrum(_name_, pre, kind='_block%d'%D) ),
@@ -401,4 +424,75 @@ with Timer('presentation'):
                         widths=[.7,-1] ))
                 
 
+        doc.frame('summary',
+              doc.itemize(
+                'yet another tool for analysing the data and performing simulations',
+                'I believe that redundancy of tools for analysis is needed in order to reduce the chance of a major analysis mistake not to mention the constructive competition',
+                'testing against simulations is zero-th order and I am working on it',
+                'testing agains the official tools is next in line -- Carla\'s share of duty',
+                'promising insights that are being tested against simulations, presentation next week',
+                            ))
+        doc.frame('summary',
+              doc.itemize(
+                'hypothesis: the gain overestimation is related to the vertical overscan subtraction (which contains small dark current) that ends up shifting the center of the data distribution, therefore underevaluating $g\lambda$. On the other hand, $g^2\lambda$ is unaffected by this shift and thus although a small shift for the data mean, it is a great shift for the gain!',
+                'verification: not to lose the advantage of (partially) removing the horizontal modulation, I will estimate the vertical overscan shift in relation to the horizontal overscan using the half of the section not affected by the modulation. Then after the subtraction, I will reintroduce this shift',
+                'there is also the correlated noise which was not treated (yet) here. The correlated noise affects the terms in different amounts and may be a source of incertainty, I plan to attempt subtracting the mirrored right side image by requiring that it maximally reduces the noise in the overscan.'
+                'the partitioning analysis opens the possibility of performing spatial dc/data discrimination by estimating the spread of the partition. This is a promising approach to extract hits buried in the dark current energy range safely.'
+            ))
+        
+        
+        #Backup
+        
+        optsSectionR = [['dataR',1], ['biasR',1], ['vbiasR',.7], ['dbiasR',.1] ]
+        doc.frame('right-side with line and col corrections', 
+                doc.code( cmd, 'Bash'),
+                doc.column(
+                    doc.center( *figsSection('mean', 'mean', optsSectionR) ),
+                    'right side',
+                    widths = [.6, -1]
+                    ))
+              
+        with Timer('blocks'):
+            fname = r'/share/storage2/connie/data/runs/*/runID_*_03326_*_p*.fits.fz'
+            name = 'mean'
+            threshold = 100.0
+            border = 3.0
 
+            gl5 = 2.54
+            sig5 = 14
+            g2l5 = 14.8**2-sig5**2
+            
+            gl10 = 2.55
+            sig10 = 14.3
+            g2l10 = 15.2**2-sig10**2
+
+            blocks = [
+                ['blockmean', 'np.nanmean(x)', 'mean', 5, 
+                 'the previous estimation was global and relies on the homogeneity of the estimation throught the CCD. This plots show the distribution of the mean estimation for partitions of 5x5 of the image' + '$$g\lambda={}$$'.format(gl5)
+                 ], 
+                ['blockstd', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))', 'std', 5,
+                 'distribution of the stds' +
+                 '$$\sigma={}$$\n$$g^2\lambda={:.0f}$$\n$$g={:.2f}$$\n$$\lambda={:.2f}$$'.format(sig5, g2l5, g2l5/gl5, gl5**2/g2l5 ) +
+                 'this result can be estimated with properly calculated errorbars!\n {\\tiny dramatic pause for appreciation}'
+                 ],
+                ['blockmean', 'np.nanmean(x)', 'mean', 10, 
+                 'sanity check, repeat the calculations for 10x10 partitions' + '$$g\lambda={}$$'.format(gl10)],
+                ['blockstd', '(lambda y: np.nan if y==0 else y)(np.nanstd(x))', 'std', 10, 
+                 '$$\sigma={}$$\n$$g^2\lambda={:.0f}$$\n$$g={:.2f}$$\n$$\lambda={:.2f}$$'.format(sig10, g2l10, g2l10/gl10, gl10**2/g2l10 )
+                 + 'there is a dependence on the size of the partition'
+                 ],
+                    ]
+            for _name_, _func_, funclabel, D, text in blocks:
+                cmd = 'python Image.py analyse {folder}/{name} "{fname}" --ohdu 3 --params-mode mean --remove-hits {threshold} {border} --plot-block-spectrum --block-function "{_func_}" --fix-vbias'\
+                    .format( fname=fname, folder=folder, name=_name_, threshold=threshold, border=border, _func_=_func_ )
+                print( cmd )
+                func = lambda: subprocess.call( [cmd], shell=True )
+                doc.set_func(func)
+                
+                pre = 'mean_vfix_e{threshold}b{border}'.format(threshold=threshold, border=border)
+                doc.frame('vfix {funclabel} block {D}x{D} $E<{:.0f}$ADU (+{:.0f})'.format(threshold,border,funclabel=funclabel,D=D), 
+                    doc.code( cmd, 'Bash'),
+                    doc.column(
+                        doc.center( *figsSpectrum(_name_, pre, kind='_block%d'%D) ),
+                        text,
+                        widths=[.7,-1] ))

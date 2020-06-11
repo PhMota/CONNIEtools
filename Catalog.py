@@ -1,17 +1,30 @@
+#!/usr/bin/python
+
 from __future__ import print_function
-import root_numpy
-import sys
+import os, sys, argparse
+
+from Timer import Timer
+import warnings
+warnings.filterwarnings("ignore")
+
+try:
+    import root_numpy
+except ImportError:
+    print('missing module, please run')
+    print('module load softwares/root/5.34-gnu-5.3')
+    exit(0)
 from numpy.lib.recfunctions import append_fields, stack_arrays
 import numpy as np
-import datetime
+
+from ROOT import TFile, TTree, AddressOf
+
 import rootpy
 import rootpy.io
-from ROOT import TFile, TTree, AddressOf
 from array import array
 from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol, CharArrayCol
 from rootpy.io import root_open
-
-from Timer import Timer
+from termcolor import colored
+from PrintVar import print_var
 
 def list_branches( file, treename = 'hitSumm' ):
     return root_numpy.list_branches( file, treename = treename )
@@ -247,31 +260,68 @@ class Catalog(TFile):
         raise Exception('tree not selected')
 
 
-if __name__ == '__main__':
-    conds1_x = [
-        'flag==0',
-        '(xMax-xMin) >= 50',
-        '(yMax-yMin) <= 6',        
-        ]
-    conds1_y = [
-        'flag==0',
-        '(xMax-xMin) <= 2',
-        '(yMax-yMin) >= 400',        
-        ]
+#if __name__ == '__main__':
+    #conds1_x = [
+        #'flag==0',
+        #'(xMax-xMin) >= 50',
+        #'(yMax-yMin) <= 6',        
+        #]
+    #conds1_y = [
+        #'flag==0',
+        #'(xMax-xMin) <= 2',
+        #'(yMax-yMin) >= 400',        
+        #]
 
-    conds5x = [
-        'flag==0',
-        '(xMax-xMin) >= 200',
-        '(yMax-yMin) <= 2',
-        ]
+    #conds5x = [
+        #'flag==0',
+        #'(xMax-xMin) >= 200',
+        #'(yMax-yMin) <= 2',
+        #]
 
-    conds5_y = [
-        'flag==0',
-        '(xMax-xMin) <= 2',
-        '(yMax-yMin) >= 5',
-        ]
+    #conds5_y = [
+        #'flag==0',
+        #'(xMax-xMin) <= 2',
+        #'(yMax-yMin) >= 5',
+        #]
     
-    file1 = "/share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root"
-    file5 = "/share/storage2/connie/DAna/Catalogs/hpix_scn_osi_raw_gain_catalog_data_9096_to_9295_v3.0.root"
-    build_new_root_from_existing( file1, 'test.root', selection = '&&'.join(conds1_x) )
-    status( 'test.root' )
+    #file1 = "/share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root"
+    #file5 = "/share/storage2/connie/DAna/Catalogs/hpix_scn_osi_raw_gain_catalog_data_9096_to_9295_v3.0.root"
+    #build_new_root_from_existing( file1, 'test.root', selection = '&&'.join(conds1_x) )
+    #status( 'test.root' )
+
+def status( args ):
+    if not os.path.exists( args.root_file ):
+        print( 'file {} does not exist'.format( arg.rootfile ) )
+    tfile = TFile( args.root_file )
+    for key in tfile.GetListOfKeys():
+        tree_name = key.GetName()
+        print( colored( tree_name, 'green' ) )
+        tree = getattr(tfile, tree_name)
+        branches = ', '.join( map( lambda _: _.GetName(), tree.GetListOfBranches() ) )
+        print( branches )
+        print( tree.GetEntries() )
+    return
+
+def add_status_options(p):
+    p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.set_defaults( func = status )
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser( description = 'catalog tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
+    subparsers = parser.add_subparsers( help = 'major options' )
+
+    add_status_options( subparsers.add_parser('status', help='status', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+
+    try:
+        args = parser.parse_args()
+    except:
+        parser.print_help()
+        exit(0)
+
+    print( colored('using parameters:', 'green', attrs=['bold'] ) )
+    print_var( vars(args).keys(), vars(args), line_char='\t' )
+    
+    with Timer('finished'):
+        args.func(args)
+    
