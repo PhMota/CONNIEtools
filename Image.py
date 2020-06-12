@@ -1045,6 +1045,23 @@ def test_HWFM( args ):
     print('not implemented yet')
     return
 
+def mle_norm( x, axis=None ):
+    fit = np.apply_along_axis( scipy.stats.norm.fit, axis, x )
+    if axis == 1:
+        mu, sigma = fit.T
+    else:
+        mu, sigma = fit
+    return mu, sigma
+
+def mle_poisson_norm( x, axis=None, mu=0, sigma=1, gain=1, fix_mu=False, fix_sigma=False, mode = 1 ):
+    func = lambda x: stats.poisson_norm.fit(x, mu=mu, sigma=sigma, gain=gain, fix_mu=fix_mu, fix_sigma=fix_sigma, mode=mode)
+    fit = np.apply_along_axis( func, axis, x )
+    if axis == 1:
+        gain, lamb = fit.T
+    else:
+        gain, lamb = fit
+    return gain, lamb
+
 def FWHM( x, axis = None, f = 0.5 ):
     fwhm = np.apply_along_axis( lambda x: FWHM1d(x,f=f), axis, x )
     if axis == 1:
@@ -1056,39 +1073,42 @@ def FWHM( x, axis = None, f = 0.5 ):
 def FWHM1d( x, f=.5 ):
     y = np.array(x)
     if y.size == 0: return np.nan, np.nan
-    ymin = None
-    ymax = None
+    yleft = None
+    yright = None
     Max = None
     iteractions = 0
     while True:
-        nbins = int(np.sqrt(y.size)/2)
-        #print( 'y.size', iteractions, y.size, nbins )
-        ymin_prev, ymax_prev = ymin, ymax
+        nbins = int(np.sqrt(y.size))
+        yleft_prev, yright_prev = yleft, yright
         bins = np.linspace( np.nanmin(y), np.nanmax(y), nbins )
         hist, edges = np.histogram( y, bins )
         binwidth = bins[1] - bins[0]
 
         Max = np.max(hist)
-        above = hist > f*Max
-
-        ymin = np.nanmin( edges[:-1][above] )
-        ymax = np.nanmax( edges[1:][above] )
-        mask = np.logical_and( y>ymin, y<ymax)
-
-        if above[0] == above[1] == True and above[-1] == above[-2] == True: 
-            break
-        y = y[ mask ]
+        above = hist >= f*Max
         
-        if not ymin_prev is None:
-            if ymin_prev == ymin and ymax_prev == ymax: 
+        edge_left = np.nanmin( edges[:-1][above] )
+        edge_right = np.nanmax( edges[1:][above] )
+        yleft = np.mean( y[ abs(y - edge_left) < binwidth ] )
+        yright = np.mean( y[ abs(y - edge_right) < binwidth ] )
+        
+        middle = np.logical_and( y>yleft, y<yright)
+
+        if above[0] == True and above[-1] == True: 
+            break
+        y = y[ middle ]
+        
+        if not yleft_prev is None:
+            if yleft_prev == yleft and yright_prev == yright: 
                 break
         if y.size == 0: 
             print( 'FWHM: ValueWarning: did not converge' )
             return np.nan, np.nan
         iteractions += 1
 
-    sigma = abs(ymin - ymax)/( 2*np.sqrt(2*np.log(1./f)) )
-    center = np.nanmean(y)
+    sigma = (abs(yleft - yright))/( 2*np.sqrt(2*np.log(1./f)) )
+    center = np.mean([yleft,yright]) 
+    #center = np.nanmean(y)
     #print( 'y.size', iteractions, y.size, sigma, center )
     return sigma, center 
 
@@ -1117,113 +1137,124 @@ def add_display_options( p ):
     p.set_defaults( func=display )
 
 def display( args ):
-    path = glob( args.input_file )
-    if len(path) > 1:
-        print( 'found {}'.format(path) )
-        print( 'using the first' )
-    path = path[0]
-    listHDU = astropy.io.fits.open( path )
-    imageHDU = None
-    for i, HDU in enumerate(listHDU):
-        if HDU.header['OHDU'] == args.ohdu: imageHDU = HDU
-    if imageHDU is None:
-        print( 'ohdu {} was not found in {}'.format( args.ohdu, path ) )
-        exit(0)
+    with Timer('plot'):
+        path = glob( args.input_file )
+        if len(path) > 1:
+            print( 'found {}'.format(path) )
+            print( 'using the first' )
+        path = path[0]
+        listHDU = astropy.io.fits.open( path )
+        imageHDU = None
+        for i, HDU in enumerate(listHDU):
+            if HDU.header['OHDU'] == args.ohdu: imageHDU = HDU
+        if imageHDU is None:
+            print( 'ohdu {} was not found in {}'.format( args.ohdu, path ) )
+            exit(0)
 
-    data = imageHDU.data.astype(float)
-    
-    ccd_width = 4120
-    height, width = data.shape
-    number_of_amplifiers = width // ccd_width
-    bias_width = (width % ccd_width)/number_of_amplifiers
-    
-    if 'side' in args:
-        if args.side == 'left' or args.side == '0':
-            if 'correct_side' in args:
-                data = data[None:-1, None:width/number_of_amplifiers] - data[None:-1, width/number_of_amplifiers:None][:,::-1]
-            else:
-                data = data[None:-1, None:width/number_of_amplifiers]
-        elif args.side == 'right' or args.side == '1':
-            data = data[None:-1, width/number_of_amplifiers:None][:,::-1]
-
-    if 'trim' in args:
-        data = data[None:None, 10:]
-
-    if 'global_bias':
-        data = data - np.nanmean( data[None:None, -bias_width+1:None] )
-    
-    if 'section' in args:
-        if args.section == 'bias' or args.section == 'os':
-            data = data[None:None, -bias_width+1:None]
-        if args.section == 'data' or args.section == 'ac':
-            data = data[None:None, None:-bias_width+1]
-            if 'half' in args:
-                data = data[None:None, data.shape[1]/2:None]
-    
-    if 'x_range' in args:
-        data = data[ :, args.x_range[0]: args.x_range[1] ]
-
-    if 'y_range' in args:
-        data = data[ args.y_range[0]: args.y_range[1], : ]
-
-    if 'remove' in args:
-        data[ data > args.remove ] = np.nan
+        x = np.random.random(100)*10
+        with Timer('pdf'):
+            print( 'pdf', stats.poisson_norm.pdf(x, gain=10, mu=0, sigma=20, lamb=.1 ) )
+        with Timer('pdf3'):
+            print( 'pdf3', stats.poisson_norm.pdf3(x, gain=10, mu=0, sigma=20, lamb=.1 ) )
+        data = imageHDU.data.astype(float)
         
-    #if 'E_span' in args:
-        #E = np.median(data)
-        #data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
-    
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    if 'proj' in args:
-        axis = args.proj
-        if not 'dev' in args:
-            mins = np.nanmin( data, axis=axis )
-            if not 'no_mean' in args:
-                means = np.nanmean( data, axis=axis )
-                ax.plot( means, '.', label='mean $\mu={:.4f}$'.format(np.nanmean(means)) )
-            if not 'no_median' in args:
-                medians = np.nanmedian( data, axis=axis )
-                ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
-            if not 'no_center' in args:
-                centers = FWHM( data, axis=axis, f=.01 )[1]
-                ax.plot( centers, '.', label='center $\mu={:.4f}$'.format(np.nanmean(centers)) )
-            if 'smooth' in args:
-                ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
-                ax.plot( scipy.ndimage.filters.uniform_filter1d( medians, size=args.smooth, mode='nearest' ), '.', label='median{}'.format(args.smooth) )
-                if not 'no_mean' in args:
-                    ax.plot( scipy.ndimage.filters.uniform_filter1d( means, size=args.smooth, mode='nearest' ), '.', label='mean{}'.format(args.smooth) )
-            if not 'no_max' in args:
-                maxs = np.nanmax( data, axis=axis )
-                ax.plot( maxs, '.', label='max' )
-            if not 'no_min' in args:
+        ccd_width = 4120
+        height, width = data.shape
+        number_of_amplifiers = width // ccd_width
+        bias_width = (width % ccd_width)/number_of_amplifiers
+        
+        if 'side' in args:
+            if args.side == 'left' or args.side == '0':
+                if 'correct_side' in args:
+                    data = data[None:-1, None:width/number_of_amplifiers] - data[None:-1, width/number_of_amplifiers:None][:,::-1]
+                else:
+                    data = data[None:-1, None:width/number_of_amplifiers]
+            elif args.side == 'right' or args.side == '1':
+                data = data[None:-1, width/number_of_amplifiers:None][:,::-1]
+
+        if 'trim' in args:
+            data = data[None:None, 10:]
+
+        if 'global_bias':
+            data = data - np.nanmean( data[None:None, -bias_width+1:None] )
+        
+        if 'section' in args:
+            if args.section == 'bias' or args.section == 'os':
+                data = data[None:None, -bias_width+1:None]
+            if args.section == 'data' or args.section == 'ac':
+                data = data[None:None, None:-bias_width+1]
+                if 'half' in args:
+                    data = data[None:None, data.shape[1]/2:None]
+        
+        if 'x_range' in args:
+            data = data[ :, args.x_range[0]: args.x_range[1] ]
+
+        if 'y_range' in args:
+            data = data[ args.y_range[0]: args.y_range[1], : ]
+
+        if 'remove' in args:
+            data[ data > args.remove ] = np.nan
+            
+        #if 'E_span' in args:
+            #E = np.median(data)
+            #data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        if 'proj' in args:
+            axis = args.proj
+            if not 'dev' in args:
                 mins = np.nanmin( data, axis=axis )
-                ax.plot( mins, '.', label='min' )
+                if not 'no_mean' in args:
+                    means = np.nanmean( data, axis=axis )
+                    print( means.shape )
+                    ax.plot( means, '.', label='mean $\mu={:.4f}$'.format(np.nanmean(means)) )
+                if not 'no_median' in args:
+                    medians = np.nanmedian( data, axis=axis )
+                    ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
+                if not 'no_center' in args:
+                    centers = FWHM( data, axis=axis, f=.5 )[1]
+                    ax.plot( centers, '.', label='center $\mu={:.4f}$'.format(np.nanmean(centers)) )
+                #mus = mle_poisson_norm( data, axis=axis, gain=10, mu=0, sigma=20, fix_mu=False, fix_sigma=True, mode=1 )[0]
+                #ax.plot( mus, '.', label='mu[mle] $\mu={:.4f}$'.format(np.nanmean(mus)) )
+                if 'smooth' in args:
+                    ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
+                    ax.plot( scipy.ndimage.filters.uniform_filter1d( medians, size=args.smooth, mode='nearest' ), '.', label='median{}'.format(args.smooth) )
+                    if not 'no_mean' in args:
+                        ax.plot( scipy.ndimage.filters.uniform_filter1d( means, size=args.smooth, mode='nearest' ), '.', label='mean{}'.format(args.smooth) )
+                if not 'no_max' in args:
+                    maxs = np.nanmax( data, axis=axis )
+                    ax.plot( maxs, '.', label='max' )
+                if not 'no_min' in args:
+                    mins = np.nanmin( data, axis=axis )
+                    ax.plot( mins, '.', label='min' )
+            else:
+                mins = np.nanmin( data, axis=axis )
+                if not 'no_mean' in args:
+                    stds = np.nanstd( data, axis=axis )
+                    ax.plot( stds, '.', label='std $\mu={:.4f}$'.format(np.nanmean(stds)) )
+                mads = MAD( data, axis=axis )
+                ax.plot( mads, '.', label='MAD $\mu={:.4f}$'.format(np.nanmean(mads)) )
+                fwhm = FWHM( data, axis=axis, f=.001 )[0]
+                ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
+                sigmas = mle_norm( data, axis=axis )[1]
+                ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )
         else:
-            mins = np.nanmin( data, axis=axis )
-            if not 'no_mean' in args:
-                stds = np.nanstd( data, axis=axis )
-                ax.plot( stds, '.', label='std $\mu={:.4f}$'.format(np.nanmean(stds)) )
-            mads = MAD( data, axis=axis )
-            ax.plot( mads, '.', label='MAD $\mu={:.4f}$'.format(np.nanmean(mads)) )
-            fwhm = FWHM( data, axis=axis, f=.01 )[0]
-            ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
-    else:
-        im = np.log(data - np.nanmin(data) + 1)
-        cmap = matplotlib.cm.Blues
-        #cmap.set_bad(color='red')
-        cmap.set_bad('red',0)
-        try:
-            ax.imshow( im, cmap=cmap, origin='lower', vmin=np.nanmin(im), vmax=np.nanmax(im) )
-        except:
-            print( 'im.shape', im.shape, data.shape )
-            exit()
-    
-    #ax.set_xticklabels([])
-    #ax.set_yticklabels([])
-    ax.set_title( str(args ), fontsize=8 )
-    ax.grid()
-    ax.legend()
+            im = np.log(data - np.nanmin(data) + 1)
+            cmap = matplotlib.cm.Blues
+            #cmap.set_bad(color='red')
+            cmap.set_bad('red',0)
+            try:
+                ax.imshow( im, cmap=cmap, origin='lower', vmin=np.nanmin(im), vmax=np.nanmax(im) )
+            except:
+                print( 'im.shape', im.shape, data.shape )
+                exit()
+        
+        #ax.set_xticklabels([])
+        #ax.set_yticklabels([])
+        ax.set_title( str(args ), fontsize=8 )
+        ax.grid()
+        ax.legend()
     if 'name' in args:
         fig.savefig( args.name+'.pdf', bbox_inches='tight', pad_inches=0 )
     else:

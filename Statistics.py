@@ -1,22 +1,23 @@
 # coding: utf-8
 
-import numpy as np
+from numpy import *
 import scipy.stats
-import math
+#import math
+from Timer import Timer
 
 def stdCovMed( x, y ):
-    X = x - np.median(x)
-    Y = y - np.median(y)
-    return np.mean(X*Y)
+    X = x - median(x)
+    Y = y - median(y)
+    return mean(X*Y)
     
 def madCovSqr( data0, data1 ):
-    return np.median( np.abs( (data0 - np.median(data0))*((data1 - np.median(data1))) ) )
+    return median( abs( (data0 - median(data0))*((data1 - median(data1))) ) )
 
 def normFit( data, loc=None, scale=None ):
     return scipy.stats.norm.fit( data, floc=loc, fscale=scale )
 
 def tiles( data, p ):
-    m = np.median(data)
+    m = median(data)
     if p - 1 == 0: return [m]
     return tiles(data[data<m], p-1 ) + [m] + tiles(data[data>m], p-1 )
 
@@ -28,82 +29,78 @@ def IQR( data, scale=1.34897 ):
 
 def MAD( data, axis = None, scale=1.4826 ):
     if axis == 0:
-        median = np.median( data, axis = 0 )[None,:]
+        median = median( data, axis = 0 )[None,:]
     elif axis == 1:
-        median = np.median( data, axis = 1 )[:,None]
+        median = median( data, axis = 1 )[:,None]
     else:
-        median = np.median( data )
-    return scale * np.median( np.abs( data - median ), axis = axis )
+        median = median( data )
+    return scale * median( abs( data - median ), axis = axis )
 
 def nanMAD( data, axis = None, scale=1.4826 ):
     if axis == 0:
-        median = np.nanmedian( data, axis = 0 )[None,:]
+        median = nanmedian( data, axis = 0 )[None,:]
     elif axis == 1:
-        median = np.nanmedian( data, axis = 1 )[:,None]
+        median = nanmedian( data, axis = 1 )[:,None]
     else:
-        median = np.nanmedian( data )
-    return scale * np.nanmedian( np.abs( data - median ), axis = axis )
+        median = nanmedian( data )
+    return scale * nanmedian( abs( data - median ), axis = axis )
 
 
 def mean_outliers( data, axis=None, n=2 ):
-    med = np.median(data,axis)
+    med = median(data,axis)
     MAD_ = MAD(data,axis)
-    return np.mean( data[ np.abs(data-med)<n*MAD_ ] )
+    return mean( data[ abs(data-med)<n*MAD_ ] )
 
 norm = scipy.stats.norm
 poisson = scipy.stats.poisson
 
 class poisson_norm:
     verbose = False
-    loc_bounds = (None,None)
-    scale_bounds = (0,None)
-    mu_bounds = (0,None)
+    mu_bounds = (None,None)
+    sigma_bounds = (0,None)
+    lamb_bounds = (1e-4,1)
+    gain_bounds = (1,None)
     
     @classmethod
-    def pdf2(cls, x, loc = 0, scale = 1, g = 1, mu = 1, tol=1e-8 ):
-        result = np.zeros_like(x).astype(float)
-        if scale < 0: raise Exception( 'scale is negative' )
-        if mu < 0: raise Exception( 'mu is negative' )
-        if g < 0: raise Exception( 'g is negative' )
+    def pdf(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8, debug=False ):
+        result = zeros_like(x).astype(float)
         
         k = 0
         poisson_sum = 0
-        if cls.verbose: print 'poisson_gaussian_pdf call with', loc, scale, mu,
-        poisson_weights = []
         while True:
-            poisson_weights.append( poisson.pmf( k, mu=mu ) )
-            poisson_sum += poisson_weights[-1]
-            if poisson_weights[-1]/poisson_sum < tol: break
-        res = np.sum([ w*norm.pdf( x, loc = loc + g*k, scale = scale ) for k, w in enumerate(poisson_weights) ])
-        if cls.verbose: print 'took', len(poisson_weights), 'iteractions'
+            poisson_weight = poisson.pmf( k, lamb )
+            if poisson_weight != poisson_weight: 
+                break
+            poisson_sum += poisson_weight
+            result += poisson_weight * norm.pdf( x, mu+gain*k, sigma )
+            if poisson_weight/poisson_sum < tol: break
+            k += 1
         return result
 
     @classmethod
-    def pdf(cls, x, loc = 0, scale = 1, g = 1, mu = 1, tol=1e-8, fix_loc=False, debug=False ):
-        if scale < 0: raise Exception( 'scale is negative' )
-        if mu < 0: raise Exception( 'mu is negative' )
-        if g < 0: raise Exception( 'g is negative' )
-        
-        result = np.zeros_like(x).astype(float)
-        #if fix_loc:
-            #loc = loc - g*mu
-        
+    def pdf2(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8 ):
+        result = zeros_like(x).astype(float)
+
         k = 0
         poisson_sum = 0
-        if cls.verbose: print 'poisson_gaussian_pdf call with', loc, scale, mu,
+        poisson_weights = []
         while True:
-            poisson_weight = poisson.pmf( k, mu=mu )
-            if poisson_weight != poisson_weight: 
-                if debug: print '(poisson_norm.pdf)NaN', 'k=', k, 'mu=', mu
-                break
-            poisson_sum += poisson_weight
-            result += poisson_weight * norm.pdf( x, loc = loc + g*k, scale = scale )
-            if debug: print '(poisson_norm.pdf)ratio=', poisson_weight/poisson_sum, 'k=', k
-            if poisson_weight/poisson_sum < tol: break
-            k += 1
-        if cls.verbose: print 'took', k, 'iteractions'
-        if debug: print 'took', k, 'iteractions', result
+            poisson_weights.append( poisson.pmf( k, mu=lamb ) )
+            poisson_sum += poisson_weights[-1]
+            if poisson_weights[-1]/poisson_sum < tol: break
+        res = sum([ w*norm.pdf( x, loc = mu + gain*k, scale = sigma ) for k, w in enumerate(poisson_weights) ])
         return result
+
+
+    @classmethod
+    def pdf3(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8):
+        result = zeros_like(x).astype(float)
+        
+        kmax = int( (log(tol)+lamb)/log(lamb) ) + 1
+        ks = arange(0, kmax, 1).astype(int)
+        poisson_weights = poisson.pmf( ks, mu=lamb )
+        
+        return sum( [ poisson_weights[k] * norm.pdf( x, mu+gain*k, sigma )[None,:] for k in ks ], axis=0 )
 
     @classmethod
     def rvs( cls, loc=0, scale=1, g=1, mu=1, size=1 ):
@@ -124,12 +121,29 @@ class poisson_norm:
             k += 1
             
     @classmethod
-    def fit( cls, X, loc=0, scale=1., g=1, mu=1., floc=None, fscale=None, fg=None, fmu=None ):
-        return tuple(maxloglikelihood( cls.pdf, X, p0=(loc,scale,g,mu), jac=False, bounds=(cls.loc_bounds,cls.scale_bounds,(1,None),cls.mu_bounds) )['x'])
-
-    @classmethod
-    def fit2( cls, X, loc=0, scale=1., g=1, gmu=1., floc=None, fscale=None, fg=None, fmu=None ):
-        return tuple(maxloglikelihood( cls.pdf2, X, p0=(loc,scale,g,gmu), jac=False, bounds=(cls.loc_bounds,cls.scale_bounds,(1,None),(0,None)) )['x'])
+    def fit( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False, mode=1 ):
+        func = cls.pdf
+        if mode == 2:
+            func = cls.pdf2
+        if mode == 3:
+            func = cls.pdf3
+        pdf = None
+        if fix_mu and fix_sigma:
+            pdf = lambda X, gain, lamb: func(X, mu+gain*lamb, sigma, gain, lamb)
+            p0 = (gain, lamb)
+            bounds = (cls.gain_bounds, cls.lamb_bounds)
+        elif fix_sigma:
+            pdf = lambda X, mu, gain, lamb: func(X, mu+gain*lamb, sigma, gain, lamb)
+            p0 = (mu, gain, lamb)
+            bounds = (cls.mu_bounds, cls.gain_bounds, cls.lamb_bounds)
+        elif not fix_mu and not fix_sigma and not fix_g and not fix_lamb:
+            pdf = lambda X, mu, gain, lamb: func(X, mu+g*lamb, sigma, gain, lamb)
+            p0 = (mu, gain, lamb)
+            bounds = (cls.mu_bounds, cls.gain_bounds, cls.lamb_bounds)
+        if pdf is None:
+            raise Exception('fix combination not implemented')
+        ret = maxloglikelihood( pdf, X, p0=p0, bounds=bounds )['x']
+        return ret
 
 def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
     if not normed:
@@ -141,22 +155,22 @@ def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
     results = []
     if verbose: print '(random',
     while 1:
-        x = (b - a) * np.random.random_sample( N ) + a
-        tests = np.random.random_sample( N )
+        x = (b - a) * random.random_sample( N ) + a
+        tests = random.random_sample( N )
         y = normedpdf(x)
         mask = tests < y
-        results = np.concatenate( (results, x[mask]) )
+        results = concatenate( (results, x[mask]) )
         if len(results) >= N: break
         if verbose: print '%.2f'%( float(len(results))/N ),
     if verbose: print ')'
     return results[:N]
 
 def negloglikelihood( pdf, params, X ):
-    res = -np.sum( np.log( pdf( X, *params )) )
+    res = -sum( log( pdf( X, *params )) )
     return res
 
 def maxloglikelihood( pdf, X, p0, jac=False, bounds=None ):
-    return scipy.optimize.minimize( lambda p: negloglikelihood( pdf, p, X ), p0, jac=jac, bounds=bounds )
+    return scipy.optimize.minimize( lambda p: negloglikelihood( pdf, p, X ), p0, jac=jac, bounds=bounds, tol=1e-8 )
 
 def norm2( x, loc, scale ):
     res = norm.pdf( x, loc, scale )
@@ -165,14 +179,14 @@ def norm2( x, loc, scale ):
 
 def chisquare( y, f, yerr=None, ddof=1 ):
     if yerr is None:
-        yerr = np.sqrt(y)
-    return np.sum( ((y-f)/yerr)**2 )/(len(y)-ddof)
+        yerr = sqrt(y)
+    return sum( ((y-f)/yerr)**2 )/(len(y)-ddof)
 
 def errSqr_mean( x ):
-    return np.var(x)/len(x)
+    return var(x)/len(x)
 
 def errSqr_std(x):
-    return np.mean( (x-np.mean(x))**4 )/np.var(x)/len(x)
+    return mean( (x-mean(x))**4 )/var(x)/len(x)
 
 def errSqr_median(x):
     return MAD(x)**2/len(x)
@@ -214,24 +228,24 @@ def pprint( msg, f ):
     
     def mean(self):
         if isinstance(self.value[0], ufloat):
-            val = np.array([ entry.val for entry in self.value ])
-            w = np.array([ 1./entry.errSqr for entry in self.value ])
-            s = np.sum(w)
-            return dfloat( ufloat( np.sum(w*val)/s, errSqr=1./s ), unit=self.unit )
+            val = array([ entry.val for entry in self.value ])
+            w = array([ 1./entry.errSqr for entry in self.value ])
+            s = sum(w)
+            return dfloat( ufloat( sum(w*val)/s, errSqr=1./s ), unit=self.unit )
         
-        return dfloat( ufloat( np.mean(self.value), errSqr=errSqr_mean(self.value) ), unit=self.unit )
+        return dfloat( ufloat( mean(self.value), errSqr=errSqr_mean(self.value) ), unit=self.unit )
 
     def median(self):
-        return dfloat( ufloat( np.median(self.value), errSqr=errSqr_median(self.value) ), unit=self.unit )
+        return dfloat( ufloat( median(self.value), errSqr=errSqr_median(self.value) ), unit=self.unit )
 
     def std(self):
         if isinstance(self.value[0], ufloat):
-            val = np.array([ entry.val for entry in self.value ])
-            w = np.array([ 1./entry.errSqr for entry in self.value ])
-            s = np.sum(w)
-            return dfloat( ufloat( np.sqrt( (np.sum(w*val**2) - np.sum(w*val)**2)/s ), errSqr=1./s ), unit=self.unit )
+            val = array([ entry.val for entry in self.value ])
+            w = array([ 1./entry.errSqr for entry in self.value ])
+            s = sum(w)
+            return dfloat( ufloat( sqrt( (sum(w*val**2) - sum(w*val)**2)/s ), errSqr=1./s ), unit=self.unit )
         
-        return dfloat( ufloat( np.std(self.value), errSqr=errSqr_std(self.value) ), unit=self.unit )
+        return dfloat( ufloat( std(self.value), errSqr=errSqr_std(self.value) ), unit=self.unit )
 
     def MAD(self):
         return dfloat( ufloat( MAD(self.value), errSqr=errSqr_MAD(self.value) ), unit=self.unit )
@@ -249,7 +263,7 @@ def significant_decimal(x):
     return mantissa_exp(x)[1]
 
 def round2significant( x, sig ):
-    return np.around( x, -sig )
+    return around( x, -sig )
     
 class ufloat:
     '''
@@ -291,7 +305,7 @@ class ufloat:
             raise Exception('unit type not recognized: %s %s' % ( type(unit), unit ) )
 
     def tuple(self):
-        if isinstance(self.value, np.ndarray):
+        if isinstance(self.value, ndarray):
             return map( lambda x: dfloat(x,self.unit).tuple(), self.value )
         if self.unit == {}:
             return (self.value, '')
@@ -309,7 +323,7 @@ class ufloat:
         return '·'.join([ '%s^%s'%(unit,p) if p!= 1 else '%s'%unit for unit,p in self.unit.items()if p!=0] )
         
     def __repr__(self):
-        if isinstance(self.value, np.ndarray):
+        if isinstance(self.value, ndarray):
             return '%s%s'%(self.value, self.unit_str())
         return '%s%s' % self.tuple()
 
@@ -326,7 +340,7 @@ class ufloat:
         if not unit2 in new_units:
             new_units.append( unit2 )
             
-        new_conversion_matrix = np.zeros(( len(new_units), len(new_units) )).tolist()
+        new_conversion_matrix = zeros(( len(new_units), len(new_units) )).tolist()
         for i1 in range(N):
             for i2 in range(N):
                 new_conversion_matrix[i1][i2] = cls.__conversion_matrix__[i1][i2]
@@ -513,13 +527,13 @@ class uarray:
         '''
         initiate with list of uncertainties
         '''
-        if isinstance( value, np.ndarray ):
+        if isinstance( value, ndarray ):
             self.unit = unit
             self.val = value
             if errMode == 'poisson':
-                self.errSqr = np.array(self.val)
+                self.errSqr = array(self.val)
             elif errMode == 'stats':
-                self.errSqr = np.array(np.var(self.val))/len(self.val)
+                self.errSqr = array(var(self.val))/len(self.val)
             return
         
         self.val = []
@@ -542,32 +556,32 @@ class uarray:
                     self.val.append( u.val )
                     self.errSqr.append( u.errSqr )
         
-        self.val = np.array(self.val)
-        self.errSqr = np.array(self.errSqr)
+        self.val = array(self.val)
+        self.errSqr = array(self.errSqr)
         self.summary()
     
     def set_errSqr( self, errSqr ):
-        self.errSqr = np.zeros_like(self.val)*errSqr
+        self.errSqr = zeros_like(self.val)*errSqr
         
     def std_errSqr(self):
-        #print 'len', np.var(self.val), len(self.val), (np.var(self.val)/len(self.val))**.5
-        return np.var(self.val)/len(self.val)
+        #print 'len', var(self.val), len(self.val), (var(self.val)/len(self.val))**.5
+        return var(self.val)/len(self.val)
 
     def weights(self):
-        errSqr = np.array(self.errSqr)
+        errSqr = array(self.errSqr)
         errSqr[ errSqr==0 ] = self.std_errSqr()
         return 1./errSqr/self.weightSum()
     
     def weightSum(self):
-        errSqr = np.array(self.errSqr)
+        errSqr = array(self.errSqr)
         errSqr[ errSqr==0 ] = self.std_errSqr()
-        return np.sum( 1./errSqr )
+        return sum( 1./errSqr )
     
     def mean(self):
-        errSqr = np.array(self.errSqr)
+        errSqr = array(self.errSqr)
         errSqr[ errSqr==0 ] = self.std_errSqr()
         s = 1./self.weightSum()
-        return ufloat( np.sum(self.val/errSqr)*s, errSqr=s, unit=self.unit )
+        return ufloat( sum(self.val/errSqr)*s, errSqr=s, unit=self.unit )
     
     def mean_list(self):
         sum_ = ufloat(0,0,unit=self.unit)
@@ -576,13 +590,13 @@ class uarray:
         return sum_/len(self.val)
     
     def mean_stats(self):
-        return ufloat( np.mean(self.val), errSqr = np.var(self.val)/len(self.val), unit = self.unit )
+        return ufloat( mean(self.val), errSqr = var(self.val)/len(self.val), unit = self.unit )
     
     def std(self):
-        errSqr = np.array(self.errSqr)
+        errSqr = array(self.errSqr)
         errSqr[ errSqr==0 ] = self.std_errSqr()
         s = 1./self.weightSum()
-        return ufloat( (np.sum(self.val**2/errSqr)*s - (np.sum(self.val/errSqr)*s)**2)**.5, errSqr=s, unit=self.unit )
+        return ufloat( (sum(self.val**2/errSqr)*s - (sum(self.val/errSqr)*s)**2)**.5, errSqr=s, unit=self.unit )
 
     def std_list(self):
         mean = self.mean_list()
@@ -601,7 +615,7 @@ class uarray:
         return (sum_Sqr/len(self.val) - mean**2)**.5
     
     def std_stats(self):
-        return ufloat( np.std(self.val), errSqr = np.mean((self.val-np.mean(self.val))**4)/len(self.val)/np.var(self.val), unit = self.unit )
+        return ufloat( std(self.val), errSqr = mean((self.val-mean(self.val))**4)/len(self.val)/var(self.val), unit = self.unit )
     
     def summary(self):
         print 'uarray', self
@@ -617,14 +631,14 @@ class uarray:
             self.errSqr.append( entry.errSqr )
             if not self.unit == entry.unit:
                 raise Exception('unmatching units: %s and %s' % ( self.unit, entry.unit ) )
-            self.val = np.array(self.val)
-            self.errSqr = np.array(self.errSqr)
+            self.val = array(self.val)
+            self.errSqr = array(self.errSqr)
             self.summary()
             return
         raise Exception('cannot add type: %s' % ( type(u) ) )
 
     def tolist(self):
-        errSqr = np.array(self.errSqr)
+        errSqr = array(self.errSqr)
         errSqr[ errSqr==0 ] = self.std_errSqr()
         return [ ufloat( val, errSqr = errSqr_, unit=self.unit ) for val, errSqr_ in zip(self.val, errSqr) ]
     
@@ -654,9 +668,9 @@ if __name__=='__main__':
     print 'a**2', a**2
     print 'a/(2a)', a/(2*a)
     print 'a/b', a/b
-    print 'sqrt(a*a)', np.sqrt( a*a )
-    print 'sqrt(a**2)', np.sqrt( a**2 )
-    #print 'sqrt(a)', np.sqrt(a)
+    print 'sqrt(a*a)', sqrt( a*a )
+    print 'sqrt(a**2)', sqrt( a**2 )
+    #print 'sqrt(a)', sqrt(a)
     print 'a-a', a-a
     b = ufloat(10, err=.02, unit='ADU')
     print 'b', b
@@ -669,7 +683,7 @@ if __name__=='__main__':
     print 'a**2', a**2, (a**2).asunit('ADU')
     print '1ADU', ufloat(1,unit='ADU').asunit('eV')
     print '1ADU', ufloat(1,unit='ADU').asunit('e-').asunit('eV')
-    #print 'cos', np.cos( ufloat(1,err=.1) )
+    #print 'cos', cos( ufloat(1,err=.1) )
     print ufloat(5,.01)
     c = uarray( [1, 2, 3, 4, 5.5, 5], unit='keV')
     print 'c', c

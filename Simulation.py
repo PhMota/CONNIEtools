@@ -270,7 +270,7 @@ def add_depth_options(p):
     p.add_argument('--depth-range', nargs=2, type=float, default = [0,670], help = 'range into which to randomly generate depths' )
     p.add_argument('--diffusion-function',
                         type=str, 
-                        default = '"{}"'.format(constants.diffusion_function),
+                        default = '{}'.format(constants.diffusion_function),
                         help = 'function to map z-depth into xy-sigma' 
                         )
     p.add_argument('--charge-efficiency-function',
