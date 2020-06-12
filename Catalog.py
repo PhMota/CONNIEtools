@@ -288,14 +288,19 @@ def histogram( args ):
         bins = int(np.sqrt(len(data_selection)))
     hist, bins, _ = ax.hist(data, bins=bins, histtype='step', label='all')
     ax.legend()
+    ax.set_xlabel(args.branch)
     ax.set_yscale('log')
-    plt.show()
+    if 'output' in args:
+        fig.savefig(args.output+'.pdf')
+    else:
+        plt.show()
     return
 
 def add_histogram_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('branch', type=str, default= 'E0', help = 'branch used for x-axis' )
     p.add_argument('--selection', type=str, default = argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('-o', '--output', type=str, default = argparse.SUPPRESS, help = 'selection' )
     
     p.set_defaults(func=histogram)
 
