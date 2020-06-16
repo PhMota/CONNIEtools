@@ -18,6 +18,7 @@ import astropy.io.fits
 import scipy.stats
 import scipy.ndimage
 from glob import glob
+import re
 
 import matplotlib
 matplotlib.use('gtk3agg')
@@ -414,6 +415,8 @@ class Part:
                 (Part.ccd_width+150)*2: [150, True, (Part.ccd_width+150)],
                 (Part.ccd_width+550): [450, False, (Part.ccd_width+550)],
                 (Part.ccd_width+150): [150, False, (Part.ccd_width+150)],
+                (Part.ccd_width-8+550): [450, False, (Part.ccd_width+550-8)],
+                (Part.ccd_width-8+150): [150, False, (Part.ccd_width+150-8)],
                 4570: [150, False, 4570],
                 }[width]
         except KeyError:
@@ -720,17 +723,17 @@ class Section( np.ndarray ):
         bounds = [(-np.inf,np.inf), (1e-5, np.inf)]
         return self.mle( negloglikelihood, p0, bounds )
         
-    def extract_hits( self, mode, **kwargs ):
-        if mode == 'cluster':
-            return self._extract_clusters_( **kwargs )
+    #def extract_hits( self, mode, **kwargs ):
+        #if mode == 'cluster':
+            #return self._extract_clusters_( **kwargs )
 
     def get_clusters( self, threshold, border ):
         labeled_clusters = label_clusters( self >= threshold )
-        #print( 'number of clusters above threshold', labeled_clusters.max() )
+        print( 'number of clusters above threshold', labeled_clusters.max() )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
-        #print( 'number of clusters with border', labeled_clusters.max() )
+        print( 'number of clusters with border', labeled_clusters.max() )
         return labeled_clusters, distances_to_cluster
 
     def get_background( self, threshold, border ):
@@ -743,14 +746,14 @@ class Section( np.ndarray ):
         #print('hits removed', len(self.flatten()), len(self[labeled_clusters == 0]) )
         return data
         
-    def _extract_clusters_( self, threshold, border ):
+    def extract_hits( self, threshold, border ):
         labeled_clusters, distances_to_cluster = self.get_clusters( threshold, border )
         
         list_of_clusters = scipy.ndimage.labeled_comprehension(
             self,
             labeled_clusters,
             index = np.unique(labeled_clusters), 
-            func = lambda v, p: [v, p], 
+            func = lambda e, p: [e, p], 
             out_dtype=list, 
             default=-1,
             pass_positions=True 
@@ -768,8 +771,15 @@ class Section( np.ndarray ):
             x, y = np.unravel_index(ei[1], self.shape)
             return ei[0], x, y, level
         list_of_clusters = map( process, zip(list_of_clusters, levels) )
-        
-        return list_of_clusters, levels, threshold, border
+
+        dtype = [
+            ('ePix', object),
+            ('xPix', object),
+            ('yPix', object),
+            ('level', object),
+            ]
+        ret = np.array( list_of_clusters, dtype = dtype ).view(np.recarray)
+        return ret
 
     def spectrum( self, output, gain, lambda_, sigma, binsize = 2 ):
         
@@ -1115,27 +1125,78 @@ def FWHM1d( x, f=.5 ):
 def add_display_options( p ):
     p.add_argument('input_file', help = 'fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
     p.add_argument( '--ohdu', type=int, default = 2, help = 'ohdu to be displayed' )
-    p.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
-    p.add_argument( '--y-range', nargs=2, type=eval, default = [None, None], help = 'ymin ymax' )
     p.add_argument( '--E-span', type=int, default = 10, help = 'E' )
-    p.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
-    p.add_argument( '--section', type=str, default = argparse.SUPPRESS, help = 'data or bias' )
-    p.add_argument( '--proj', type=int, default = argparse.SUPPRESS, help = 'project on axis' )
-    p.add_argument( '--dev', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
-    p.add_argument( '--no-max', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
-    p.add_argument( '--no-min', action='store_true', default = argparse.SUPPRESS, help = 'supress the min line at the projection plot' )
-    p.add_argument( '--no-mean', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
-    p.add_argument( '--no-center', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
-    p.add_argument( '--no-median', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
-    p.add_argument( '--smooth', type=int, default = argparse.SUPPRESS, help = 'smoothening length' )
-    p.add_argument( '--trim', action='store_true', default = argparse.SUPPRESS, help = 'remove trim' )
-    p.add_argument( '--half', action='store_true', default = argparse.SUPPRESS, help = 'remove half' )
-    p.add_argument( '--remove', type=float, default = argparse.SUPPRESS, help = 'remove energies above' )
-    p.add_argument( '--global-bias', action='store_true', default = argparse.SUPPRESS, help = 'remove global bias' )
-    p.add_argument( '--correct-side', action='store_true', default = argparse.SUPPRESS, help = 'remove global bias' )
+    p.add_argument( '--plot', type=str, default = 'image', help = 'plot type' )
+    
+    geom = p.add_argument_group('geometry options')
+    geom.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
+    geom.add_argument( '--y-range', nargs=2, type=eval, default = [None, None], help = 'ymin ymax' )
+    geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
+    geom.add_argument( '--section', type=str, default = argparse.SUPPRESS, help = 'data or bias' )
+    geom.add_argument( '--trim', action='store_true', default = argparse.SUPPRESS, help = 'remove trim' )
+    geom.add_argument( '--half', action='store_true', default = argparse.SUPPRESS, help = 'remove half' )
+
+    corr = p.add_argument_group('correction options')
+    corr.add_argument( '--remove', type=float, default = argparse.SUPPRESS, help = 'remove energies above' )
+    corr.add_argument( '--global-bias', action='store_true', default = argparse.SUPPRESS, help = 'remove global bias' )
+    corr.add_argument( '--correct-side', action='store_true', default = argparse.SUPPRESS, help = 'subtract right side' )
+        
+    proj = p.add_argument_group('projection options')
+    #proj.add_argument( '--proj', type=int, default = argparse.SUPPRESS, help = 'project on axis' )
+    proj.add_argument( '--dev', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
+    proj.add_argument( '--no-max', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
+    proj.add_argument( '--no-min', action='store_true', default = argparse.SUPPRESS, help = 'supress the min line at the projection plot' )
+    proj.add_argument( '--no-mean', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
+    proj.add_argument( '--no-center', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
+    proj.add_argument( '--no-median', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
+    proj.add_argument( '--smooth', type=int, default = argparse.SUPPRESS, help = 'smoothening length' )
+    
+    spec = p.add_argument_group('spectrum options')
+    spec.add_argument( '--binsize', type=float, default=1, help = 'binsize' )
     
     p.set_defaults( func=display )
 
+def group_filenames( input_files ):
+    paths = sorted(glob( input_files ))
+    list_of_paths = []
+    for path in paths:
+        match = re.search(r'(.*?)_p[0-9].fits', path )
+        if match is None:
+            entry = (path,)
+        else:
+            base_path = match.groups()[0]
+            entry = tuple(sorted(glob( base_path+'_p*.fits*' )))
+        if not entry in list_of_paths:
+            list_of_paths.append( entry )
+            print( 'added group:' )
+            for e in entry:
+                print(e)
+    return list_of_paths
+
+def apply_to_files( args ):
+    list_of_paths = group_filenames( args.input_files )
+    returnDict = OrderedDict()
+    for path_group in list_of_paths:
+        partlistHDU = [ astropy.io.fits.open( path ) for path in path_group[::-1] ]
+        parts_dict = OrderedDict()
+        for j, listHDU in enumerate(partlistHDU):
+            part_index = j+1
+            for i, HDU in enumerate(listHDU):
+                ohdu = HDU.header['OHDU']
+                if HDU.data is None: continue
+                if 'exclude' in args and args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
+                if 'ohdu' in args and args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
+                part = Part(HDU)
+                try: parts_dict[ohdu].append(part)
+                except KeyError: parts_dict[ohdu] = [part]
+        returnDict[path_group] = OrderedDict()
+        for i, parts in parts_dict.items():
+            image = Image( parts )
+            image.path = path_group
+            image.ohdu = image.header['OHDU']
+            returnDict[image.path][image.ohdu] = args.func( image, args )
+    return returnDict
+    
 def display( args ):
     with Timer('plot'):
         path = glob( args.input_file )
@@ -1151,11 +1212,6 @@ def display( args ):
             print( 'ohdu {} was not found in {}'.format( args.ohdu, path ) )
             exit(0)
 
-        x = np.random.random(100)*10
-        with Timer('pdf'):
-            print( 'pdf', stats.poisson_norm.pdf(x, gain=10, mu=0, sigma=20, lamb=.1 ) )
-        with Timer('pdf3'):
-            print( 'pdf3', stats.poisson_norm.pdf3(x, gain=10, mu=0, sigma=20, lamb=.1 ) )
         data = imageHDU.data.astype(float)
         
         ccd_width = 4120
@@ -1201,7 +1257,7 @@ def display( args ):
         
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        if 'proj' in args:
+        if args.plot == 'proj':
             axis = args.proj
             if not 'dev' in args:
                 mins = np.nanmin( data, axis=axis )
@@ -1239,7 +1295,14 @@ def display( args ):
                 ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
                 sigmas = mle_norm( data, axis=axis )[1]
                 ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )
-        else:
+        elif args.plot == 'spectrum':
+            bins = np.arange( np.nanmin(data), np.nanmax(data), args.binsize )
+            y, x = np.histogram( data.flatten(), bins )
+            x = .5*(x[:-1]+x[1:])
+            ax.plot( x, y, '.', label = '' )
+            #gain, lamb = mle_poisson_norm( data.flatten(), axis=0, gain=10, mu=0, sigma=20, fix_mu=True, fix_sigma=True, mode=3 )
+            #ax.plot( x, stats.poisson_norm.pdf3(x, mu, sigma, gain, lamb) , '.', label = 'fit mu={mu}\ngain={gain}\nlambda={lamb}'.format(locals()) )
+        elif args.plot == 'image':
             im = np.log(data - np.nanmin(data) + 1)
             cmap = matplotlib.cm.Blues
             #cmap.set_bad(color='red')
@@ -1249,9 +1312,10 @@ def display( args ):
             except:
                 print( 'im.shape', im.shape, data.shape )
                 exit()
+        else:
+            print( 'plot option "{}" not implemented'.format( args.plot ) )
+            exit(0)
         
-        #ax.set_xticklabels([])
-        #ax.set_yticklabels([])
         ax.set_title( str(args ), fontsize=8 )
         ax.grid()
         ax.legend()
@@ -1311,7 +1375,7 @@ class Table:
                 ( {int:'{}', float:'{:.4f}', str:'{}', Section:'{:.4f}'}[type(entry[col])] ).format( entry[col] )
                 for col in self.cols ] )
         return ret
-    
+
 def analyse( args ):
     if 'partlistHDU' in args:
         partlistHDU = [ args.partlistHDU ]

@@ -375,7 +375,7 @@ def simulate_events( args ):
     if 'csv' in args:
         output = args.name + '.csv'
         header = str(vars(args))
-        print( 'header', header )
+        #print( 'header', header )
         header += '\n' + ', '.join(cols)
         if len(array_of_depths) > 0:
             savetxt( output, data, delimiter=', ', header=header, fmt=fmt )
@@ -384,7 +384,9 @@ def simulate_events( args ):
     return Simulation( data, args )
 
 def add_folder_options( p ):
-    p.add_argument('--number-of-images', type=int, default = None, help = 'number of images to be generated' )
+    p.add_argument('folder_name', help = 'factor to convert charges into ADU',
+                   type=str, default = 'simulated_image' )
+    p.add_argument('number_of_images', type=int, default = None, help = 'number of images to be generated' )
     p.add_argument('--readout-noise-range', nargs=2, type=float, default = [0, 0], help = 'readout_noise range' )
     p.add_argument('--dark-current-range', nargs=2, type=float, default = [0, 0], help = 'dark current range' )
     p.add_argument('--charge-gain-range', nargs=2, type=float, default = [7.25, 7.25], help = 'charge gain range' )
@@ -396,20 +398,20 @@ def add_folder_options( p ):
     p.set_defaults( func=generate_folder )
 
 def generate_folder( args ):
-    if 'name' in args:
-        if os.path.exists( args.name ):
-            print( 'output already exists. Exiting' )
-            exit(0)
-        os.mkdirs( args.name )
+    if os.path.exists( args.folder_name ):
+        print( 'output already exists. Exiting' )
+        exit(0)
+    os.mkdir( args.folder_name )
+    if not 'number_of_images' in args:
+        print( 'missing number of images' )
+        exit(0)
     for count in range( args.number_of_images ):
         print( 'generating image', count+1, 'out of', args.number_of_images )
         args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
         args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
+        args.charge_gain = (args.charge_gain_range[1] - args.charge_gain_range[0])*random.random() + args.charge_gain_range[0]
         args.count = count
-        if 'name' in args:
-            args.output_file = '{name}/{count}RN{readout_noise:.2f}DC{dark_current:.4f}'.format(**vars(args)) 
-        else:
-            args.output_file = args.output_pattern.replace('*', 'RN{readout_noise:.2f}DC{dark_current:.4f}'.format(**vars(args)) )
+        args.name = '{folder_name}/{folder_name}{count:04d}RN{readout_noise:.2f}DC{dark_current:.4f}CG{charge_gain:.1f}'.format(**vars(args)) 
         sim = simulate_events( args )
         sim.generate_image( args )
     return
@@ -420,8 +422,8 @@ if __name__ == '__main__':
                                      )
     subparsers = parser.add_subparsers( help = 'a' )
 
-    add_image_options( subparsers.add_parser('image', help='generate simulated image', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_folder_options( subparsers.add_parser('folder', help='generate folder with simulated images', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_image_options( subparsers.add_parser('image', help='generate simulated image', formatter_class=argparse.ArgumentDefaultsHelpFormatter) )
+    add_folder_options( subparsers.add_parser('folder', help='generate folder with simulated images', formatter_class=argparse.ArgumentDefaultsHelpFormatter) )
 
     args = parser.parse_args()
     

@@ -62,7 +62,7 @@ class poisson_norm:
     gain_bounds = (1,None)
     
     @classmethod
-    def pdf(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8, debug=False ):
+    def pdf3(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8, debug=False ):
         result = zeros_like(x).astype(float)
         
         k = 0
@@ -93,9 +93,7 @@ class poisson_norm:
 
 
     @classmethod
-    def pdf3(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8):
-        result = zeros_like(x).astype(float)
-        
+    def pdf(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-6):
         kmax = int( (log(tol)+lamb)/log(lamb) ) + 1
         ks = arange(0, kmax, 1).astype(int)
         poisson_weights = poisson.pmf( ks, mu=lamb )
@@ -119,14 +117,17 @@ class poisson_norm:
             N = poisson.rvs( n )
             res.extend( norm.rvs( loc=k*g*mu, scale=scale, size=N ) )
             k += 1
+
+    @classmethod
+    def fit_binned( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False, binsize=1 ):
+        bins = arange(np.nanmin(X), np.nanmax(X), binsize)
+        hist, edges = histogram( X, bins )
+        x = (edges[:-1]+edges[1:])/2.
+        
             
     @classmethod
-    def fit( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False, mode=1 ):
+    def fit( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False ):
         func = cls.pdf
-        if mode == 2:
-            func = cls.pdf2
-        if mode == 3:
-            func = cls.pdf3
         pdf = None
         if fix_mu and fix_sigma:
             pdf = lambda X, gain, lamb: func(X, mu+gain*lamb, sigma, gain, lamb)
