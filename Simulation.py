@@ -244,36 +244,39 @@ class Simulation( recarray ):
         return
 
 def add_params_options(p):
-    p.add_argument('-g', '--charge-gain', help = 'factor to convert charges into ADU',
+    g = p.add_argument_group('parameter options')
+    g.add_argument('-g', '--charge-gain', help = 'factor to convert charges into ADU',
                    type=float, default = 7.25 )    
-    p.add_argument('-rn', '--readout-noise', help = 'sigma of the normal noise distribution in ADU', 
+    g.add_argument('-rn', '--readout-noise', help = 'sigma of the normal noise distribution in ADU', 
                    type=float, default = 0 )
-    p.add_argument('-dc', '--dark-current', help = 'lambda of Poisson distribution in 1/(e-·h)',
+    g.add_argument('-dc', '--dark-current', help = 'lambda of Poisson distribution in 1/(e-·h)',
                    type=float, default = 0 )
-    p.add_argument('-exp', '--expose-hours', help = 'exposed hours',
+    g.add_argument('-exp', '--expose-hours', help = 'exposed hours',
                    type=float, default = 1 )
     return
 
 def add_geometry_options(p):
-    p.add_argument('-os', '--horizontal-overscan', type=int, default = 150, help = 'size of the horizontal overscan in pixels' )
-    p.add_argument('-vos', '--vertical-overscan', type=int, default = 90, help = 'size of the vertical overscan in pixels' )
+    g = p.add_argument_group('geometry options')
+    g.add_argument('-os', '--horizontal-overscan', type=int, default = 150, help = 'size of the horizontal overscan in pixels' )
+    g.add_argument('-vos', '--vertical-overscan', type=int, default = 90, help = 'size of the vertical overscan in pixels' )
     #p.add_argument('-hpt', '--horizontal-pretrim', type=int, default = 8, help = 'size of the vertical overscan in pixels' )
     #p.add_argument('-vpt', '--vertical-pretrim', type=int, default = 1, help = 'size of the vertical overscan in pixels' )
-    p.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape, help = 'shape of the image as 2d pixels' )
-    p.add_argument('--rebin', nargs=2, type=int, default = [1,1], help = '2d rebinning strides' )
-    p.add_argument('--image-type', type=eval, default='int', help = 'image type' )
-    p.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5', 
+    g.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape, help = 'shape of the image as 2d pixels' )
+    g.add_argument('--rebin', nargs=2, type=int, default = [1,1], help = '2d rebinning strides' )
+    g.add_argument('--image-type', type=eval, default='int', help = 'image type' )
+    g.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5', 
                     type=int, default = argparse.SUPPRESS )
     return
 
 def add_depth_options(p):
-    p.add_argument('--depth-range', nargs=2, type=float, default = [0,670], help = 'range into which to randomly generate depths' )
-    p.add_argument('--diffusion-function',
+    g = p.add_argument_group('depth options')
+    g.add_argument('--depth-range', nargs=2, type=float, default = [0,670], help = 'range into which to randomly generate depths' )
+    g.add_argument('--diffusion-function',
                         type=str, 
                         default = '{}'.format(constants.diffusion_function),
                         help = 'function to map z-depth into xy-sigma' 
                         )
-    p.add_argument('--charge-efficiency-function',
+    g.add_argument('--charge-efficiency-function',
                         type=str,
                         default = constants.charge_efficiency_function,
                         help = 'function for charge efficiency dependent of z-depth' 
@@ -281,41 +284,44 @@ def add_depth_options(p):
     return
 
 def add_charges_options(p):
-    p.add_argument('-N', '--number-of-charges', type=int, default = 0, help = 'number of charges to be randomly generated' )
-    p.add_argument('--charge-range', nargs=2, type=int, default = [5, 200], help = 'range into which to randomly generate charges' )
-    p.add_argument('--number-of-Cu-charges',
+    g = p.add_argument_group('charge options')
+    g.add_argument('-N', '--number-of-charges', type=int, default = 0, help = 'number of charges to be randomly generated' )
+    g.add_argument('--charge-range', nargs=2, type=int, default = [5, 200], help = 'range into which to randomly generate charges' )
+    g.add_argument('--number-of-Cu-charges',
                         type=int,
                         default = 0,
                         help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
                         )
-    p.add_argument('--number-of-Cu2-charges', type=int, default = 0, 
+    g.add_argument('--number-of-Cu2-charges', type=int, default = 0, 
                         help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' )
-    p.add_argument('--number-of-Si-charges', type=int, default = 0, help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' )
+    g.add_argument('--number-of-Si-charges', type=int, default = 0, help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' )
     return
 
 def add_modulation_options(p):
-    p.add_argument('--vertical-modulation-function', help = 'function to modulate the vertical axis', 
+    g = p.add_argument_group('modulation options')
+    g.add_argument('--vertical-modulation-function', help = 'function to modulate the vertical axis', 
                     type=str, default = "0" )
-    p.add_argument('--horizontal-modulation-function', help = 'function to modulate the horizontal axis',
+    g.add_argument('--horizontal-modulation-function', help = 'function to modulate the horizontal axis',
                         type=str, default = "0" )
-    p.add_argument('--default-vertical-modulation', help = 'set vertical modulation to "{}"'.format(constants.vertical_modulation_function),
+    g.add_argument('--default-vertical-modulation', help = 'set vertical modulation to "{}"'.format(constants.vertical_modulation_function),
                     type=str, default=argparse.SUPPRESS )
-    p.add_argument('--default-horizontal-modulation', help = 'set horizontal modulation to "{}"'.format(constants.horizontal_modulation_function), 
+    g.add_argument('--default-horizontal-modulation', help = 'set horizontal modulation to "{}"'.format(constants.horizontal_modulation_function), 
                     type=str, default=argparse.SUPPRESS )
-    p.add_argument('--default-modulation', help = 'set modulations to "{}" and "{}"'.format(constants.horizontal_modulation_function, constants.vertical_modulation_function), 
+    g.add_argument('--default-modulation', help = 'set modulations to "{}" and "{}"'.format(constants.horizontal_modulation_function, constants.vertical_modulation_function), 
                     type=str, default=argparse.SUPPRESS )
     return
 
 def add_output_options(p):
-    p.add_argument('--no-fits', help = 'suppress fits output',
+    g = p.add_argument_group('output options')
+    g.add_argument('--no-fits', help = 'suppress fits output',
                    action='store_true', default=argparse.SUPPRESS )
-    p.add_argument('--pdf', help = 'generate pdf output',
+    g.add_argument('--pdf', help = 'generate pdf output',
                    action='store_true', default=argparse.SUPPRESS )
-    p.add_argument('--spectrum', help = 'generate energy spectrum',
+    g.add_argument('--spectrum', help = 'generate energy spectrum',
                    action='store_true', default=argparse.SUPPRESS )
-    p.add_argument('--verbose', help = 'verbose level', 
+    g.add_argument('--verbose', help = 'verbose level', 
                    type=int, default=argparse.SUPPRESS )
-    p.add_argument('--csv', help = 'generate csv output',
+    g.add_argument('--csv', help = 'generate csv output',
                    action='store_true', default=argparse.SUPPRESS )
     return
 
@@ -387,9 +393,10 @@ def add_folder_options( p ):
     p.add_argument('folder_name', help = 'factor to convert charges into ADU',
                    type=str, default = 'simulated_image' )
     p.add_argument('number_of_images', type=int, default = None, help = 'number of images to be generated' )
-    p.add_argument('--readout-noise-range', nargs=2, type=float, default = [0, 0], help = 'readout_noise range' )
-    p.add_argument('--dark-current-range', nargs=2, type=float, default = [0, 0], help = 'dark current range' )
-    p.add_argument('--charge-gain-range', nargs=2, type=float, default = [7.25, 7.25], help = 'charge gain range' )
+    g = p.add_argument_group('parameter range options')
+    g.add_argument('--readout-noise-range', nargs=2, type=float, default = [0, 0], help = 'readout_noise range' )
+    g.add_argument('--dark-current-range', nargs=2, type=float, default = [0, 0], help = 'dark current range' )
+    g.add_argument('--charge-gain-range', nargs=2, type=float, default = [7.25, 7.25], help = 'charge gain range' )
     add_geometry_options(p)
     add_depth_options(p)
     add_charges_options(p)
@@ -407,9 +414,9 @@ def generate_folder( args ):
         exit(0)
     for count in range( args.number_of_images ):
         print( 'generating image', count+1, 'out of', args.number_of_images )
-        args.readout_noise = (args.readout_noise_range[1] - args.readout_noise_range[0])*random.random() + args.readout_noise_range[0]
-        args.dark_current = (args.dark_current_range[1] - args.dark_current_range[0])*random.random() + args.dark_current_range[0]
-        args.charge_gain = (args.charge_gain_range[1] - args.charge_gain_range[0])*random.random() + args.charge_gain_range[0]
+        args.readout_noise = random.uniform(*args.readout_noise_range)
+        args.dark_current = random.uniform(*args.dark_current_range)
+        args.charge_gain = random.unfiform(*args.charge_gain_range)
         args.count = count
         args.name = '{folder_name}/{folder_name}{count:04d}RN{readout_noise:.2f}DC{dark_current:.4f}CG{charge_gain:.1f}'.format(**vars(args)) 
         sim = simulate_events( args )

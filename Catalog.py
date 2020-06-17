@@ -22,6 +22,8 @@ import matplotlib.pylab as plt
 
 from numpy.lib.recfunctions import append_fields, stack_arrays
 import numpy as np
+import scipy.special as special
+import Statistics as stats
 
 from ROOT import TFile, TTree, AddressOf
 
@@ -32,6 +34,7 @@ from ROOT import TFile, TTree, AddressOf
 #from rootpy.io import root_open
 
 import Image
+import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
 
@@ -514,10 +517,10 @@ def add_extract_options(p):
 
 
 def get_selection( file, branches, selection, start=None, stop=None ):
-    return root_numpy.root2array( file, treename = 'hitSumm', branches = list(set(branches)), selection = selection, start=start, stop=stop )
+    return root_numpy.root2array( file, treename = 'hitSumm', branches = list(set(branches)), selection = selection, start=start, stop=stop ).view(np.recarray)
 
 def get_start_stop_from_runID_range( file, runID_range ):
-    runIDs = get_selection( file, branches=['runID'], selection=None )['runID']
+    runIDs = get_selection( file, branches=['runID'], selection=None ).runID
     start = np.amin(np.argwhere(runIDs==runID_range[0]))
     stop = np.amax(np.argwhere(runIDs==runID_range[1]))+1
     return start, stop
@@ -535,15 +538,78 @@ def get_selections( file, branches, selections, global_selection=None, start=Non
             lims = [ ( np.min(data_selection[selection][branch]), np.max(data_selection[selection][branch]) ) for branch in branches ]
         print( selection, data_selection[selection].shape )
     return data_selection, lims
-    
+
+def mean_norm( mu, sigma, a, b ):
+    primitive = lambda x: .5*mu*special.erf((x - mu)/(np.sqrt(2)*sigma)) - sigma*np.exp(-(x - mu)**2/(2*sigma**2))/np.sqrt(2*np.pi)
+    if a == -np.inf and b == np.inf:
+        return mu
+    elif a == -np.inf:
+        return primitive(b) + .5*mu
+    elif b == np.inf:
+        return .5*mu - primitive(a)
+    return primitive(b) - primitive(a)
+
+def var_norm( mu, sigma, a, b ):
+    primitive = lambda x: .5*(mu**2 + sigma**2) *special.erf((x - mu)/(np.sqrt(2)*sigma)) \
+        - sigma*(mu+x)*np.exp(-(x - mu)**2/(2 *sigma**2))/np.sqrt(2*np.pi)
+    if a == -np.inf and b == np.inf:
+        return mu
+    elif a == -np.inf:
+        return primitive(b) + .5*(mu**2 + sigma**2)
+    elif b == np.inf:
+        return .5*(mu**2 + sigma**2) - primitive(a)
+    return primitive(b) - primitive(a)
+
+def sum_norm( mu, sigma, a, b ):
+    try:
+        print('shapes', a.shape, b.shape, mu.shape, sigma.shape )
+    except:
+        pass
+    primitive = lambda x: .5* special.erf((x - mu)/(np.sqrt(2)*sigma))
+    return primitive(b) - primitive(a)
+
+def test_std_correction():
+    print( 'mean_norm', mean_norm( 1, 2, -np.inf, np.inf ) )
+    print( 'mean_norm', mean_norm( 1, 2, 0, np.inf ) )
+    print( 'mean_norm', mean_norm( 1, 2, -np.inf, 0 ) )
+    print( 'mean_norm', mean_norm( 1, 2, 0, 10 ) + mean_norm( 1, 2, -5, 0 ) )
+
+    print( 'var_norm', 1**2/var_norm( 0, 1, -3, 3 ) )
+    sigma = 3.11
+    rvs = stats.norm.rvs(0, sigma, int(1e3))
+    p = stats.norm.pdf(rvs)
+    f=0
+    std = np.std(rvs)
+    print( 'stats', std, sigma, np.sum(rvs) )
+    rvs = rvs[p>np.max(p)*f]
+    print( 'len', len(rvs) )
+    std = np.std(rvs)
+    mu = np.mean(rvs)
+    rvsmin, rvsmax = np.min(rvs), np.max(rvs) 
+    print( 'stats factor', mu, std, sigma, std*np.sqrt(std**2/var_norm( mu, std, rvsmin, rvsmax)) )
+    print( 'stats add', mu, std, sigma, np.sqrt( (std**2 + var_norm( mu, std, -np.inf, rvsmin) + var_norm( mu, std, rvsmax, np.inf) ))*std**2/var_norm(mu, std, rvsmin, rvsmax) )
+    print( 'stats add', mu, std, sigma, np.sqrt( (std**2 + var_norm( mu, std, -np.inf, rvsmin) + var_norm( mu, std, rvsmax, np.inf) )) )
+    print( 'stats', mu, std, sigma, std*std**2/var_norm( mu, std, rvsmin, rvsmax) )
+    #print( 'stats fwhm', rvsmin, rvsmax, rvsmax-rvsmin, (rvsmax-rvsmin)/( 2*np.sqrt(2*np.log(1./f)) ), stats.FWHM1d(rvs, f=.1) )
+    print( np.sum(rvs), sum_norm( mu, sigma, rvsmin, rvsmax ), np.sum(rvs)/sum_norm( mu, sigma, rvsmin, rvsmax ) )
+    print( stats.norm.fit(rvs) )
+    print( stats.norm.fit2(rvs) )
+    y, x, dx = stats.make_histogram( rvs, bins=len(rvs)/20 )
+    print( stats.norm.fit2( x, mu=mu, sigma=std, weights=y ) )
+    print( 'sum', sum(y) )
+    print( stats.norm.fit_curve( y, x, A=sum(y), mu=mu, sigma=std ), dx )
+    return
+
+#test_std_correction()
+
 def scatter( args ):
     with Timer('scatter'):
         file = glob.glob(args.root_file)
         start, stop = None, None
         if 'runID_range' in args:
             start, stop = get_start_stop_from_runID_range(file[0], args.runID_range)
-        data_selection, lims = get_selections( file[0], args.branches, args.selections, args.global_selection, start=start, stop=stop, extra_branches=['ePix','xPix','yPix','xVar1'] )
-                
+        data_selection, lims = get_selections( file[0], args.branches, args.selections, args.global_selection, start=start, stop=stop, extra_branches=['ePix','xPix','yPix','xVar1','E0', 'E1', 'E2', 'n0', 'n1', 'n2'] )
+        
         fig = plt.figure()
         ax = fig.add_subplot(111)
         if 'global_selection' in args:
@@ -552,12 +618,27 @@ def scatter( args ):
             markers = ['.', '+', 'x', '^']
             for selection, marker in zip(args.selections, markers):
                 datum = data_selection[selection]
-                above_2sigma = datum['ePix']>30
-                bary30 = np.average( (datum['xPix'][above_2sigma], datum['yPix'][above_2sigma]), weights = datum['ePix'][above_2sigma] )
-                m2 = np.average( (datum['xPix'][above_2sigma]**2, datum['yPix'][above_2sigma]**2), weights = datum['ePix'][above_2sigma] )
-                Var30 = m2 - bary30**2
-                ax.scatter( datum[args.branches[0]], datum[args.branches[1]], marker=marker, alpha=.2, label=selection.replace('&&', 'and') )
-                ax.scatter( datum[args.branches[0]], var30, marker=marker, alpha=.2, label=selection.replace('&&', 'and') )
+                above_2sigma = [ ePix>30 for ePix in datum.ePix ]
+                moment = lambda n: np.array( [ np.average( (xPix[mask]**n, yPix[mask]**n), weights = ePix[mask], axis=1 ) for mask, xPix, yPix, ePix in zip(above_2sigma, datum.xPix, datum.yPix, datum.ePix) ] )
+                m1 = moment(1)
+                m2 = moment(2)
+                var30 = (m2 - m1**2).T
+                E30, n30 = np.array( [ (np.sum( ePix[mask] ), len(ePix[mask]) ) for mask, ePix in zip(above_2sigma, datum.ePix) ] ).T
+                
+                #Min = np.array( [ np.min( ( xPix[mask], yPix[mask] ), axis=1) for mask, xPix, yPix in zip(above_2sigma, datum.xPix, datum.yPix) ] ).T
+                #Max = np.array( [ np.max( ( xPix[mask], yPix[mask] ), axis=1) for mask, xPix, yPix in zip(above_2sigma, datum.xPix, datum.yPix) ] ).T
+                #print( 'min, max', Max[0]-Min[0] )
+                #print(Min[0], var30)
+                #E30c = E30/( sum_norm(mu=m1[:,0], sigma=var30[0], a=Min[0], b=Max[0]) * sum_norm(mu=m1[:,1], sigma=var30[0], a=Min[1], b=Max[1]) )
+                #print( zip(E30c, E30) )
+                Eerr = 15
+                if False:
+                    ax.scatter( datum[args.branches[0]], datum[args.branches[1]], marker=marker, alpha=.2, label=selection.replace('&&', 'and') )
+                ax.errorbar( datum['E0'], datum[args.branches[1]], xerr=Eerr*datum['n0'], label='E0', fmt=markers[0] )
+                ax.errorbar( datum['E1'], datum[args.branches[1]], xerr=Eerr*datum['n1'], label='E1', fmt=markers[1] )
+                #ax.errorbar( datum['E2'], datum[args.branches[1]], xerr=Eerr*datum['n2'], label='E3', fmt=markers[2] )
+                ax.errorbar( E30, var30[0], xerr=Eerr*n30, label='E30', fmt=markers[3] )
+                #ax.scatter( E30c, var30[0], marker=marker, alpha=.2, label=selection.replace('&&', 'and') )
         ax.legend()
         ax.set_xlim( lims[0] )
         ax.set_ylim( lims[1] )
@@ -577,10 +658,24 @@ def add_scatter_options(p):
     p.add_argument('--branches', nargs=2, type=str, default= ['E0','xVar0'], help = 'branches used for x- and y-axis' )
     p.add_argument('--global-selection', type=str, default='0', help = 'global selection' )
     p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('--define', nargs='+', type=str, default=argparse.SUPPRESS, help = 'definitions' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
     p.set_defaults(func=scatter)
 
+def energy_threshold( datum, threshold ):
+    above_2sigma = [ ePix>threshold for ePix in datum.ePix ]
+    moment = lambda n: np.array( [ np.average( (xPix[mask]**n, yPix[mask]**n), weights = ePix[mask], axis=1 ) for mask, xPix, yPix, ePix in zip(above_2sigma, datum.xPix, datum.yPix, datum.ePix) ] )
+    m1 = moment(1)
+    m2 = moment(2)
+    var = (m2 - m1**2).T
+    E, n = np.array( [ (np.sum( ePix[mask] ), len(ePix[mask]) ) for mask, ePix in zip(above_2sigma, datum.ePix) ] ).T
+    dtype = [ ('{}{}'.format(key,threshold), float) for key in ('E', 'n', 'xVar', 'yVar') ]
+    print( dtype )
+    return np.array( zip(E, n, var[0], var[1]), dtype=dtype ).view(np.recarray)
+
+def pdf( x, E, n, sigma ):
+    return np.sum( [stats.norm.pdf(x, iE, in_*sigma) for iE, in_ in zip(E,n)], axis=0 )
 
 def histogram( args ):
     with Timer('histogram'):
@@ -592,32 +687,53 @@ def histogram( args ):
             bins = np.linspace( np.min(data), np.max(data), args.nbins )
         else:
             bins = np.linspace( np.min(data), np.max(data), int(np.sqrt(len(data))) )
-        
-        data_selection = {}
-        if 'selection' in args:
-            bins = None
-            for selection in args.selection:
-                selection_string = selection.replace('and', '&&')
-                data_selection[selection] = root_numpy.root2array( file[0], treename = 'hitSumm', branches = args.branch, selection = 'flag==0 && ' + selection_string )
-                if bins is None:
-                    if 'binsize' in args:
-                        bins = np.arange( np.min(data_selection[selection]), np.max(data_selection[selection]), args.binsize )
-                    elif 'nbins' in args:
-                        bins = np.linspace( np.min(data_selection[selection]), np.max(data_selection[selection]), args.nbins )
-                    else:    
-                        bins = np.linspace( np.min(data_selection[selection]), np.max(data_selection[selection]), int(np.sqrt(len(data_selection[selection]))) )
 
-        #print( 'bins', bins )
+        start, stop = None, None
+        if 'runID_range' in args:
+            start, stop = get_start_stop_from_runID_range(file[0], args.runID_range)
+        data_selection, lims = get_selections( file[0], [args.branch], args.selections, args.global_selection, start=start, stop=stop, extra_branches=['ePix','xPix','yPix','xVar1','E0', 'E1', 'E2', 'n0', 'n1', 'n2', 'gainCu'] )
+
+        first_data_selection = data_selection.values()[0][args.branch]
+        if 'binsize' in args:
+            bins = np.arange( np.min(first_data_selection), np.max(first_data_selection), args.binsize )
+        elif 'nbins' in args:
+            bins = np.linspace( np.min(first_data_selection), np.max(first_data_selection), args.nbins )
+        else:
+            bins = np.linspace( np.min(first_data_selection), np.max(first_data_selection), int(np.sqrt(len(first_data_selection))) )
+        
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.set_title(args.branch)
-        ax.hist(data, bins=bins, histtype='step', label='all')
-        if 'selection' in args:
-            for selection in args.selection:
-                ax.hist( data_selection[selection], bins=bins, histtype='step', label=selection.replace('&&', 'and') )
+        #ax.hist(data, bins=bins, histtype='step', label='all')
+        if 'selections' in args:
+            for selection in args.selections:
+                print( 'selection', data_selection[selection][args.branch].shape, len(bins) )
+                datum = data_selection[selection]
+
+                sigma = 12.5
+                #ax.step( bins, pdf( bins, datum.E0, datum.n0, sigma ), where='mid', label='E0')
+                #ax.step( bins, pdf( bins, datum.E1, datum.n1, sigma ), where='mid', label='E1')
+
+                #ax.step( bins, pdf( bins, datum.E2, datum.n2, sigma ), where='mid', label='E2')
+
+                dat45 = energy_threshold( datum, 45)
+                ax.step( bins, pdf( bins, dat45.E45, dat45.n45, sigma ), where='mid', label='E45')
+                #dat30 = energy_threshold( datum, 30)
+                #ax.step( bins, pdf( bins, dat30.E30, dat30.n30, sigma ), where='mid', label='E30')
+
+                #dat15 = energy_threshold( datum, 15)
+                #ax.step( bins, pdf( bins, dat15.E15, dat15.n15, sigma ), where='mid', label='E15')
+                
+                #pdf30 = lambda x: np.sum( [stats.norm.pdf(x, E, n*Eerr) for E, n in zip(E30,n30)], axis=0 )
+                #ax.step( bins, pdf30(bins), where='mid', label='E30')
+                
+                #E30 = E30[ np.logical_or(var30[0]<.3, var30[0]>.8) ]
+                #n30 = n30[ np.logical_or(var30[0]<.3, var30[0]>.8) ]
+                #pdf30 = lambda x: np.sum( [stats.norm.pdf(x, E, n*Eerr) for E, n in zip(E30,n30)], axis=0 )
+                #ax.step( bins, pdf30(bins), where='mid', label='E30*')
         ax.legend()
         ax.set_xlabel(args.branch)
-        ax.set_yscale('log')
+        #ax.set_yscale('log')
     if 'output' in args:
         fig.savefig(args.output+'.pdf')
     else:
@@ -627,8 +743,11 @@ def histogram( args ):
 def add_histogram_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('branch', type=str, default= 'E0', help = 'branch used for x-axis' )
-    p.add_argument('--selection', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
-    p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
+    p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selections' )
+    p.add_argument('--global-selection', type=str, default='0', help = 'global selection' )
+    p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
+    p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
+    #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
     p.add_argument('--binsize', type=float, default=argparse.SUPPRESS, help = 'binsize' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )

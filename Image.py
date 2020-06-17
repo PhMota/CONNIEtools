@@ -411,11 +411,11 @@ class Part:
         '''
         try:
             self.bias_width, self.has_right, self.width = {
-                (Part.ccd_width+550)*2: [450, True, (Part.ccd_width+550)],
+                (Part.ccd_width+450)*2: [450, True, (Part.ccd_width+450)],
                 (Part.ccd_width+150)*2: [150, True, (Part.ccd_width+150)],
-                (Part.ccd_width+550): [450, False, (Part.ccd_width+550)],
+                (Part.ccd_width+450): [450, False, (Part.ccd_width+450)],
                 (Part.ccd_width+150): [150, False, (Part.ccd_width+150)],
-                (Part.ccd_width-8+550): [450, False, (Part.ccd_width+550-8)],
+                (Part.ccd_width-8+450): [450, False, (Part.ccd_width+450-8)],
                 (Part.ccd_width-8+150): [150, False, (Part.ccd_width+150-8)],
                 4570: [150, False, 4570],
                 }[width]
@@ -878,7 +878,7 @@ class Section( np.ndarray ):
             median = np.nanmedian( self )
             mad = MAD( self )
             
-            w, center = FWHM( self )
+            w, center = stats.FWHM( self )
             
             x, y = self.get_binned_distribution( binsize=binsize )
             #halfmax = np.max(y)/2.
@@ -1072,56 +1072,6 @@ def mle_poisson_norm( x, axis=None, mu=0, sigma=1, gain=1, fix_mu=False, fix_sig
         gain, lamb = fit
     return gain, lamb
 
-def FWHM( x, axis = None, f = 0.5 ):
-    fwhm = np.apply_along_axis( lambda x: FWHM1d(x,f=f), axis, x )
-    if axis == 1:
-        sigma, center = fwhm.T
-    else:
-        sigma, center = fwhm
-    return sigma, center
-
-def FWHM1d( x, f=.5 ):
-    y = np.array(x)
-    if y.size == 0: return np.nan, np.nan
-    yleft = None
-    yright = None
-    Max = None
-    iteractions = 0
-    while True:
-        nbins = int(np.sqrt(y.size))
-        yleft_prev, yright_prev = yleft, yright
-        bins = np.linspace( np.nanmin(y), np.nanmax(y), nbins )
-        hist, edges = np.histogram( y, bins )
-        binwidth = bins[1] - bins[0]
-
-        Max = np.max(hist)
-        above = hist >= f*Max
-        
-        edge_left = np.nanmin( edges[:-1][above] )
-        edge_right = np.nanmax( edges[1:][above] )
-        yleft = np.mean( y[ abs(y - edge_left) < binwidth ] )
-        yright = np.mean( y[ abs(y - edge_right) < binwidth ] )
-        
-        middle = np.logical_and( y>yleft, y<yright)
-
-        if above[0] == True and above[-1] == True: 
-            break
-        y = y[ middle ]
-        
-        if not yleft_prev is None:
-            if yleft_prev == yleft and yright_prev == yright: 
-                break
-        if y.size == 0: 
-            print( 'FWHM: ValueWarning: did not converge' )
-            return np.nan, np.nan
-        iteractions += 1
-
-    sigma = (abs(yleft - yright))/( 2*np.sqrt(2*np.log(1./f)) )
-    center = np.mean([yleft,yright]) 
-    #center = np.nanmean(y)
-    #print( 'y.size', iteractions, y.size, sigma, center )
-    return sigma, center 
-
 def add_display_options( p ):
     p.add_argument('input_file', help = 'fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
     p.add_argument( '--ohdu', type=int, default = 2, help = 'ohdu to be displayed' )
@@ -1269,7 +1219,7 @@ def display( args ):
                     medians = np.nanmedian( data, axis=axis )
                     ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
                 if not 'no_center' in args:
-                    centers = FWHM( data, axis=axis, f=.5 )[1]
+                    centers = stats.FWHM( data, axis=axis, f=.5 )[1]
                     ax.plot( centers, '.', label='center $\mu={:.4f}$'.format(np.nanmean(centers)) )
                 #mus = mle_poisson_norm( data, axis=axis, gain=10, mu=0, sigma=20, fix_mu=False, fix_sigma=True, mode=1 )[0]
                 #ax.plot( mus, '.', label='mu[mle] $\mu={:.4f}$'.format(np.nanmean(mus)) )
@@ -1291,7 +1241,7 @@ def display( args ):
                     ax.plot( stds, '.', label='std $\mu={:.4f}$'.format(np.nanmean(stds)) )
                 mads = MAD( data, axis=axis )
                 ax.plot( mads, '.', label='MAD $\mu={:.4f}$'.format(np.nanmean(mads)) )
-                fwhm = FWHM( data, axis=axis, f=.001 )[0]
+                fwhm = stats.FWHM( data, axis=axis, f=.001 )[0]
                 ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
                 sigmas = mle_norm( data, axis=axis )[1]
                 ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )

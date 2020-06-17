@@ -45,6 +45,53 @@ def nanMAD( data, axis = None, scale=1.4826 ):
         median = nanmedian( data )
     return scale * nanmedian( abs( data - median ), axis = axis )
 
+def FWHM( x, axis = None, f = 0.5 ):
+    fwhm = apply_along_axis( lambda x: FWHM1d(x,f=f), axis, x )
+    if axis == 1:
+        sigma, center = fwhm.T
+    else:
+        sigma, center = fwhm
+    return sigma, center
+
+def FWHM1d( x, f=.5 ):
+    y = array(x)
+    if y.size == 0: return nan, nan
+    yleft = None
+    yright = None
+    Max = None
+    iteractions = 0
+    while True:
+        nbins = int(sqrt(y.size))
+        yleft_prev, yright_prev = yleft, yright
+        bins = linspace( nanmin(y), nanmax(y), nbins )
+        hist, edges = histogram( y, bins )
+        binwidth = bins[1] - bins[0]
+
+        Max = max(hist)
+        above = hist >= f*Max
+        
+        edge_left = nanmin( edges[:-1][above] )
+        edge_right = nanmax( edges[1:][above] )
+        yleft = mean( y[ abs(y - edge_left) < binwidth ] )
+        yright = mean( y[ abs(y - edge_right) < binwidth ] )
+        
+        middle = logical_and( y>yleft, y<yright)
+
+        if above[0] == True and above[-1] == True: 
+            break
+        y = y[ middle ]
+        
+        if not yleft_prev is None:
+            if yleft_prev == yleft and yright_prev == yright: 
+                break
+        if y.size == 0: 
+            print( 'FWHM: ValueWarning: did not converge' )
+            return nan, nan
+        iteractions += 1
+
+    sigma = (abs(yleft - yright))/( 2*sqrt(2*log(1./f)) )
+    center = mean([yleft,yright]) 
+    return sigma, center 
 
 def mean_outliers( data, axis=None, n=2 ):
     med = median(data,axis)
@@ -52,7 +99,50 @@ def mean_outliers( data, axis=None, n=2 ):
     return mean( data[ abs(data-med)<n*MAD_ ] )
 
 norm = scipy.stats.norm
+
+def _norm_fit_( X, mu=0, sigma=1., fix_mu=False, fix_sigma=False, weights=1 ):
+    if fix_mu:
+        pdf = lambda X, sigma: norm.pdf(X, mu, sigma)
+        p0 = (sigma)
+        bounds = ( (0, None) )
+    elif fix_sigma:
+        pdf = lambda X, mu: norm.pdf(X, mu, sigma)
+        p0 = (mu)
+        bounds = ( (None, None) )
+    else:
+        pdf = lambda X, mu, sigma: norm.pdf(X, mu, sigma)
+        p0 = (mu, sigma)
+        bounds = ( (None,None), (0,None) )
+    ret = maxloglikelihood( pdf, X, p0=p0, bounds=bounds, weights=weights )['x']
+    return ret
+
+norm.fit2 = _norm_fit_
+
+def _norm_fit_curve_( y, x, A=1, mu=0, sigma=1., fix_A = False, fix_mu=False, fix_sigma=False ):
+    if fix_mu:
+        pdf = lambda X, A, sigma: A*norm.pdf(X, mu, sigma)
+        p0 = (A, sigma)
+        bounds = ( (0, None) )
+    elif fix_sigma:
+        pdf = lambda X, A, mu: A*norm.pdf(X, mu, sigma)
+        p0 = (A, mu)
+        bounds = ( (None, None) )
+    else:
+        pdf = lambda X, A, mu, sigma: A*norm.pdf(X, mu, sigma)
+        p0 = (A, mu, sigma)
+        bounds = ( (0,-inf,0), (inf,inf,inf) )
+    ret, pcorr = scipy.optimize.curve_fit( pdf, x, y, p0=p0, bounds=bounds )
+    return ret
+norm.fit_curve = _norm_fit_curve_
+
 poisson = scipy.stats.poisson
+
+def make_histogram( X, bins=None, binwidth=None ):
+    if binwidth:
+        bins = arange(min(X), max(X), binwidth)
+    hist, edges = histogram( X, bins )
+    x = .5*(edges[1:]+edges[:-1])
+    return hist, x, edges[1]-edges[0]
 
 class poisson_norm:
     verbose = False
@@ -120,9 +210,11 @@ class poisson_norm:
 
     @classmethod
     def fit_binned( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False, binsize=1 ):
-        bins = arange(np.nanmin(X), np.nanmax(X), binsize)
+        bins = arange(nanmin(X), nanmax(X), binsize)
         hist, edges = histogram( X, bins )
         x = (edges[:-1]+edges[1:])/2.
+        
+        params = scipy.optimize.curve_fit()
         
             
     @classmethod
@@ -138,13 +230,45 @@ class poisson_norm:
             p0 = (mu, gain, lamb)
             bounds = (cls.mu_bounds, cls.gain_bounds, cls.lamb_bounds)
         elif not fix_mu and not fix_sigma and not fix_g and not fix_lamb:
-            pdf = lambda X, mu, gain, lamb: func(X, mu+g*lamb, sigma, gain, lamb)
-            p0 = (mu, gain, lamb)
-            bounds = (cls.mu_bounds, cls.gain_bounds, cls.lamb_bounds)
+            pdf = lambda X, mu, sigma, gain, lamb: func(X, mu+g*lamb, sigma, gain, lamb)
+            p0 = (mu, sigma, gain, lamb)
+            bounds = (cls.mu_bounds, cls.sigma_bounds, cls.gain_bounds, cls.lamb_bounds)
         if pdf is None:
             raise Exception('fix combination not implemented')
         ret = maxloglikelihood( pdf, X, p0=p0, bounds=bounds )['x']
         return ret
+
+sqrt2 = sqrt(2.)
+class binom_norm2d:
+    def integral_norm_pixel( pix_edge, mu, sigma ):
+        return -.5*( scipy.special.erf( -( pix_edge+1 - mu)/( sqrt2*sigma )) - scipy.special.erf( -( pix_edge - mu )/( sqrt2*sigma ) ) )
+
+    def probability_pixel( xPix, yPix, mu, sigma, single_sigma = False ):
+        if single_sigma: sigma[1] = sigma[0]
+        return integral_norm_pixel( xPix, mu = mu[0], sigma = sigma[0] ) * integral_norm_pixel( yPix, mu = mu[1], sigma = sigma[1] )
+
+    def pdf( ePix, xPix, yPix, E, mu_xy, sigma_xy, sigma_E, single_sigma = False):
+        prob = probability_pixel( xPix, yPix, mu_xy, sigma_xy, single_sigma )
+        if sigma_E == 0:
+            return scipy.stats.binom.pmf( ePix, E, prob )
+        prob_i = prob[None,:]
+        ePix_i = ePix[None,:]
+        q_j = arange(E)[:,None]
+        j = 0
+        return sum( scipy.stats.binom.pmf( q_j, E, prob_i ) * scipy.stats.norm.pdf( ePix_i - q_j, scale = sigma_noise ), axis = j )
+
+    def negloglikelihood( ePix, xPix, yPix, E, mu_xy, sigma_xy, sigma_E, single_sigma = False ):
+        val = pdf( ePix, xPix, yPix, E, mu_xy, sigma_xy, sigma_E, single_sigma = single_sigma )
+        #val = val[ val > 0 ]
+        return -nansum( log( val ) )
+
+    def fit( ePix, xPix, yPix, E0, mu_xy0, sigma_xy0, sigma_E0=None, single_sigma = False ):
+        Q, mu[0], mu[1], sigma[0], sigma[1] = scipy.optimize.minimize(
+        fun = fun,
+        x0 = [ int(E0), mu0[0]+.5, mu0[1]+.5, sigma0[0], sigma0[1] ],
+        tol = tol,
+        bounds = [(1, inf), (-inf,inf), (-inf, inf), (0.001, inf), (0.001, inf)] ).x
+
 
 def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
     if not normed:
@@ -166,17 +290,12 @@ def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
     if verbose: print ')'
     return results[:N]
 
-def negloglikelihood( pdf, params, X ):
-    res = -sum( log( pdf( X, *params )) )
+def negloglikelihood( pdf, params, X, weights ):
+    res = -sum( weights*log( pdf( X, *params )) )
     return res
 
-def maxloglikelihood( pdf, X, p0, jac=False, bounds=None ):
-    return scipy.optimize.minimize( lambda p: negloglikelihood( pdf, p, X ), p0, jac=jac, bounds=bounds, tol=1e-8 )
-
-def norm2( x, loc, scale ):
-    res = norm.pdf( x, loc, scale )
-    #print 'loc,scale', loc, scale, res
-    return res
+def maxloglikelihood( pdf, X, p0, weights=1, jac=False, bounds=None ):
+    return scipy.optimize.minimize( lambda p: negloglikelihood( pdf, p, X, weights ), p0, jac=jac, bounds=bounds, tol=1e-8 )
 
 def chisquare( y, f, yerr=None, ddof=1 ):
     if yerr is None:
