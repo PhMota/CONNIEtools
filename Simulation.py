@@ -193,7 +193,6 @@ class Simulation( recarray ):
     def make_fits( self, image, args ):
         with Timer('generated fits'):
             header = astropy.io.fits.Header()
-            header['OHDU'] = 0
             header['biasW'] = self.horizontal_overscan
             header['biasH'] = self.vertical_overscan
             header['rebin'] = max(self.rebin)

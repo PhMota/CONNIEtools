@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 from __future__ import print_function
-import os, sys, argparse
+import os, sys, argparse, re, glob
 
 from Timer import Timer
 import warnings
@@ -14,7 +14,9 @@ except ImportError:
     print('module load softwares/root/5.34-gnu-5.3')
     exit(0)
 
-import glob
+import weave
+from array import array
+from numpy.lib import recfunctions as rfn
 import matplotlib
 matplotlib.use('gtk3agg')
 
@@ -25,47 +27,65 @@ import numpy as np
 import scipy.special as special
 import Statistics as stats
 
-from ROOT import TFile, TTree, AddressOf
+with Timer('import'):
+    from ROOT import TFile, TTree, AddressOf
 
-#import rootpy
-#import rootpy.io
-#from array import array
-#from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol, CharArrayCol
-#from rootpy.io import root_open
+    #import rootpy
+    #import rootpy.io
+    #from array import array
+    #from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol, CharArrayCol
+    #from rootpy.io import root_open
 
 import Image
 import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
 
+class HitSummary(np.recarray):
+    def __new__( cls, recarray ):
+        print( '__new__', recarray.xPix[1] )
+        return recarray.view(cls)
+            
+    #def __new__( cls, list_of_entries, levels, threshold, border ):
+        #print( 'new hits' )
+        #dtype = [
+            #('ePix', object),
+            #('xPix', object),
+            #('yPix', object),
+            #('level', object),
+            #]
+        #obj = np.array( list_of_entries[1:], dtype = dtype ).view(np.recarray).view(cls)
+        #obj = rfn.append_fields( obj, 
+                                 #('nSavedPix'), 
+                                 #np.array(map(len, obj.ePix)), 
+                                 #dtypes=(int), 
+                                 #asrecarray=True 
+                                 #).view(cls)
 
-class HitSumm(np.recarray):
+        #obj.border = border
+        #obj.threshold = threshold
+        #obj.background = list_of_entries[0]
+        #return obj
     
-    def __new__( cls, list_of_entries, levels, threshold, border ):
-        print( 'new hits' )
-        dtype = [
-            ('ePix', object),
-            ('xPix', object),
-            ('yPix', object),
-            ('level', object),
-            ]
-        obj = np.array( list_of_entries[1:], dtype = dtype ).view(np.recarray).view(cls)
-        obj = rfn.append_fields( obj, 
-                                 ('nSavedPix'), 
-                                 np.array(map(len, obj.ePix)), 
-                                 dtypes=(int), 
-                                 asrecarray=True 
-                                 ).view(cls)
-
-        obj.border = border
-        obj.threshold = threshold
-        obj.background = list_of_entries[0]
-        return obj
+    def add_fields( self, names, types=None, arrays=None, func=None, verbose=False ):
+        if verbose: print( 'added', names )
+        if type(names) is str:
+            if names == 'flag' or names == 'nSat':
+                types = np.int32
+                arrays = [0]*len(self)
+            if names == 'nSavedPix':
+                types = np.int32
+                arrays = map(len, self.ePix)
+            if re.match( r'^n[0-3]$', names ):
+                lvl = int(re.search( r'^n([0-3])$', names ).groups()[0])
+                types = np.int32
+                arrays = self.compute_number_of_pixel_levels(lvl)
+            if re.match( r'^E[0-3]$', names ):
+                lvl = int(re.search( r'^E([0-3])$', names ).groups()[0])
+                types = np.float32
+                arrays = self.compute_energy_levels(lvl)
+        return rfn.append_fields( self, names, arrays, dtypes=types, asrecarray=True ).view(HitSummary)
     
-    def add_fields( self, names, arrays, types ):
-        print( 'added', names )
-        return rfn.append_fields( self, names, arrays, dtypes=types, asrecarray=True ).view(Hits)
-        
     def compute_number_of_pixel_levels( self, lvl ):
         return np.array(map( lambda entry: len(entry.ePix[ entry.level <= lvl ]), self ))
         
@@ -73,7 +93,7 @@ class HitSumm(np.recarray):
         added_fields = []
         for lvl in lvls:
             new_field = 'n%d' % lvl
-            self = self.add_fields( 'n%d' % lvl, self.compute_number_of_pixel_levels(lvl), int )
+            self = self.add_fields( 'n%d' % lvl, int, self.compute_number_of_pixel_levels(lvl) )
             added_fields.append( new_field )
         return self
         
@@ -236,23 +256,6 @@ class HitSumm(np.recarray):
     def get_Var(self):
         return np.array( (self.xVar, self.yVar) ).T
 
-def make_hitSumm( list_of_clusters, levels ):
-    dtype = [
-        ('ePix', object),
-        ('xPix', object),
-        ('yPix', object),
-        ('level', object),
-        ]
-    obj = np.array( list_of_clusters, dtype = dtype ).view(np.recarray).view(cls)
-    obj = rfn.append_fields( obj, 
-                                ('nSavedPix'), 
-                                np.array(map(len, obj.ePix)), 
-                                dtypes=(int), 
-                                asrecarray=True 
-                                ).view(HitSumm)
-    
-    return obj
-    
 #def list_branches( file, treename = 'hitSumm' ):
     #return root_numpy.list_branches( file, treename = treename )
 
@@ -349,59 +352,247 @@ def make_hitSumm( list_of_clusters, levels ):
         #input_file.Close()
     #return
 
-#def build_new_catalog_from_recarray( input, output, model ):
-    #N = len(input)
-    #print( 'build_new_catalog_from_recarray', N )
-    #class Event( TreeModel ):
-        #flag = IntCol()
-        #nSavedPix = IntCol()
-        #runID = IntCol()
-        #ohdu = IntCol()
-        #nSat = IntCol()
+def build_new_catalog_from_recarray_old( input, output ):
+    N = len(input)
+    print( 'build_new_catalog_from_recarray', N )
+    Nmax = np.max( input.nSavedPix )
+    print( 'Nmax', Nmax )
+    class Event( TreeModel ):
+        flag = IntCol()
+        nSavedPix = IntCol()
+        runID = IntCol()
+        ohdu = IntCol()
+        nSat = IntCol()
         
-        #ePix = FloatArrayCol(10000, length_name = 'nSavedPix')
-        #xPix = IntArrayCol(10000, length_name = 'nSavedPix')
-        #yPix = IntArrayCol(10000, length_name = 'nSavedPix')
-        #level = IntArrayCol(10000, length_name = 'nSavedPix')
+        ePix = FloatArrayCol(Nmax, length_name = 'nSavedPix')
+        xPix = IntArrayCol(Nmax, length_name = 'nSavedPix')
+        yPix = IntArrayCol(Nmax, length_name = 'nSavedPix')
+        level = IntArrayCol(Nmax, length_name = 'nSavedPix')
     
-    #extra_fields = []
-    #for name in input.dtype.names:
-        #if not name in vars(Event):
-            #type_ = getattr( input, name ).dtype
-            #eventtype = None
-            #if type_ == 'float64':
-                #eventtype = FloatCol()
-            #elif type_ == 'int64':
-                #eventtype = FloatCol()
-            #else:
-                #raise Exception( 'type not recognized', type_ )
-            #setattr( Event, name, eventtype )
-            #extra_fields.append( name )
+    extra_fields = []
+    for name in input.dtype.names:
+        if not name in vars(Event):
+            type_ = getattr( input, name ).dtype
+            eventtype = None
+            if type_ == 'float64':
+                eventtype = FloatCol()
+            elif type_ == 'int64':
+                eventtype = FloatCol()
+            else:
+                raise Exception( 'type not recognized', type_ )
+            setattr( Event, name, eventtype )
+            extra_fields.append( name )
     
+    print( 'fields to be written in catalog', ['flag', 'runID', 'ohdu', 'nSat', 'nSavedPix', 'ePix', 'xPix', 'yPix', 'level'] + extra_fields )
+
+    rfile = root_open( output + '.root', 'w' )
+    tree = Tree( name = 'hitSumm', model = Event )
+
+    with Timer('fill') as t:
+        N = len(input)
+        def fill(entry):
+            t.check( 30, N )
+            tree.flag = entry.flag
+            tree.nSat = entry.nSat
+            tree.runID = entry.runID
+            tree.ohdu = entry.ohdu
+            tree.nSavedPix = entry.nSavedPix
+
+            tree.ePix = entry.ePix
+            tree.xPix = entry.xPix
+            tree.yPix = entry.yPix
+            tree.level = entry.level.astype(int)
+            [ setattr( tree, name, getattr( entry, name) ) for name in extra_fields ]
+
+            tree.fill()
+        map( fill, input )
+
+    tree.write()
+    rfile.close()
+
+def build_new_catalog_from_recarray2( input, output ):
+    N = len(input)
+    print( 'build_new_catalog_from_recarray2', N )
+    Nmax = np.max( input.nSavedPix )
+    print( 'Nmax', Nmax )
     #print( 'fields to be written in catalog', ['flag', 'runID', 'ohdu', 'nSat', 'nSavedPix', 'ePix', 'xPix', 'yPix', 'level'] + extra_fields )
 
-    #rfile = root_open( output, 'w' )
-    #tree = Tree( name = 'hitSumm', model = Event )
+    root_file = TFile( output + '.root', 'recreate' )
+    tree = TTree( 'hitSumm', 'hitSumm' )
+    
+    class Model:
+        pass
+    model = Model()
+    
+    name = 'nSavedPix'
+    setattr( model, name, array( 'i', [0] ) )
+    expr = '{}/I'.format(name)
+    tree.Branch( name, getattr(model, name), expr )
+    for name, type in input.dtype.fields.items():
+        print( name, type, type[0] )
+        if name == 'nSavedPix':
+            continue
+        elif name == 'level':
+            print( 'level' )
+            model.level = array( 'i', [0]*Nmax )
+            expr = 'level[nSavedPix]/I'
+        elif type[0] == np.float64:
+            print( 'float', name )
+            setattr( model, name, array( 'f', [0.] ) )
+            expr = '{}/F'.format(name)
+        elif type[0] == np.int64:
+            setattr( model, name, array( 'i', [0] ) )
+            expr = '{}/I'.format(name)
+        elif type[0] == object:
+            print( 'object', name )
+            setattr( model, name, array( 'f', [0.]*Nmax ) )
+            expr = '{}[nSavedPix]/F'.format(name)
+        tree.Branch( name, getattr(model, name), expr )
+            
+    with Timer('fill') as t:
+        N = len(input)
+        def fill_tree(entry):
+            t.check( 30, N )
+            for field in input.dtype.names:
+                setattr( model, field, getattr(entry, field) )
+            tree.Fill()
+        map( fill_tree, input )
 
-    #for i in range(N):
-        #tree.flag = 0
-        #tree.nSat = 0
-        #tree.runID = 0
-        #tree.ohdu = 0
-        #tree.nSavedPix = input.nSavedPix[i]
+    tree.Write()
+    root_file.Close()
+
+def build_new_catalog_from_recarray__( input, output ):
+    N = len(input)
+    print( 'build_new_catalog_from_recarray2', N )
+    Nmax = np.max( input.nSavedPix )
+    print( 'Nmax', Nmax )
+    with Timer('fill') as t:
+        root_numpy.array2root( input, output + '.root', treename='hitSumm', mode='recreate' )
+
+    #for fieldname in ['ePix', 'xPix', 'yPix', 'level']:
+        #field = np.zeros( (len(input)), dtype=[(fieldname, np.float32, (Nmax,))] ).view(np.recarray)
+        #for entry, f in zip(input,field):
+            #getattr(f,fieldname)[:len(getattr(entry,fieldname))] = getattr(entry,fieldname)[:len(getattr(entry,fieldname))]
+    
+        #root_numpy.array2root( field, output+'.root', treename='hitSumm', mode='update' )
+
+def build_new_catalog_from_recarray( input, output ):
+    N = len(input)
+    print( input.xPix[1] )
+    print( 'build_new_catalog_from_recarray2', N )
+    Nmax = np.max( input.nSavedPix )
+    print( 'Nmax', Nmax )
+    
+    declarations = 'const Int_t knSavedPix = {};\n'.format(Nmax)
+    assignments = ''
+    assignmentsArray = ''
+    branch = ''
+    for name in input.dtype.names[::-1]:
+        type_ = getattr( input, name ).dtype
+        if name.startswith('n') and name != 'nSavedPix' and name != 'nSat':
+            field = name
+            var = '&c_{}'.format(name)
+            expr = '{}/F'.format(name)
+            declarations += 'Float_t c_{};\n'.format(name)
+            assignments += '\tc_{} = {}[n];\n'.format( name, name )
+        elif type_ == np.int32:
+            field = name
+            var = '&c_{}'.format(name)
+            expr = '{}/I'.format(name)
+            declarations += 'Int_t c_{};\n'.format(name)
+            assignments += '\tc_{} = {}[n];\n'.format( name, name )
+        elif type_ == np.float32:
+            field = name
+            var = '&c_{}'.format(name)
+            expr = '{}/F'.format(name)
+            declarations += 'Float_t c_{};\n'.format(name)
+            assignments += '\tc_{} = {}[n];\n'.format( name, name )
+        elif name in ['level','xPix','yPix']:
+            field = '{}[c_nSavedPix]'.format(name)
+            field = name
+            var = 'c_{}'.format(name)
+            expr = '{}[nSavedPix]/I'.format(name)
+            declarations += 'Int_t c_{}[knSavedPix];\n'.format(name)
+            assignmentsArray += '\t\tc_{}[i] = ((Long_t*) PyArray_DATA(PyList_GetItem({},n))) [i];\n'.format( name, name )
+        elif name == 'ePix':
+            field = '{}[c_nSavedPix]'.format(name)
+            field = name
+            var = 'c_{}'.format(name)
+            expr = '{}[nSavedPix]/F'.format(name)
+            declarations += 'Float_t c_{}[knSavedPix];\n'.format(name)
+            assignmentsArray += '\t\tc_{}[i] = ((Double_t*) PyArray_DATA(PyList_GetItem({},n))) [i];\n'.format( name, name )
+        branch += 'tree->Branch( "{}", {}, "{}" );\n'.format( field, var, expr )
+    
+    code = declarations + '\n';
+    #code += 'PyArrayObject *ePix_array = convert_to_numpy(PyList_GetItem(ePix,10), "ePix");\n'
+    #code += 'conversion_numpy_check_type(ePix_array, PyArray_DOUBLE, "ePix");'
+    #code += 'for(int i=0; i<nSavedPix[10]; ++i){\n' 
+    #code += '\tstd::cout<<" "<< ((Double_t *) ePix_array->data)[i] <<" ";\n'
+    #code += '}\n'
+    #code += 'std::cout<<std::endl;\n'    
+    #code += 'for(int i=0; i<nSavedPix[10]; ++i){\n' 
+    #code += '\tstd::cout<<" "<< ((Long_t *) PyArray_DATA(PyList_GetItem(level,10)))[i] <<" ";\n'
+    #code += '}\n'
+    #code += 'std::cout<<std::endl;\n'    
+    #code += 'for(int i=0; i<nSavedPix[10]; ++i){\n' 
+    #code += '\tstd::cout<<" "<< ((Long_t *) PyArray_DATA(PyList_GetItem(xPix,10)))[i] <<" ";\n'
+    #code += '}\n'
+    #code += 'std::cout<<std::endl;\n'    
+    #code += 'for(int i=0; i<nSavedPix[10]; ++i){\n' 
+    #code += '\tstd::cout<<" "<< ((Long_t *) PyArray_DATA(PyList_GetItem(yPix,10)))[i] <<" ";\n'
+    #code += '}\n'
+    #code += 'std::cout<<std::endl;\n'    
+    #code += 'std::cout<<"this was ePix[10]"<<std::endl;\n'
+    code += 'TFile f( "{}.root", "recreate" );\n'.format( output )
+    code += 'TTree *tree = new TTree( "hitSumm", "hitSumm" );\n'
+    code += '\n' + branch + '\n';
+    #code += 'for(int n=0; n<{}; ++n){{ std::cout<<n<<" "<<(Float_t) nSavedPix[n]<<std::endl; }}\n'.format(len(input))
+    code += 'for(int n=0; n<{}; ++n){{\n'.format( len(input) )
+    #code += '\tstd::cout<<"n "<<n<<" "<<nSavedPix[n]<<std::endl;\n'
+    code += assignments
+    code += '\tfor(int i=0; i<nSavedPix[n]; ++i){\n'
+    #code += '\t\tstd::cout<<"innerloop"<<nSavedPix[n]<<" "<<i<<std::endl;\n'
+    code += assignmentsArray
+    code += '\t}\n'
+    code += '\ttree->Fill();\n'
+    code += '}\n'
+    code += '\ntree->Write();\n'
+
+    #print( code )
+    
+    for name in input.dtype.names:
+        exec '{} = np.array(input.{})'.format(name, name)
+    #print( E1, type(E1), E1.dtype, E1.shape )
+    #print( nSavedPix )
+
+    #fields = [ '{}'.format(name) for name in input.dtype.names]
+    #print( fields )
+
+    
+    ePix = [ np.array(e) for e in input.ePix ]
+    xPix = [ np.array(x) for x in input.xPix ]
+    yPix = [ np.array(y) for y in input.yPix ]
+    level = [ np.array(l).astype(int) for l in input.level ]
+    #for fieldname in ['ePix', 'xPix', 'yPix', 'level']:
+    
+    #print( nSavedPix )
+    weave.inline( code, input.dtype.names,
+                        #type_converters=weave.converters.blitz,
+                        headers=['"TFile.h"', '"TTree.h"'],
+                        libraries=['Core'],
+                        include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
+                        library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
+                        #extra_compile_args=['-O3'],
+                        verbose=1,
+                        )    
         
-        #for j in range( tree.nSavedPix ):
-            #tree.ePix[j] = input.ePix[i][j]
-            #tree.xPix[j] = input.xPix[i][j]
-            #tree.yPix[j] = input.yPix[i][j]
-            #tree.level[j] = int( input.level[i][j] )
-        #for name in extra_fields:
-            #setattr( tree, name, getattr( input, name)[i] )
-        #tree.fill()
-
-    #tree.write()
-    #rfile.close()
-
+    
+    
+    
+    
+    
+    
+    
 #def build_new_root_from_existing_rootpy( input, output, condition = None, selection = '' ):
     #with Timer('open file') as t:
         #input_file = rootpy.io.root_open( input )
@@ -492,26 +683,43 @@ def make_hitSumm( list_of_clusters, levels ):
     ##build_new_root_from_existing( file1, 'test.root', selection = '&&'.join(conds1_x) )
 
 def extract( args ):
+    if os.path.exists( args.name +'.root' ):
+        print( 'catalog {}.root already exists'.format(args.name) )
+        exit(1)
     args.input_files = args.fits_files
-    args.ohdu = [3]
+    #args.ohdu = [3,4]
     def image_extract( image, args ):
-        ret = image.data.extract_hits( args.threshold, args.border )
-        print( image.ohdu, len(ret) )
-        return ret
+        hitSummary = image.data.extract_hits( args.threshold, args.border ).view(HitSummary)
+        for field, dtype in [('ohdu', np.int32), ('runID', np.int32), ('gain', np.float32), ('rebin',np.int32), ('dc',np.float32), ('noise',np.float32)]:
+            if field.upper() in image.header:
+                hitSummary = hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )
+        print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
+        hitSummary = hitSummary.add_fields( 'thr', np.float32, [args.threshold]*len(hitSummary) )
+        for field in ['flag', 'nSavedPix', 'nSat' ] + [ fmt.format(lvl) for lvl in range(args.border+1) for fmt in ['n{}', 'E{}'] ]:
+            hitSummary = hitSummary.add_fields( field )
+        return hitSummary
     args.func = image_extract
     image = Image.apply_to_files( args )
-    print( 'returns' )
+    
+    hitSummaries = None
     for file_group, entry in image.items():
-        for ohdu, value in entry.items():
-            print( ohdu, value )
+        for ohdu, hitSummary in entry.items():
+            if hitSummaries is None:
+                hitSummaries = hitSummary
+            else:
+                hitSummaries = rfn.stack_arrays( (hitSummaries, hitSummary), asrecarray=True )
+    #print( hitSummaries.dtype, hitSummaries.ohdu, hitSummaries.runID, len(hitSummaries), len(hitSummaries.ePix) )
+    build_new_catalog_from_recarray( hitSummaries, args.name )
     #clusters = image.extract_hits( args )
     
 def add_extract_options(p):
+    p.add_argument('name', type=str, help = 'basename of the output catalog' )
     p.add_argument('fits_files', type=str, help = 'fits file (example: )' )
     p.add_argument('-t', '--threshold', type=float, default=60, help = 'energy threshold in ADU' )
     p.add_argument('-b', '--border', type=int, default=0, help = 'pixel border' )
     #p.add_argument('branches', nargs=2, type=str, default= ['E0','xVar0'], help = 'branches used for x- and y-axis' )
-    #p.add_argument('--selection', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('--ohdu', nargs='+', type=int, default=range(2,16), help = 'ohdus to be extracted' )
+    p.add_argument('--exclude', nargs='+', type=int, default=[11,12,14], help = 'ohdus NOT to be extracted' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
     p.set_defaults(func=extract)
 
@@ -671,27 +879,30 @@ def energy_threshold( datum, threshold ):
     var = (m2 - m1**2).T
     E, n = np.array( [ (np.sum( ePix[mask] ), len(ePix[mask]) ) for mask, ePix in zip(above_2sigma, datum.ePix) ] ).T
     dtype = [ ('{}{}'.format(key,threshold), float) for key in ('E', 'n', 'xVar', 'yVar') ]
-    print( dtype )
+    #print( dtype )
     return np.array( zip(E, n, var[0], var[1]), dtype=dtype ).view(np.recarray)
 
 def pdf( x, E, n, sigma ):
-    return np.sum( [stats.norm.pdf(x, iE, in_*sigma) for iE, in_ in zip(E,n)], axis=0 )
+    return np.sum( [stats.norm.pdf(x, iE, np.sqrt(in_)*sigma) for iE, in_ in zip(E,n)], axis=0 )
 
 def histogram( args ):
     with Timer('histogram'):
         file = glob.glob(args.root_file)
         data = root_numpy.root2array( file[0], treename = 'hitSumm', branches = args.branch, selection = 'flag==0' )
-        if 'binsize' in args:
-            bins = np.arange( np.min(data), np.max(data), args.binsize )
-        elif 'nbins' in args:
-            bins = np.linspace( np.min(data), np.max(data), args.nbins )
-        else:
-            bins = np.linspace( np.min(data), np.max(data), int(np.sqrt(len(data))) )
+        #if 'binsize' in args:
+            #bins = np.arange( np.min(data), np.max(data), args.binsize )
+        #elif 'nbins' in args:
+            #bins = np.linspace( np.min(data), np.max(data), args.nbins )
+        #else:
+            #bins = np.linspace( np.min(data), np.max(data), int(np.sqrt(len(data))) )
 
         start, stop = None, None
         if 'runID_range' in args:
             start, stop = get_start_stop_from_runID_range(file[0], args.runID_range)
-        data_selection, lims = get_selections( file[0], [args.branch], args.selections, args.global_selection, start=start, stop=stop, extra_branches=['ePix','xPix','yPix','xVar1','E0', 'E1', 'E2', 'n0', 'n1', 'n2', 'gainCu'] )
+        data_selection, lims = get_selections( file[0], [args.branch], args.selections, args.global_selection, start=start, stop=stop,
+                                              extra_branches=[
+                                                  #'ePix','xPix','yPix',
+                                                  'E0', 'E1', 'n0', 'n1'] )
 
         first_data_selection = data_selection.values()[0][args.branch]
         if 'binsize' in args:
@@ -712,12 +923,12 @@ def histogram( args ):
 
                 sigma = 12.5
                 #ax.step( bins, pdf( bins, datum.E0, datum.n0, sigma ), where='mid', label='E0')
-                #ax.step( bins, pdf( bins, datum.E1, datum.n1, sigma ), where='mid', label='E1')
+                ax.step( bins, pdf( bins, datum.E1, datum.n1, sigma ), where='mid', label='E1')
 
                 #ax.step( bins, pdf( bins, datum.E2, datum.n2, sigma ), where='mid', label='E2')
 
-                dat45 = energy_threshold( datum, 45)
-                ax.step( bins, pdf( bins, dat45.E45, dat45.n45, sigma ), where='mid', label='E45')
+                #dat45 = energy_threshold( datum, 45)
+                #ax.step( bins, pdf( bins, dat45.E45, dat45.n45, sigma ), where='mid', label='E45')
                 #dat30 = energy_threshold( datum, 30)
                 #ax.step( bins, pdf( bins, dat30.E30, dat30.n30, sigma ), where='mid', label='E30')
 
@@ -756,7 +967,7 @@ def add_histogram_options(p):
 
 def status( args ):
     if not os.path.exists( args.root_file ):
-        print( 'file {} does not exist'.format( arg.rootfile ) )
+        print( 'file {} does not exist'.format( args.rootfile ) )
     tfile = TFile( args.root_file )
     for key in tfile.GetListOfKeys():
         tree_name = key.GetName()
@@ -765,10 +976,18 @@ def status( args ):
         branches = ', '.join( map( lambda _: _.GetName(), tree.GetListOfBranches() ) )
         print( branches )
         print( tree.GetEntries() )
+    tfile.Close()
+    if 'tree' in args:
+        if 'branches' in args:
+            data = root_numpy.root2array( args.root_file, treename = args.tree, branches = args.branches ).view(np.recarray)
+            for branch in args.branches:
+                print( 'branch', getattr( data, branch ) )
     return
 
 def add_status_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.add_argument('-t', '--tree', type=str, default=argparse.SUPPRESS, help = 'tree to print' )
+    p.add_argument('--branches', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branch used for x-axis' )
     p.set_defaults( func = status )
 
 if __name__ == '__main__':

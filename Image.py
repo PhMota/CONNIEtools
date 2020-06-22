@@ -34,6 +34,7 @@ from collections import OrderedDict
 
 
 import Simulation
+import constants
 
 
 bias_from_width = { 9340: 450, 8540: 150 }
@@ -387,6 +388,12 @@ class Part:
         return self
     
     def parse_shape( self, shape ):
+        height, width = shape
+        number_of_amplifiers = width//constants.ccd_shape.width
+        #print( 'number of amplifiers', number_of_amplifiers )
+        side_width = width/number_of_amplifiers
+        bias_width = side_width - constants.ccd_shape.width
+        #print( 'bias_width', side_width - constants.ccd_shape.width )
         self.parse_height( shape[0] )
         self.parse_width( shape[1] )
     
@@ -417,6 +424,7 @@ class Part:
                 (Part.ccd_width+150): [150, False, (Part.ccd_width+150)],
                 (Part.ccd_width-8+450): [450, False, (Part.ccd_width+450-8)],
                 (Part.ccd_width-8+150): [150, False, (Part.ccd_width+150-8)],
+                (Part.ccd_width-8+550): [550, False, (Part.ccd_width+550-8)],
                 4570: [150, False, 4570],
                 }[width]
         except KeyError:
@@ -729,11 +737,11 @@ class Section( np.ndarray ):
 
     def get_clusters( self, threshold, border ):
         labeled_clusters = label_clusters( self >= threshold )
-        print( 'number of clusters above threshold', labeled_clusters.max() )
+        #print( 'number of clusters above threshold', labeled_clusters.max() )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
-        print( 'number of clusters with border', labeled_clusters.max() )
+        #print( 'number of clusters with border', labeled_clusters.max() )
         return labeled_clusters, distances_to_cluster
 
     def get_background( self, threshold, border ):
@@ -779,7 +787,7 @@ class Section( np.ndarray ):
             ('level', object),
             ]
         ret = np.array( list_of_clusters, dtype = dtype ).view(np.recarray)
-        return ret
+        return ret[1:]
 
     def spectrum( self, output, gain, lambda_, sigma, binsize = 2 ):
         
@@ -907,29 +915,29 @@ class Section( np.ndarray ):
             ax.legend()
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
         
-    def display( self, mode, delta = None ):
-        from matplotlib.colors import LogNorm
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        im = -self
-        if mode == 'xy':
-            vmin = None
-            vmax = None
-            if delta:
-                vmin = np.nanmedian(datum)-delta
-                vmax = np.nanmedian(datum)+delta
-            ax.imshow( im, cmap='Blues', vmin=vmin, vmax=vmax)
-        if mode == 'x':
-            ax.plot(self[0,:], '.')
-            ax.plot(self[-1,:], '.')
-            ax.set_ylim( (np.nanmedian(self)-delta,np.nanmedian(self)+delta) )
-        if mode == 'y':
-            ax.plot(self[:, 0], '.')
-            ax.plot(self[:, -1], '.')
-            ax.set_ylim( (np.nanmedian(self)-delta,np.nanmedian(self)+delta) )
-        if mode == 'flat':
-            ax.plot(self, '.')
-        plt.show()
+    #def display( self, mode, delta = None ):
+        #from matplotlib.colors import LogNorm
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111)
+        #im = -self
+        #if mode == 'xy':
+            #vmin = None
+            #vmax = None
+            #if delta:
+                #vmin = np.nanmedian(datum)-delta
+                #vmax = np.nanmedian(datum)+delta
+            #ax.imshow( im, cmap='Blues', vmin=vmin, vmax=vmax)
+        #if mode == 'x':
+            #ax.plot(self[0,:], '.')
+            #ax.plot(self[-1,:], '.')
+            #ax.set_ylim( (np.nanmedian(self)-delta,np.nanmedian(self)+delta) )
+        #if mode == 'y':
+            #ax.plot(self[:, 0], '.')
+            #ax.plot(self[:, -1], '.')
+            #ax.set_ylim( (np.nanmedian(self)-delta,np.nanmedian(self)+delta) )
+        #if mode == 'flat':
+            #ax.plot(self, '.')
+        #plt.show()
 
 
 def get_median_params_by_line( data, bias ):
@@ -1092,7 +1100,7 @@ def add_display_options( p ):
     corr.add_argument( '--correct-side', action='store_true', default = argparse.SUPPRESS, help = 'subtract right side' )
         
     proj = p.add_argument_group('projection options')
-    #proj.add_argument( '--proj', type=int, default = argparse.SUPPRESS, help = 'project on axis' )
+    proj.add_argument( '--axis', type=int, default = 0, help = 'project on axis' )
     proj.add_argument( '--dev', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
     proj.add_argument( '--no-max', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
     proj.add_argument( '--no-min', action='store_true', default = argparse.SUPPRESS, help = 'supress the min line at the projection plot' )
@@ -1125,26 +1133,27 @@ def group_filenames( input_files ):
 
 def apply_to_files( args ):
     list_of_paths = group_filenames( args.input_files )
-    returnDict = OrderedDict()
-    for path_group in list_of_paths:
-        partlistHDU = [ astropy.io.fits.open( path ) for path in path_group[::-1] ]
-        parts_dict = OrderedDict()
-        for j, listHDU in enumerate(partlistHDU):
-            part_index = j+1
-            for i, HDU in enumerate(listHDU):
-                ohdu = HDU.header['OHDU']
-                if HDU.data is None: continue
-                if 'exclude' in args and args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
-                if 'ohdu' in args and args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
-                part = Part(HDU)
-                try: parts_dict[ohdu].append(part)
-                except KeyError: parts_dict[ohdu] = [part]
-        returnDict[path_group] = OrderedDict()
-        for i, parts in parts_dict.items():
-            image = Image( parts )
-            image.path = path_group
-            image.ohdu = image.header['OHDU']
-            returnDict[image.path][image.ohdu] = args.func( image, args )
+    with Timer('apply to files'):
+        returnDict = OrderedDict()
+        for path_group in list_of_paths:
+            partlistHDU = [ astropy.io.fits.open( path ) for path in path_group[::-1] ]
+            parts_ohdu = OrderedDict()
+            for j, listHDU in enumerate(partlistHDU):
+                part_index = j+1
+                for i, HDU in enumerate(listHDU):
+                    ohdu = HDU.header['OHDU']
+                    if HDU.data is None: continue
+                    if 'exclude' in args and args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
+                    if 'ohdu' in args and args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
+                    part = Part(HDU)
+                    try: parts_ohdu[ohdu].append(part)
+                    except KeyError: parts_ohdu[ohdu] = [part]
+            returnDict[path_group] = OrderedDict()
+            for i, parts in parts_ohdu.items():
+                image = Image( parts )
+                image.path = path_group
+                image.ohdu = image.header['OHDU']
+                returnDict[image.path][image.ohdu] = args.func( image, args )
     return returnDict
     
 def display( args ):
@@ -1157,46 +1166,66 @@ def display( args ):
         listHDU = astropy.io.fits.open( path )
         imageHDU = None
         for i, HDU in enumerate(listHDU):
-            if HDU.header['OHDU'] == args.ohdu: imageHDU = HDU
+            if 'OHUD' in HDU.header:
+                if HDU.header['OHDU'] == args.ohdu: imageHDU = HDU
+            else:
+                if i+1 == args.ohdu: imageHDU = HDU
         if imageHDU is None:
             print( 'ohdu {} was not found in {}'.format( args.ohdu, path ) )
             exit(0)
 
         data = imageHDU.data.astype(float)
         
-        ccd_width = 4120
         height, width = data.shape
-        number_of_amplifiers = width // ccd_width
-        bias_width = (width % ccd_width)/number_of_amplifiers
+        number_of_amplifiers = width // constants.ccd_shape.width
+        side_width = width/number_of_amplifiers
+        bias_width = int( np.ceil( (side_width - constants.ccd_shape.width)/150. ) )*150
+        print( 'bias_width', bias_width )
+        trim = constants.ccd_shape.width + bias_width - side_width
+        print( 'trim', trim )
+        #bias_width = ( side_width + trim ) % constants.ccd_shape.width
+
+        height_trim = 1
         
+        #data.left = data[None:-height_trim, None:side_width]
+        #data.right = data[None:-height_trim, side_width:None][:,::-1]
+                    
         if 'side' in args:
             if args.side == 'left' or args.side == '0':
                 if 'correct_side' in args:
-                    data = data[None:-1, None:width/number_of_amplifiers] - data[None:-1, width/number_of_amplifiers:None][:,::-1]
+                    data = data[None:-height_trim, None:side_width] - data[None:-height_trim, side_width:None][:,::-1]
                 else:
-                    data = data[None:-1, None:width/number_of_amplifiers]
+                    data = data[None:-height_trim, None:side_width]
+                if 'half' in args:
+                    data = data[None:None, constants.ccd_shape.width/2:None]
             elif args.side == 'right' or args.side == '1':
-                data = data[None:-1, width/number_of_amplifiers:None][:,::-1]
+                data = data[None:-height_trim, side_width:None][:,::-1]
+                if 'half' in args:
+                    data = data[None:None, constants.ccd_shape.width/2:None]
 
         if 'trim' in args:
             data = data[None:None, 10:]
 
         if 'global_bias':
-            data = data - np.nanmean( data[None:None, -bias_width+1:None] )
+            data = data - np.nanmean( data[None:None, -bias_width:None] )
         
         if 'section' in args:
             if args.section == 'bias' or args.section == 'os':
-                data = data[None:None, -bias_width+1:None]
+                data = data[None:None, -bias_width+5:None]
             if args.section == 'data' or args.section == 'ac':
-                data = data[None:None, None:-bias_width+1]
+                data = data[None:None, None:-bias_width+5]
                 if 'half' in args:
                     data = data[None:None, data.shape[1]/2:None]
         
-        if 'x_range' in args:
-            data = data[ :, args.x_range[0]: args.x_range[1] ]
+        #if 'x_range' in args:
+            #data = data[ :, args.x_range[0]: args.x_range[1] ]
 
-        if 'y_range' in args:
-            data = data[ args.y_range[0]: args.y_range[1], : ]
+        #if 'y_range' in args:
+            #data = data[ args.y_range[0]: args.y_range[1], : ]
+
+        #if 'remove_vertical_modulation' in args:
+            #if args.remove_vertical_modulation == 'mean':
+                #vertcial_correction = 
 
         if 'remove' in args:
             data[ data > args.remove ] = np.nan
@@ -1208,7 +1237,7 @@ def display( args ):
         fig = plt.figure()
         ax = fig.add_subplot(111)
         if args.plot == 'proj':
-            axis = args.proj
+            axis = args.axis
             if not 'dev' in args:
                 mins = np.nanmin( data, axis=axis )
                 if not 'no_mean' in args:
@@ -1218,13 +1247,13 @@ def display( args ):
                 if not 'no_median' in args:
                     medians = np.nanmedian( data, axis=axis )
                     ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
-                if not 'no_center' in args:
-                    centers = stats.FWHM( data, axis=axis, f=.5 )[1]
-                    ax.plot( centers, '.', label='center $\mu={:.4f}$'.format(np.nanmean(centers)) )
+                #if not 'no_center' in args:
+                    #centers = stats.FWHM( data, axis=axis, f=.5 )[1]
+                    #ax.plot( centers, '.', label='center $\mu={:.4f}$'.format(np.nanmean(centers)) )
                 #mus = mle_poisson_norm( data, axis=axis, gain=10, mu=0, sigma=20, fix_mu=False, fix_sigma=True, mode=1 )[0]
                 #ax.plot( mus, '.', label='mu[mle] $\mu={:.4f}$'.format(np.nanmean(mus)) )
                 if 'smooth' in args:
-                    ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
+                    #ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
                     ax.plot( scipy.ndimage.filters.uniform_filter1d( medians, size=args.smooth, mode='nearest' ), '.', label='median{}'.format(args.smooth) )
                     if not 'no_mean' in args:
                         ax.plot( scipy.ndimage.filters.uniform_filter1d( means, size=args.smooth, mode='nearest' ), '.', label='mean{}'.format(args.smooth) )
@@ -1241,17 +1270,16 @@ def display( args ):
                     ax.plot( stds, '.', label='std $\mu={:.4f}$'.format(np.nanmean(stds)) )
                 mads = MAD( data, axis=axis )
                 ax.plot( mads, '.', label='MAD $\mu={:.4f}$'.format(np.nanmean(mads)) )
-                fwhm = stats.FWHM( data, axis=axis, f=.001 )[0]
-                ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
+                #fwhm = stats.FWHM( data, axis=axis, f=.001 )[0]
+                #ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
                 sigmas = mle_norm( data, axis=axis )[1]
                 ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )
+            
         elif args.plot == 'spectrum':
             bins = np.arange( np.nanmin(data), np.nanmax(data), args.binsize )
-            y, x = np.histogram( data.flatten(), bins )
-            x = .5*(x[:-1]+x[1:])
-            ax.plot( x, y, '.', label = '' )
-            #gain, lamb = mle_poisson_norm( data.flatten(), axis=0, gain=10, mu=0, sigma=20, fix_mu=True, fix_sigma=True, mode=3 )
-            #ax.plot( x, stats.poisson_norm.pdf3(x, mu, sigma, gain, lamb) , '.', label = 'fit mu={mu}\ngain={gain}\nlambda={lamb}'.format(locals()) )
+            y, x, dx = stats.make_histogram( data.flatten(), bins )
+            ax.step( x, y, where='mid', label = '' )
+            
         elif args.plot == 'image':
             im = np.log(data - np.nanmin(data) + 1)
             cmap = matplotlib.cm.Blues

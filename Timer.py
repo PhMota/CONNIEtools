@@ -1,7 +1,7 @@
 from __future__ import print_function
 import time
 import datetime
-from TerminalColor import text
+from termcolor import colored
 
 class Timer:
     def __init__(self, msg='elapsed'):
@@ -13,10 +13,12 @@ class Timer:
     
     def __exit__(self, type, value, traceback):
         s = [ self.msg ]
-        s += [ text(self.time(), color='y') ]
         if value:
+            s += [ colored(self.time(),'red') ]
             s += [ '%s'%type ]
             s += [ '%s'%value ]
+        else:
+            s += [ colored(self.time(),'green') ]
         print( ' '.join(s) )
     
     def seconds(self, N=1):
@@ -30,6 +32,17 @@ class Timer:
             if t > 60: s = '%sm%ss%sms' %( int(t)/60, int(t)%60, int(t*1e3)%1000 )
             else: s = '%ss%sms' % (int(t), int(t*1e3)%1000 )
         return s
+
+    def check(self, secs, N):
+        try:
+            self.loop_number +=1
+            if self.seconds()/secs > self.count:
+                print('eta', colored( self.time( float(N)/self.loop_number-1 ), 'yellow') )
+                self.count += 1
+        except:
+            self.loop_number = 0
+            self.count = 1
+        return
 
 class timer:
     def __init__(self, name = ''):
