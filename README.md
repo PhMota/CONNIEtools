@@ -117,8 +117,6 @@ output options:
   --csv                 generate csv output
 ```
 
-
-
 The only necessary option is the `basename` which specifies the basename for the output files, the rest of the options will fall to their defaults.
 A test run
 
@@ -183,3 +181,12 @@ $ ./simulation image sample5mod -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -
 ```
 ![](sample5mod.png)
 
+### Notes
+
+The careful reader might catch the fact that the axes are inverted in the default CCD shape `[4130,4120]`.
+In fact, this has been an intentional choice, albeit potentially confusing for the user.
+This is to keep comatibility with the CONNIE fit files which have the axes inverted also. 
+The rebin feature is supposed to be given as `--rebin 5 1` to emulate the 1x5 rebinning.
+
+Also the vertical overscan apperas at the bottom of the image.
+This is also made to mimick the offical fit images which are written backwards.
