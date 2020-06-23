@@ -56,6 +56,7 @@ class Simulation( recarray ):
             else:
                 print( 'image_mode {} not recognized. Ignoring.'.format(obj.image_mode) )
         
+        obj.rebin = array(obj.rebin)
         obj.ccd_shape = array(obj.ccd_shape)
         obj.rebinned_ccd_shape = obj.ccd_shape/obj.rebin
         obj.image_shape = obj.rebinned_ccd_shape + [obj.vertical_overscan, obj.horizontal_overscan]
@@ -184,7 +185,9 @@ class Simulation( recarray ):
             print_var( ['max_charge', 'max_ADU'], locals() )
 
         if 'pdf' in args:
-            self.save_pdf( image, args )
+            self.save_image( image, args.basename+'.pdf' )
+        if 'png' in args:
+            self.save_image( image, args.basename+'.png' )
         
         hdu_list = self.make_fits( image, args )
         if not 'no_fits' in args: self.save_fits( hdu_list, args )
@@ -210,15 +213,14 @@ class Simulation( recarray ):
     
     def save_fits( self, hdu_list, args ):
         if 'compress' in args:
-            fname = args.name + '.fits.' + args.compress
+            fname = args.basename + '.fits.' + args.compress
         else:
-            fname = args.name + '.fits'
+            fname = args.basename + '.fits'
         with Timer('saved ' + fname ):
             hdu_list.writeto( fname, overwrite=True )
             return
     
-    def save_pdf(self, output,  ):
-        fname = args.output + '.pdf'
+    def save_image(self, image, fname ):
         with Timer( 'saved ' + fname ):
             from matplotlib import pylab as plt
             from matplotlib.patches import Ellipse
@@ -260,7 +262,7 @@ def add_geometry_options(p):
     g.add_argument('-vos', '--vertical-overscan', type=int, default = 90, help = 'size of the vertical overscan in pixels' )
     #p.add_argument('-hpt', '--horizontal-pretrim', type=int, default = 8, help = 'size of the vertical overscan in pixels' )
     #p.add_argument('-vpt', '--vertical-pretrim', type=int, default = 1, help = 'size of the vertical overscan in pixels' )
-    g.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape, help = 'shape of the image as 2d pixels' )
+    g.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape.tolist(), help = 'shape of the image as 2d pixels' )
     g.add_argument('--rebin', nargs=2, type=int, default = [1,1], help = '2d rebinning strides' )
     g.add_argument('--image-type', type=eval, default='int', help = 'image type' )
     g.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5', 
@@ -316,6 +318,8 @@ def add_output_options(p):
                    action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--pdf', help = 'generate pdf output',
                    action='store_true', default=argparse.SUPPRESS )
+    g.add_argument('--png', help = 'generate png output',
+                   action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--spectrum', help = 'generate energy spectrum',
                    action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--verbose', help = 'verbose level', 
@@ -325,7 +329,7 @@ def add_output_options(p):
     return
 
 def add_image_options( p ):
-    p.add_argument('name', help = 'factor to convert charges into ADU',
+    p.add_argument('basename', help = 'basename for simulation output',
                    type=str, default = 'simulated_image' )
     add_params_options(p)
     add_geometry_options(p)
@@ -336,6 +340,7 @@ def add_image_options( p ):
     p.set_defaults( func=image )
 
 def image( args ):
+    print_options(args)
     sim = simulate_events( args )
     return sim.generate_image( args )
 
@@ -344,9 +349,9 @@ def simulate_events( args ):
     depth_range = args.depth_range
     charge_range = args.charge_range
     number_of_charges = args.number_of_charges
-    array_of_positions = random.random( number_of_charges*2 ).reshape(-1,2)*(array(ccd_shape)-1)
-    array_of_depths = random.random( number_of_charges )*(depth_range[1] - depth_range[0]) + depth_range[0]
-    array_of_charges = random.random( number_of_charges )*(charge_range[1] - charge_range[0]) + charge_range[0]
+    array_of_positions = random.random( number_of_charges*2 ).reshape(-1,2)*array(ccd_shape)
+    array_of_depths = random.uniform( *(depth_range+[number_of_charges]) )
+    array_of_charges = random.uniform( *(charge_range+[number_of_charges]) )
     array_of_identities = ['random']*number_of_charges
     
     list_of_X_charges = [['number_of_Cu_charges', Cu_energy_eV, 'Cu'], 
@@ -356,12 +361,10 @@ def simulate_events( args ):
         if key in args:
             number_of_X_charges = getattr(args, key)
             array_of_positions = concatenate( 
-                (array_of_positions, 
-                 random.random( number_of_X_charges*2 ).reshape(-1,2)*(array(ccd_shape)-1) ), 
+                ( array_of_positions, random.random( number_of_X_charges*2 ).reshape(-1,2)*array(ccd_shape) ), 
                 axis=0 )
             array_of_depths = append( 
-                array_of_depths, 
-                random.random( number_of_X_charges )*(depth_range[1] - depth_range[0]) + depth_range[0] 
+                array_of_depths, random.uniform( *(depth_range+[number_of_X_charges]) )
                 )
             array_of_charges = append( array_of_charges, [energy_eV/electron_in_eV]*number_of_X_charges )
             array_of_identities.extend( [charge_type]*number_of_X_charges )
@@ -378,7 +381,7 @@ def simulate_events( args ):
         data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype )
         
     if 'csv' in args:
-        output = args.name + '.csv'
+        output = args.basename + '.csv'
         header = str(vars(args))
         #print( 'header', header )
         header += '\n' + ', '.join(cols)
@@ -417,10 +420,14 @@ def generate_folder( args ):
         args.dark_current = random.uniform(*args.dark_current_range)
         args.charge_gain = random.unfiform(*args.charge_gain_range)
         args.count = count
-        args.name = '{folder_name}/{folder_name}{count:04d}RN{readout_noise:.2f}DC{dark_current:.4f}CG{charge_gain:.1f}'.format(**vars(args)) 
+        args.basename = '{folder_name}/{folder_name}{count:04d}RN{readout_noise:.2f}DC{dark_current:.4f}CG{charge_gain:.1f}'.format(**vars(args)) 
         sim = simulate_events( args )
         sim.generate_image( args )
     return
+    
+def print_options( args ):
+    print( colored('using parameters:', 'green', attrs=['bold'] ) )
+    print_var( vars(args).keys(), vars(args), line_char='\t' )
     
 if __name__ == '__main__':
 
@@ -434,8 +441,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     with Timer('finished'):
-        func = args.func
-        del args.func
-        print( colored('using parameters:', 'green', attrs=['bold'] ) )
-        print_var( vars(args).keys(), vars(args), line_char='\t' )
-        func(args)
+        args.func(args)

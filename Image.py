@@ -25,7 +25,9 @@ matplotlib.use('gtk3agg')
 
 import Statistics as stats
 from Timer import Timer
-from TerminalColor import text
+#from TerminalColor import text
+from termcolor import colored
+
 from PrintVar import print_var
 from matplotlib import pylab as plt
 np.warnings.filterwarnings("ignore")
@@ -1010,7 +1012,7 @@ def simulate( args ):
         while count < args.number_of_images:
             count += 1
 
-            print( text('count %s of %s'%(count, args.number_of_images), color='green') )
+            print( colored('count %s of %s'%(count, args.number_of_images), 'green') )
             args.charge_gain = np.random.uniform( *args.charge_gain_range )
             args.readout_noise = np.random.uniform( *args.readout_noise_range )
             args.dark_current = np.random.uniform( *args.dark_current_range )
@@ -1050,9 +1052,8 @@ def monitor( args ):
             if first:
                 columns = zip(*params)[0]
                 max_length = max( map(len, columns) )
-                print( ' '.join( [ text( sfmt(v).format(key), mode='B') for key, v in params ] ) )
+                print( ' '.join( [ colored( sfmt(v).format(key), attrs=['bold']) for key, v in params ] ) )
                 first = False
-            #column_head = text('%2d' % image.header['OHDU'], mode='B' )
             print( ' '.join( [ fmt(v).format(v) for keys, v in params ] ) )
 
 def add_HWFM_options( p ):
@@ -1126,9 +1127,9 @@ def group_filenames( input_files ):
             entry = tuple(sorted(glob( base_path+'_p*.fits*' )))
         if not entry in list_of_paths:
             list_of_paths.append( entry )
-            print( 'added group:' )
-            for e in entry:
-                print(e)
+            #print( 'added group:' )
+            #for e in entry:
+                #print(e)
     return list_of_paths
 
 def apply_to_files( args ):
@@ -1507,11 +1508,11 @@ def read_header( args ):
     for file in glob( args.input_file ):
         listHDU = astropy.io.fits.open( file )
         for i in range(len(listHDU)) if args.indices is None else args.indices:
-            print( text( 'HDU %s' % i, mode='B', color='g' ) )
+            print( colored( 'HDU %s' % i, 'green', attrs=['bold'] ) )
             for key, value in listHDU[i].header.items():
                 if key in args.exclude: continue
                 if key in args.include or len(args.include) is 0:
-                    print( text( '%s' % key, color='g' ), '%s' % value, end=' ' )
+                    print( colored( '%s' % key, 'green' ), '%s' % value, end=' ' )
             print()
     return
 
@@ -1543,9 +1544,7 @@ if __name__ == '__main__':
     add_monitor_options( subparsers.add_parser('monitor', help='monitorViewer functions'), monitor )
     add_HWFM_options( subparsers.add_parser('hwfm', help='test the hwfm algorithm') )
     add_display_options( subparsers.add_parser('display', help='display the image') )
-    #if len(sys.argv) == 1:
-        #parser.print_help()
-        #exit(1)
+
     try:
         args = parser.parse_args()
     except:

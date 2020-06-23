@@ -12,9 +12,8 @@ def print_var( var, vars_, end = '\n', line_char='', start_pos=0 ):
     else:
         val = vars_[var]
         if type(val) is float: val = '{:.4f}'.format(val)
-        text = '%s %s' % ( colored(var, 'green' ), val )
+        text = '{} {}'.format( colored(var, 'green' ), val )
         
-        #print(start_pos)
         if start_pos == 0:
             text = line_char + text
         elif start_pos + len(text) >= int(columns):

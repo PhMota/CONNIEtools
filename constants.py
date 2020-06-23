@@ -8,7 +8,7 @@ energies = {
     'Cu2': "8.904keV"
     }
 
-ccd_shape = np.array( (4130, 4120), dtype=[('height',int), ('width',int)] ).view(np.recarray)
+ccd_shape = np.array([4130,4120])
 
 diffusion_function = 'sqrt(-258.817238*log1p(-0.000982*z))/15 if z < 670 else 0'
 charge_efficiency_function = '1. if z < 670 else .9'

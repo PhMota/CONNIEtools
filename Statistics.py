@@ -2,7 +2,7 @@
 
 from numpy import *
 import scipy.stats
-#import math
+import scipy.special as special
 from Timer import Timer
 
 def stdCovMed( x, y ):
@@ -117,6 +117,39 @@ def _norm_fit_( X, mu=0, sigma=1., fix_mu=False, fix_sigma=False, weights=1 ):
     return ret
 
 norm.fit2 = _norm_fit_
+norm.__primitive0__ = lambda x, mu, sigma: .5*special.erf((x - mu)/(sqrt(2)*sigma))
+norm.__primitive1__ = lambda x, mu, sigma: mu*norm.__primitive0__(x, mu, sigma) - sigma**2*norm.pdf(x, mu, sigma)
+norm.__primitive2__ = lambda x, mu, sigma: (mu**2+sigma**2)*norm.__primitive0__(x, mu, sigma) - sigma**2*(mu+x)*norm.pdf(x, mu, sigma)
+    
+def mean_norm( mu, sigma, a, b ):
+    primitive = lambda x: .5*mu*special.erf((x - mu)/(sqrt(2)*sigma)) - sigma*exp(-(x - mu)**2/(2*sigma**2))/sqrt(2*pi)
+    if a == -inf and b == inf:
+        return mu
+    elif a == -inf:
+        return primitive(b) + .5*mu
+    elif b == inf:
+        return .5*mu - primitive(a)
+    return primitive(b) - primitive(a)
+
+def var_norm( mu, sigma, a, b ):
+    primitive = lambda x: .5*(mu**2 + sigma**2) *special.erf((x - mu)/(sqrt(2)*sigma)) \
+        - sigma*(mu+x)*exp(-(x - mu)**2/(2 *sigma**2))/sqrt(2*pi)
+    if a == -inf and b == inf:
+        return (mu**2 + sigma**2)
+    elif a == -inf:
+        return primitive(b) + .5*(mu**2 + sigma**2)
+    elif b == inf:
+        return .5*(mu**2 + sigma**2) - primitive(a)
+    return primitive(b) - primitive(a)
+
+def sum_norm( mu, sigma, a, b ):
+    try:
+        print('shapes', a.shape, b.shape, mu.shape, sigma.shape )
+    except:
+        pass
+    primitive = lambda x: .5* special.erf((x - mu)/(sqrt(2)*sigma))
+    return primitive(b) - primitive(a)
+
 
 def _norm_fit_curve_( y, x, A=1, mu=0, sigma=1., fix_A = False, fix_mu=False, fix_sigma=False ):
     if fix_mu:

@@ -57,6 +57,7 @@ import SimulateImage
 import ConnieImage
 import Statistics as stats
 import Timer
+import termcolor
 #np.seterr(all='raise')
 
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
@@ -4751,9 +4752,9 @@ class Plot:
         plt.close()
 
 if __name__ == "__main__":
-    print( term.bold('Tools for the CONNIE colaboration') )
-    print( term.bold('by Philipe Mota (philipe.mota@gmail.com)') )
-    print( term.bold('repository https://github.com/PhMota/CONNIEtools') )
+    print( colored('Tools for the CONNIE colaboration', attrs=['bold']) )
+    print( colored('by Philipe Mota (philipe.mota@gmail.com)', attrs=['bold']) )
+    print( colored('repository https://github.com/PhMota/CONNIEtools', attrs=['bold']) )
     if len(sys.argv) == 1:
         help_()
         exit(0)
