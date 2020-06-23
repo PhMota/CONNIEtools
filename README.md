@@ -168,5 +168,6 @@ together with the `sample.fits` output, it also generates the  `sample.csv` file
 85.3338, 63.2695, 243.6118, 27.5811, random
 ```
 and the `sample.png` file
-[![sample](sample.png)]
+
+![](sample.png)
 
