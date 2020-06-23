@@ -115,3 +115,5 @@ output options:
   --verbose VERBOSE     verbose level
   --csv                 generate csv output
 ``` 
+
+The only necessary option is the `name`
