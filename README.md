@@ -28,10 +28,10 @@ usage: simulation image [-h] [-g CHARGE_GAIN] [-rn READOUT_NOISE]
                         [--default-horizontal-modulation DEFAULT_HORIZONTAL_MODULATION]
                         [--default-modulation DEFAULT_MODULATION] [--no-fits]
                         [--pdf] [--spectrum] [--verbose VERBOSE] [--csv]
-                        name
+                        basename
 
 positional arguments:
-  name                  basename for simulation output
+  basename                  basename for simulation output
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -111,6 +111,7 @@ modulation options:
 output options:   
   --no-fits             suppress fits output
   --pdf                 generate pdf output
+  --png                 generate png output
   --spectrum            generate energy spectrum
   --verbose VERBOSE     verbose level
   --csv                 generate csv output
@@ -118,4 +119,51 @@ output options:
 
 
 
-The only necessary option is the `name` which specifies the basename for the output files, the rest of the options will fall to their defaults.
+The only necessary option is the `basename` which specifies the basename for the output files, the rest of the options will fall to their defaults.
+A test run
+
+```sh
+$ ./simulation image test
+using parameters:
+        number_of_Si_charges 0 rebin [1, 1] readout_noise 0 image_type <type 'int'> horizontal_overscan 150 basename test 
+        number_of_charges 0 vertical_modulation_function 0 ccd_shape (4130, 4120) depth_range [0, 670] expose_hours 1 
+        diffusion_function sqrt(-258.817238*log1p(-0.000982*z))/15 if z < 670 else 0 number_of_Cu_charges 0 charge_gain 7.2500 vertical_overscan 90 
+        horizontal_modulation_function 0 dark_current 0 charge_efficiency_function 1. if z < 670 else .9 charge_range [5, 200] number_of_Cu2_charges 0 
+generated fits 0s105ms
+saved test.fits 0s364ms
+finished 0s950ms
+```
+
+prints all options used and the time for generating the fits image, the time for saving the image and the total run time.
+This run generated complete black images with no readout noise, no dark current and no simulated single-hit charges.
+A sample
+
+```sh
+./simulation image sample -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv
+using parameters:
+        number_of_Cu_charges 0 horizontal_overscan 10 basename sample expose_hours 1 readout_noise 12.0000 horizontal_modulation_function 0 
+        charge_gain 7.2500 charge_range [5, 200] number_of_Si_charges 0 rebin [1, 1] image_type <type 'float'> number_of_charges 10 
+        vertical_overscan 10 csv True ccd_shape [90, 90] func <function image at 0x7f75582100c8> charge_efficiency_function 1. if z < 670 else .9 
+        png True number_of_Cu2_charges 0 vertical_modulation_function 0 depth_range [0, 670] 
+        diffusion_function sqrt(-258.817238*log1p(-0.000982*z))/15 if z < 670 else 0 dark_current 0.1000 
+saved sample.png 0s394ms
+generated fits 0s6ms
+saved sample.fits 0s538ms
+finished 0s953ms
+```
+
+generates the `sample.csv` file
+```csv
+# {'number_of_Cu_charges': 0, 'horizontal_overscan': 10, 'basename': 'sample', 'expose_hours': 1, 'readout_noise': 12.0, 'horizontal_modulation_function': '0', 'charge_gain': 7.25, 'charge_range': [5, 200], 'number_of_Si_charges': 0, 'rebin': [1, 1], 'image_type': <type 'float'>, 'number_of_charges': 10, 'vertical_overscan': 10, 'csv': True, 'ccd_shape': [90, 90], 'func': <function image at 0x7f75582100c8>, 'charge_efficiency_function': '1. if z < 670 else .9', 'png': True, 'number_of_Cu2_charges': 0, 'vertical_modulation_function': '0', 'depth_range': [0, 670], 'diffusion_function': 'sqrt(-258.817238*log1p(-0.000982*z))/15 if z < 670 else 0', 'dark_current': 0.1}
+# x, y, z, q, id
+8.3630, 54.0214, 16.7683, 146.9022, random
+24.4361, 9.8991, 406.4256, 21.6504, random
+76.6522, 19.1008, 541.9560, 157.5956, random
+72.1244, 38.9625, 343.4112, 16.4292, random
+12.8701, 69.9500, 467.4386, 22.8460, random
+9.3977, 74.3152, 78.7057, 32.2837, random
+15.1221, 40.3824, 514.1709, 133.0789, random
+76.5377, 29.2888, 256.5385, 64.1979, random
+62.4611, 48.3711, 310.7852, 146.8428, random
+85.3338, 63.2695, 243.6118, 27.5811, random
+```
