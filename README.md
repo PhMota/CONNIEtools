@@ -114,7 +114,6 @@ output options:
   --spectrum            generate energy spectrum
   --verbose VERBOSE     verbose level
   --csv                 generate csv output
-
 ```
 
 
