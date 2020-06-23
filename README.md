@@ -55,7 +55,8 @@ geometry options:
   -vos VERTICAL_OVERSCAN, --vertical-overscan VERTICAL_OVERSCAN
                         size of the vertical overscan in pixels (default: 90)
   --ccd-shape CCD_SHAPE CCD_SHAPE
-                        shape of the image as 2d pixels (default: recarray)
+                        shape of the image as 2d pixels (default: (4130,
+                        4120))
   --rebin REBIN REBIN   2d rebinning strides (default: [1, 1])
   --image-type IMAGE_TYPE
                         image type (default: int)
