@@ -171,3 +171,15 @@ and the `sample.png` file
 
 ![](sample.png)
 
+```sh
+./simulation image sample5 -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv --rebin 5 1
+```
+
+![](sample5.png)
+
+
+```sh
+./simulation image sample5mod -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv --vertical-modulation-function '50*cos(2*pi*y/50)'
+```
+![](sample5mod.png)
+
