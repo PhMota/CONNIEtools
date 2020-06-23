@@ -152,7 +152,7 @@ saved sample.fits 0s538ms
 finished 0s953ms
 ```
 
-generates the `sample.csv` file
+together with the `sample.fits` output, it also generates the  `sample.csv` file
 ```csv
 # {'number_of_Cu_charges': 0, 'horizontal_overscan': 10, 'basename': 'sample', 'expose_hours': 1, 'readout_noise': 12.0, 'horizontal_modulation_function': '0', 'charge_gain': 7.25, 'charge_range': [5, 200], 'number_of_Si_charges': 0, 'rebin': [1, 1], 'image_type': <type 'float'>, 'number_of_charges': 10, 'vertical_overscan': 10, 'csv': True, 'ccd_shape': [90, 90], 'func': <function image at 0x7f75582100c8>, 'charge_efficiency_function': '1. if z < 670 else .9', 'png': True, 'number_of_Cu2_charges': 0, 'vertical_modulation_function': '0', 'depth_range': [0, 670], 'diffusion_function': 'sqrt(-258.817238*log1p(-0.000982*z))/15 if z < 670 else 0', 'dark_current': 0.1}
 # x, y, z, q, id
@@ -167,3 +167,6 @@ generates the `sample.csv` file
 62.4611, 48.3711, 310.7852, 146.8428, random
 85.3338, 63.2695, 243.6118, 27.5811, random
 ```
+and the `sample.png` file
+[!(sample.png)]
+
