@@ -6,7 +6,7 @@ This is a set of tool for analysing the CONNIE
 ### Simulation
 
 The `simulate` tool is responsable for generating simulated images. The implemented functionalities and defaults are described by the `--help` as
-````sh
+```sh
 $ ./simulation image --help
 usage: simulation image [-h] [-g CHARGE_GAIN] [-rn READOUT_NOISE]
                         [-dc DARK_CURRENT] [-exp EXPOSE_HOURS]
