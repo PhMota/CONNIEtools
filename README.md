@@ -31,7 +31,7 @@ usage: simulation image [-h] [-g CHARGE_GAIN] [-rn READOUT_NOISE]
                         name
 
 positional arguments:
-  name                  factor to convert charges into ADU
+  name                  basename for simulation output
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -114,6 +114,7 @@ output options:
   --spectrum            generate energy spectrum
   --verbose VERBOSE     verbose level
   --csv                 generate csv output
-``` 
 
-The only necessary option is the `name`
+```
+
+The only necessary option is the `name` which specifies the basename for the output files, the rest of the options will fall to their defaults.
