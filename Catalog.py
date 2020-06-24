@@ -36,6 +36,7 @@ with Timer('import'):
     #from rootpy.io import root_open
 
 import Image
+import Simulation
 import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
@@ -65,7 +66,7 @@ class HitSummary:
     def extend(self, a):
         self.__updateattrs__(rfn.stack_arrays( (self.__recarray__, a), asrecarray=True ))
     
-    def add_fields( self, names, types=None, arrays=None, func=None, verbose=False ):
+    def add_fields( self, names, types=None, arrays=None, verbose=False ):
         if verbose: print( 'added', names )
         if type(names) is str:
             if names == 'flag' or names == 'nSat':
@@ -117,7 +118,7 @@ class HitSummary:
         return average( getattr(entry, '{}Pix'.format(axis))[mask], weights=entry.ePix[mask], axis=0 )
 
     def __Var(self, entry, mask, axis ):
-        return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=entry.ePix[mask], axis=0 ) 
+        return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=entry.ePix[mask], axis=0 ) \
                 - average( getattr(entry, '{}Pix'.format(axis))[mask], weights=entry.ePix[mask], axis=0 )**2
 
     def __SqrBary(self, entry, mask, axis ):
@@ -134,8 +135,8 @@ class HitSummary:
 
     def add_energy_threshold_fields( self, eThr ):
         self.add_fields( [ '{}{}'.format(name,int(eThr)) for name in ['n','E','xBary','yBary','xVar','yVar']],
-                        dtypes=(int,float,float,float,float,float), 
-                        self.__apply_to_entries( self.__thr_vars, self.__energy_mask(eThr) )
+                        dtypes=(int,float,float,float,float,float),
+                        arrays=self.__apply_to_entries( self.__thr_vars, self.__energy_mask(eThr) )
                         )
         
         
@@ -549,10 +550,13 @@ def build_new_catalog_from_recarray__( input, output ):
 def match( args ):
     simulation = Simulation.simulation_from_file( args.basename )
     print( simulation.x )
+    print( simulation.q )
 
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation' )
-    
+    p.add_argument('--dummy', type=str, help = 'dummy' )
+    p.add_argument('--a', type=str, help = 'dummy' )
+    p.set_defaults( _func=match )
 
 def extract( args ):
     if os.path.exists( args.basename +'.root' ):
@@ -584,7 +588,7 @@ def add_extract_options(p):
     p.add_argument('--ohdu', nargs='+', type=int, default=range(2,16), help = 'ohdus to be extracted' )
     p.add_argument('--exclude', nargs='+', type=int, default=[11,12,14], help = 'ohdus NOT to be extracted' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
-    p.set_defaults(func=extract)
+    p.set_defaults(_func=extract)
 
 def get_selections( file, branches, selections, global_selection=None, runID_range=None, extra_branches = [] ):
     data_selection = {}
@@ -682,7 +686,7 @@ def add_scatter_options(p):
     p.add_argument('--define', nargs='+', type=str, default=argparse.SUPPRESS, help = 'definitions' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
-    p.set_defaults(func=scatter)
+    p.set_defaults(_func=scatter)
 
 def energy_threshold( datum, threshold ):
     above_2sigma = [ ePix>threshold for ePix in datum.ePix ]
@@ -768,7 +772,7 @@ def add_histogram_options(p):
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
     
-    p.set_defaults(func=histogram)
+    p.set_defaults(_func=histogram)
 
 def status( args ):
     if not os.path.exists( args.root_file ):
@@ -794,7 +798,7 @@ def add_status_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('-t', '--tree', type=str, default=argparse.SUPPRESS, help = 'tree to print' )
     p.add_argument('--branches', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branch used for x-axis' )
-    p.set_defaults( func = status )
+    p.set_defaults( _func = status )
 
 if __name__ == '__main__':
 
@@ -807,12 +811,12 @@ if __name__ == '__main__':
     add_extract_options( subparsers.add_parser('extract', help='extract events from image', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_match_options( subparsers.add_parser('match', help='match catalog with simulation', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     args = parser.parse_args()
-
-    func = args.func
-    del args.func
+    
+    _func = args._func
+    del args._func
     print( colored('using parameters:', 'green', attrs=['bold'] ) )
     print_var( vars(args).keys(), vars(args), line_char='\t' )
     
     with Timer('finished'):
-        func(args)
+        _func(args)
     

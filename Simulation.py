@@ -26,9 +26,17 @@ Cu_energy_eV = 8046
 Cu2_energy_eV = 8904
 Si_energy_eV = 1740
 
+class to_object:
+    def __init__(self, d):
+        self.__dict__ = d
+    def __contains__(self, a):
+        return a in self.__dict__.keys()
+
 def simulation_from_file( basename ):
     fname = basename+'.csv'
-    args = json.loads( open( fname ).readline().strip(' #').replace('\'','"') )
+    json_str = open( fname ).readline().strip(' #').replace('\'','"')
+    args_dict = json.loads( json_str )
+    args = to_object(args_dict)
     data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
     return Simulation( data, args )
     
@@ -204,7 +212,7 @@ class Simulation( recarray ):
             header['dc'] = self.dark_current
             header['OHDU'] = -1
 
-            fits_image = astropy.io.fits.ImageHDU( image.astype(args.image_type), header=header )
+            fits_image = astropy.io.fits.ImageHDU( image.astype(eval(args.image_type)), header=header )
             header['OHDU'] = 0
             primary = astropy.io.fits.PrimaryHDU( header=header )
             hdu_list = astropy.io.fits.HDUList([primary, fits_image])
@@ -264,7 +272,7 @@ def add_geometry_options(p):
     #p.add_argument('-vpt', '--vertical-pretrim', type=int, default = 1, help = 'size of the vertical overscan in pixels' )
     g.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape.tolist(), help = 'shape of the image as 2d pixels' )
     g.add_argument('--rebin', nargs=2, type=int, default = [1,1], help = '2d rebinning strides' )
-    g.add_argument('--image-type', type=eval, default='int', help = 'image type' )
+    g.add_argument('--image-type', type=str, default='int', help = 'image type' )
     g.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5', 
                     type=int, default = argparse.SUPPRESS )
     return
@@ -382,8 +390,7 @@ def simulate_events( args ):
         
     if 'csv' in args:
         output = args.basename + '.csv'
-        header = str(vars(args))
-        #print( 'header', header )
+        header = json.dumps(vars(args))
         header += '\n' + ', '.join(cols)
         if len(array_of_depths) > 0:
             savetxt( output, data, delimiter=', ', header=header, fmt=fmt )
@@ -439,6 +446,7 @@ if __name__ == '__main__':
     add_folder_options( subparsers.add_parser('folder', help='generate folder with simulated images', formatter_class=argparse.ArgumentDefaultsHelpFormatter) )
 
     args = parser.parse_args()
-    
+    func = args.func
+    del args.func
     with Timer('finished'):
-        args.func(args)
+        func(args)
