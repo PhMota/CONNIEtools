@@ -26,10 +26,10 @@ Cu_energy_eV = 8046
 Cu2_energy_eV = 8904
 Si_energy_eV = 1740
 
-
-def simulation_from_file( input_file ):
-    args = json.loads( open( input_file ).readline().strip(' #').replace('\'','"') )
-    data = genfromtxt( input_file, delimiter= ', ', names = True, skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
+def simulation_from_file( basename ):
+    fname = basename+'.csv'
+    args = json.loads( open( fname ).readline().strip(' #').replace('\'','"') )
+    data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
     return Simulation( data, args )
     
 class Simulation( recarray ):

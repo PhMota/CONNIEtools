@@ -73,23 +73,23 @@ class HitSummary:
                 arrays = [0]*len(self)
             elif names == 'nSavedPix':
                 types = int32
-                arrays = map(len, self.__recarray__.ePix)
-            elif re.match( r'^n[0-3]$', names ):
-                lvl = int(re.search( r'^n([0-3])$', names ).groups()[0])
-                types = int32
-                arrays = self.__apply_to_entries( self.__n, self.__level_mask(lvl) )
-            elif re.match( r'^E[0-3]$', names ):
-                lvl = int(re.search( r'^E([0-3])$', names ).groups()[0])
-                types = float32
-                arrays = self.__apply_to_entries( self.__E, self.__level_mask(lvl) )
-            elif re.match( r'^[xy]Bary[0-3]$', names ):
-                axis, lvl = re.search( r'^([xy])Bary([0-3])$', names ).groups()
-                types = float32
-                arrays = self.__Bary(axis,lvl)
-            elif re.match( r'^[xy]Var[0-3]$', names ):
-                axis, lvl = re.search( r'^([xy])Var([0-3])$', names ).groups()
-                types = float32
-                arrays = self.__Var(axis,lvl)
+                arrays = self.__apply_to_entries( self.__nSavedPix )
+            #elif re.match( r'^n[0-3]$', names ):
+                #lvl = int(re.search( r'^n([0-3])$', names ).groups()[0])
+                #types = int32
+                #arrays = self.__apply_to_entries( self.__n, self.__level_mask(lvl) )
+            #elif re.match( r'^E[0-3]$', names ):
+                #lvl = int(re.search( r'^E([0-3])$', names ).groups()[0])
+                #types = float32
+                #arrays = self.__apply_to_entries( self.__E, self.__level_mask(lvl) )
+            #elif re.match( r'^[xy]Bary[0-3]$', names ):
+                #axis, lvl = re.search( r'^([xy])Bary([0-3])$', names ).groups()
+                #types = float32
+                #arrays = self.__Bary(axis,lvl)
+            #elif re.match( r'^[xy]Var[0-3]$', names ):
+                #axis, lvl = re.search( r'^([xy])Var([0-3])$', names ).groups()
+                #types = float32
+                #arrays = self.__Var(axis,lvl)
         self.__updateattrs__( rfn.append_fields( self.__recarray__, names, arrays, dtypes=types, asrecarray=True ) )
 
     def __apply_to_entries( self, func, mask=None ):
@@ -122,9 +122,6 @@ class HitSummary:
 
     def __SqrBary(self, entry, mask, axis ):
         return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=entry.ePix[mask], axis=0 )
-
-    def __basic_vars( self, entry ):
-        flag = 0
         
     def __thr_vars( self, entry, mask ):
         n = self.__n(entry, mask)
@@ -135,25 +132,11 @@ class HitSummary:
         xVar = self.__SqrBary(entry, mask, 'y') - xBary**2
         return n, E, xBary, yBary, xVar, yVar
 
-    def add_basic
-        
-    def add_energy_threshold( self, eThr ):
-        above = map( lambda e: e >= eThr, self.ePix )
-        def _(entry, mask):
-            n = len(mask)
-            E = sum(entry.ePix[mask])
-            xBary = average( entry.xPix[mask], entry.ePix[mask] )
-            yBary = average( entry.yPix[mask], entry.ePix[mask] )
-            xVar = average( entry.xPix[mask]**2, entry.ePix[mask] ) - xBary**2
-            yVar = average( entry.yPix[mask]**2, entry.ePix[mask] ) - yBary**2
-            return n, E, xBary, yBary, xVar, yVar
-        obj = np.array( map( _, zip(self, above) ) )
-        print( 'compute_energy_threshold', obj.shape )
-        self[:] = rfn.append_fields( self, 
-                        [ '{}{}'.format(name,int(eThr)) for name in ['n','E','xBary','yBary','xVar','yVar']], 
-                        obj, 
+    def add_energy_threshold_fields( self, eThr ):
+        self.add_fields( [ '{}{}'.format(name,int(eThr)) for name in ['n','E','xBary','yBary','xVar','yVar']],
                         dtypes=(int,float,float,float,float,float), 
-                        asrecarray=True ).view(HitSummary)
+                        self.__apply_to_entries( self.__thr_vars, self.__energy_mask(eThr) )
+                        )
         
         
     def match_simulated_events( self, events, lvl, length ):
@@ -163,6 +146,7 @@ class HitSummary:
         shifts = range( -radius, radius+1 )
         listofshifts = [ shifts for i in range(2) ]
         nshifts = tuple(itertools.product(*listofshifts) )
+        print( nshifts )
 
         array_of_projections_events = events.get_xy_rebin()
         array_of_projections_indices_events = get_indices( array_of_projections_events, length=length )
@@ -270,7 +254,7 @@ class HitSummary:
     def get_Var(self):
         return array( (self.xVar, self.yVar) ).T
 
-    def save_catalog( self, output ):
+    def save_catalog( self, basename ):
         N = len(self)
         Nmax = max( self.nSavedPix )
         
@@ -357,10 +341,10 @@ class HitSummary:
         level = [ array(l).astype(int) for l in self.__recarray__.level ]
         
         mode = 'recreate'
-        if os.path.exists( output+'.root' ):
+        if os.path.exists( basename+'.root' ):
             mode = 'update'
         
-        varnames = ['output', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
+        varnames = ['basename', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
         weave.inline( code, varnames,
                             headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
                             libraries=['Core'],
@@ -370,7 +354,7 @@ class HitSummary:
                             compiler='gcc',
                             #verbose=1,
                             )
-        return output + '.root'
+        return basename + '.root'
     
 def open_HitSummary( file, branches=None, selection=None, start=None, stop=None, runID_range=None ):
     if runID_range:
@@ -378,6 +362,7 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
         start = amin(argwhere(runIDs==runID_range[0]))
         stop = amax(argwhere(runIDs==runID_range[1]))+1        
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
+
 
 #def list_branches( file, treename = 'hitSumm' ):
     #return root_numpy.list_branches( file, treename = treename )
@@ -561,9 +546,17 @@ def build_new_catalog_from_recarray__( input, output ):
     #output_file.Close()
     #input_file.Close()
 
+def match( args ):
+    simulation = Simulation.simulation_from_file( args.basename )
+    print( simulation.x )
+
+def add_match_options(p):
+    p.add_argument('basename', type=str, help = 'basename of the simulation' )
+    
+
 def extract( args ):
-    if os.path.exists( args.name +'.root' ):
-        print( 'catalog {}.root already exists'.format(args.name) )
+    if os.path.exists( args.basename +'.root' ):
+        print( 'catalog {}.root already exists'.format(args.basename) )
         exit(1)
     args.input_files = args.fits_files
     def image_extract( image, args ):
@@ -576,22 +569,14 @@ def extract( args ):
         
         for field in ['flag', 'nSavedPix', 'nSat' ] + [ fmt.format(lvl) for lvl in range(args.border+1) for fmt in ['n{}', 'E{}', 'xBary{}', 'yBary{}', 'xVar{}', 'yVar{}'] ]:
             hitSummary.add_fields( field )
-        hitSummary.save_catalog( args.name )
+        hitSummary.save_catalog( args.basename )
         return
     args.func = image_extract
     image = Image.apply_to_files( args )
     
-    #hitSummaries = None
-    #for file_group, entry in image.items():
-        #for ohdu, hitSummary in entry.items():
-            #if hitSummaries is None:
-                #hitSummaries = hitSummary
-            #else:
-                #hitSummaries.extend( hitSummary )
-    #hitSummaries.save_catalog( args.name )
     
 def add_extract_options(p):
-    p.add_argument('name', type=str, help = 'basename of the output catalog' )
+    p.add_argument('basename', type=str, help = 'basename of the output catalog' )
     p.add_argument('fits_files', type=str, help = 'fits file (example: )' )
     p.add_argument('-t', '--threshold', type=float, default=60, help = 'energy threshold in ADU' )
     p.add_argument('-b', '--border', type=int, default=0, help = 'pixel border' )
@@ -816,10 +801,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser( description = 'catalog tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
     subparsers = parser.add_subparsers( help = 'major options' )
 
-    add_status_options( subparsers.add_parser('status', help='status', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_histogram_options( subparsers.add_parser('histogram', help='histogram', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_scatter_options( subparsers.add_parser('scatter', help='scatter', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_extract_options( subparsers.add_parser('extract', help='extract', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_status_options( subparsers.add_parser('status', help='get status from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_histogram_options( subparsers.add_parser('histogram', help='make histogram from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_scatter_options( subparsers.add_parser('scatter', help='make scatter from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_extract_options( subparsers.add_parser('extract', help='extract events from image', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_match_options( subparsers.add_parser('match', help='match catalog with simulation', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     args = parser.parse_args()
 
     func = args.func
