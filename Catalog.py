@@ -77,11 +77,11 @@ class HitSummary:
             elif re.match( r'^n[0-3]$', names ):
                 lvl = int(re.search( r'^n([0-3])$', names ).groups()[0])
                 types = int32
-                arrays = self.__n(lvl)
+                arrays = self.__apply_to_entries( self.__n, self.__level_mask(lvl) )
             elif re.match( r'^E[0-3]$', names ):
                 lvl = int(re.search( r'^E([0-3])$', names ).groups()[0])
                 types = float32
-                arrays = self.__E(lvl)
+                arrays = self.__apply_to_entries( self.__E, self.__level_mask(lvl) )
             elif re.match( r'^[xy]Bary[0-3]$', names ):
                 axis, lvl = re.search( r'^([xy])Bary([0-3])$', names ).groups()
                 types = float32
@@ -92,14 +92,26 @@ class HitSummary:
                 arrays = self.__Var(axis,lvl)
         self.__updateattrs__( rfn.append_fields( self.__recarray__, names, arrays, dtypes=types, asrecarray=True ) )
 
-    def __apply_to_entries( self, mask, func ):
+    def __apply_to_entries( self, func, mask=None ):
+        if mask is None:
+            return array( map( func, self.__recarray__ ) )
         return array( map( func, zip(self.__recarray__, mask) ) )
-
-    def __n( self, entry, mask ):
-        return len(entry.ePix[mask])
     
-    def __E( self, entry, mask ):
-        return sum(entry.ePix[mask])
+    def __energy_mask(self, eThr):
+        return map( lambda e: e >= eThr, self.ePix )
+
+    def __level_mask(self, lvl):
+        return map( lambda l: l <= lvl, self.level )
+
+    def __flag( self, entry ): return 0
+    
+    def __nSat( self, entry ): return 0
+
+    def __nSavedPix( self, entry ): return len(entry.ePix)
+    
+    def __n( self, entry, mask ): return len(entry.ePix[mask])
+    
+    def __E( self, entry, mask ): return sum(entry.ePix[mask])
 
     def __Bary(self, entry, mask, axis ):
         return average( getattr(entry, '{}Pix'.format(axis))[mask], weights=entry.ePix[mask], axis=0 )
@@ -111,15 +123,19 @@ class HitSummary:
     def __SqrBary(self, entry, mask, axis ):
         return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=entry.ePix[mask], axis=0 )
 
-    def __basic_vars( self, entry, mask ):
+    def __basic_vars( self, entry ):
+        flag = 0
+        
+    def __thr_vars( self, entry, mask ):
         n = self.__n(entry, mask)
         E = self.__E(entry, mask)
         xBary = self.__Bary(entry, mask, 'x')
         yBary = self.__Bary(entry, mask, 'y')
-        xVary = self.__SqrBary(entry, mask, 'x') - xBary**2
-        xVary = self.__SqrBary(entry, mask, 'y') - xBary**2
-        
-    def add_distance_levels( self, lvl ):
+        xVar = self.__SqrBary(entry, mask, 'x') - xBary**2
+        xVar = self.__SqrBary(entry, mask, 'y') - xBary**2
+        return n, E, xBary, yBary, xVar, yVar
+
+    def add_basic
         
     def add_energy_threshold( self, eThr ):
         above = map( lambda e: e >= eThr, self.ePix )
