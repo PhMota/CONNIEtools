@@ -551,6 +551,8 @@ def match( args ):
     simulation = Simulation.simulation_from_file( args.basename )
     print( simulation.x )
     print( simulation.q )
+    print( simulation.q_eff )
+    print( simulation.E )
 
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation' )

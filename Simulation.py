@@ -40,7 +40,7 @@ def simulation_from_file( basename ):
     data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
     return Simulation( data, args )
     
-class Simulation( recarray ):
+class Simulation( recarray, object ):
     
     def __new__(cls, data, args ):
 
@@ -79,54 +79,48 @@ class Simulation( recarray ):
             obj.count = 1
         return obj
     
-    def get_charge(self):
-        return ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
+    @property
+    def q_eff(self):
+        if not '__q_eff' in self.__dict__:
+            self.__q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
+        return self.__q_eff
     
-    def get_xy( self ):
-        if self.count == 1:
-            return array( ([self.x], [self.y]) ).T
-        return array( (self.x, self.y) ).T
+    @property
+    def xy( self ):
+        if not '__xy' in self.__dict__:
+            self.__xy = array( (self.x, self.y) ).T
+        return self.__xy
 
-    #def get_xy_rebin( self ):
-        #if self.count == 1:
-            #return (array( ([self.x], [self.y]) )/self.rebin[:,None]).T
-        #return (array( (self.x, self.y) )/self.rebin[:,None]).T
-
-    def get_E( self ):
-        return self.q*self.charge_gain
+    @property
+    def E( self ):
+        if not '__E' in self.__dict__:
+            self.__E = self.q*self.charge_gain
+        return self.__E
     
-    def get_id_code( self, entry = None ):
+    @property
+    def E_eff( self ):
+        if not '__E_eff' in self.__dict__:
+            self.__E_eff = self.q_eff*self.charge_gain
+        return self.__E_eff
+    
+    def id_code( self, entry = None ):
         map_id = {'random': 1, 'Cu': 11, 'Cu2': 12, 'Si':10}
         if entry is None:
             return map( lambda i: map_id[i], self.id )
         return map_id[entry.id]
 
-    def get_sigma( self, entry = None ):
-        if entry is None:
-            return self.diffusion_function( self.z )
-        return self.diffusion_function( entry.z )
-        
+    @property
+    def sigma( self, entry=None ):
+        if not '__sigma' in self.__dict__:
+            self.__sigma = self.diffusion_function( self.z )
+        return self.__sigma
+            
     def generate_image( self, args ):
-        if self.count > 1:
-            sigma_per_event = self.get_sigma()
-            charge_per_event = self.get_charge()
-            Q = sum(charge_per_event)
+        if self.count > 0:
+            Q = sum( self.q_eff )
             xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
-            sigma_per_charge = repeat( sigma_per_event, charge_per_event )
-            xy_per_charge = repeat( self.get_xy(), charge_per_event, axis=0 )
-            xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
-            bins = [
-                arange(self.ccd_shape[0]+1),
-                arange(self.ccd_shape[1]+1)
-                ]
-            image = histogramdd( xy, bins = bins )[0] * self.charge_gain
-        elif self.count == 1:
-            sigma_per_event = self.get_sigma()
-            charge_per_event = self.get_charge()
-            Q = sum(charge_per_event)
-            xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
-            sigma_per_charge = repeat( sigma_per_event, charge_per_event )
-            xy_per_charge = repeat( self.get_xy(), charge_per_event, axis=0 )
+            sigma_per_charge = repeat( self.sigma, self.q_eff )
+            xy_per_charge = repeat( self.xy, self.q_eff, axis=0 )
             xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
             bins = [
                 arange(self.ccd_shape[0]+1),
@@ -135,9 +129,6 @@ class Simulation( recarray ):
             image = histogramdd( xy, bins = bins )[0] * self.charge_gain
         else:
             image = zeros( self.ccd_shape )
-        #print('total hit charge', sum(image) )
-        #total_hit_pixels = sum(image>0)
-        #print('total hit pixels', total_hit_pixels, float(total_hit_pixels)/image.size )
 
         if 'verbose' in args:
             max_ADU = max( image.flatten() )
@@ -146,12 +137,6 @@ class Simulation( recarray ):
         
         if self.dark_current > 0:
             dark_current_image = scipy.stats.poisson.rvs( self.dark_current, size = self.ccd_shape[0]*self.ccd_shape[1] ).reshape(self.ccd_shape)
-            #max_charge = max( dark_current_image.flatten() )
-            #total_dark_charge = sum( dark_current_image.flatten() )
-            #print( 'total dark charges', total_dark_charge, max_charge )
-            #total_pixels = sum(dark_current_image>0)
-            #print( 'total dark pixels', total_pixels, float(total_pixels)/dark_current_image.size )
-            #print( 'total dark pixels', sum( dark_current_image[:100,:100] ), float(sum( dark_current_image[:100,:100]>0 ))/(100*100) )
             image += dark_current_image * self.charge_gain
             if 'verbose' in args:
                 max_ADU = max_charge * self.charge_gain
