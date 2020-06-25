@@ -38,7 +38,7 @@ def simulation_from_file( basename ):
     json_str = open( fname ).readline().strip(' #').replace('\'','"')
     args_dict = json.loads( json_str )
     args = to_object(args_dict)
-    data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
+    data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('n', int), ('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
     return Simulation( data, args )
     
 class Simulation( recarray, object ):
@@ -371,13 +371,13 @@ def simulate_events( args ):
     if 'verbose' in args and args.verbose == 0: 
         print( 'total charges created', len( array_of_identities ) )
     
-    cols = ['x', 'y', 'z', 'q', 'id']
-    types = [float, float, float, float, 'S16']
-    fmt = ['%.4f', '%.4f', '%.4f', '%.4f', '%s']
+    cols = ['n', 'x', 'y', 'z', 'q', 'id']
+    types = [int, float, float, float, float, 'S16']
+    fmt = ['%d', '%.4f', '%.4f', '%.4f', '%.4f', '%s']
     dtype = zip( cols, types )
     data = empty( (0,len(dtype)), dtype=dtype )
     if len(array_of_depths) > 0:
-        data = array( zip(array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype )
+        data = array( zip(arange(len(array_of_depths)), array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype )
         
     if 'csv' in args:
         output = args.basename + '.csv'

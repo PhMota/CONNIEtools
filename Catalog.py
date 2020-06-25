@@ -42,10 +42,10 @@ from termcolor import colored
 from PrintVar import print_var
 
 class HitSummary:
-    def __init__( self, recarray, transpose=True, verbose=False ):
+    def __init__( self, recarray, transpose=False, verbose=False ):
         self.verbose = verbose
         if transpose:
-            recarray.xPix, recarray.yPix = recarray.yPix, recarray.xPix
+            recarray.xPix, recarray.yPix = recarray.yPix[:], recarray.xPix[:]
         self.__updateattrs__(recarray)
 
     def __updateattrs__(self, recarray ):
@@ -126,13 +126,13 @@ class HitSummary:
     def add_energy_threshold_fields( self, eThr ):
         self.add_fields( [ '{}{}'.format(name,int(eThr)) for name in ['n','E','xBary','yBary','xVar','yVar']],
                         types=(int,float,float,float,float,float),
-                        arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__lvl_mask(eThr) ).T
+                        arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__energy_mask(eThr) ).T
                         )
         
     def add_level_fields( self, lvl ):
         self.add_fields( [ '{}{}'.format(name,int(lvl)) for name in ['n','E','xBary','yBary','xVar','yVar']],
                         types=(int,float,float,float,float,float),
-                        arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__energy_mask(lvl) ).T
+                        arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__level_mask(lvl) ).T
                         )
         
     def match_simulated_events( self, events, lvl, length ):
@@ -253,7 +253,8 @@ class HitSummary:
     def save_catalog( self, basename ):
         N = len(self)
         Nmax = max( self.nSavedPix )
-        
+        if self.verbose:
+            print( 'number of hits', N, 'nSavedPixmax', Nmax )
         declarations = ''
         assignments = ''
         assignmentsArray = ''
@@ -567,7 +568,7 @@ def extract( args ):
         exit(1)
     args.input_files = args.fits_files
     def image_extract( image, args ):
-        hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border, verbose ), transpose=True, verbose=verbose )
+        hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
         for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
             if field.upper() in image.header:
                 hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )

@@ -740,11 +740,13 @@ class Section( np.ndarray ):
     def get_clusters( self, threshold, border, verbose=0 ):
         labeled_clusters = label_clusters( self >= threshold )
         if verbose:
+            print( 'number of pixels labeled', np.count_nonzero(labeled_clusters) )
             print( 'number of clusters above threshold', labeled_clusters.max() )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
-        labeled_clusters = label_clusters( distances_to_cluster <= border )
+        labeled_clusters = label_clusters( distances_to_cluster <= border*np.sqrt(2) )
         if verbose:
+            print( 'number of pixels labeled', np.count_nonzero(labeled_clusters) )
             print( 'number of clusters with border', labeled_clusters.max() )
         return labeled_clusters, distances_to_cluster
 
@@ -784,7 +786,7 @@ class Section( np.ndarray ):
         def process( cluster ):
             ei, level = cluster
             x, y = np.unravel_index(ei[1], self.shape)
-            return ei[0], x, y, level
+            return ei[0], x, y, level.astype(int)
         list_of_clusters = map( process, zip(list_of_clusters, levels) )
 
         dtype = [
