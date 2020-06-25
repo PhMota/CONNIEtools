@@ -40,6 +40,39 @@ import Simulation
 import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
+from scipy.sparse import csr_matrix
+
+
+def binned_statistic(x, values, func, nbins, range):
+    '''The usage is nearly the same as scipy.stats.binned_statistic''' 
+
+    N = len(values)
+    r0, r1 = range
+
+    digitized = (float(nbins)/(r1 - r0)*(x - r0)).astype(int)
+    S = csr_matrix((values, [digitized, np.arange(N)]), shape=(nbins, N))
+
+    return [func(group) for group in np.split(S.data, S.indptr[1:-1])]
+
+class NeighborIndexHistogram:
+    def __init__( self, data, length, shift=1 ):
+        import itertools
+        self.__data = data
+        self.__d = len(self.__data.shape)
+        self.shiftsdd = tuple( itertools.product( *[range( -shift, shift+1 )]*self.__d ) )
+        self.digitized = rint(self.__data/length).astype(int)
+        self.occupied_bins, inv_bins = unique( self.digitized, axis=0, return_inverse = True )
+        
+        print( 'dig', self.digitized, len(self.digitized) )
+        print( 'bins', self.occupied_bins, len(self.occupied_bins) )
+        print( 'inv_bins',inv_bins, len(inv_bins) )
+        print( 'data', data, len(data) )
+        print( 'occupied', self.occupied_bins )
+        
+        for inv_bin, occupied in enumerate(self.occupied_bins):
+            elements = nonzero( inv_bins == inv_bin )[0]
+            print( 'elements', elements )
+        
 
 class HitSummary:
     def __init__( self, recarray, transpose=False, verbose=False ):
@@ -135,79 +168,43 @@ class HitSummary:
                         arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__level_mask(lvl) ).T
                         )
         
-    def match_simulated_events( self, events, lvl, length ):
-        import itertools
-        linked_list = {}
-        radius = 1
-        shifts = range( -radius, radius+1 )
-        listofshifts = [ shifts for i in range(2) ]
-        nshifts = tuple(itertools.product(*listofshifts) )
-        print( nshifts )
-
-        array_of_projections_events = events.get_xy_rebin()
-        array_of_projections_indices_events = get_indices( array_of_projections_events, length=length )
-        events_indices_set = set( map(tuple, array_of_projections_indices_events ) )
+    def match( self, events ):
         
-        for i, ni in enumerate(array_of_projections_indices_events):
-            for ns in nshifts:
-                try:
-                    linked_list[ tuple(ni + ns) ].append(i)
-                except:
-                    linked_list[ tuple(ni + ns) ] = [i]
-
-        array_of_projections_hits = array( (self['xBary%d' % lvl], self['yBary%d' % lvl]) ).T
-        array_of_projections_indices_hits = get_indices( array_of_projections_hits, length=length )
+        N = len(events)
+        indices = range(N)
         
-        print( 'max evts', array_of_projections_events[0].min(), array_of_projections_events[0].max(), array_of_projections_events[1].min(), array_of_projections_events[1].max() )
-        print( 'max hits', array_of_projections_hits[0].min(), array_of_projections_hits[0].max(), array_of_projections_hits[1].min(), array_of_projections_hits[1].max() )
-        
-        matched_indices = []
-        matched_id = []
-        matched_Q = []
-        matched_z = []
-        matched_distances = []
-        dist = lambda a, b: sqrt( sum( (a-b)**2, axis=-1 ) )
-        for hit_ind, hit_ni in enumerate(array_of_projections_indices_hits):
-            try:
-                event_ind = array(linked_list[tuple( hit_ni )])
-            except:
-                matched_id.append( 0 )
-                matched_distances.append( 0 )
-                matched_Q.append( 0 )
-                matched_z.append( -1 )
-                continue
-            pos_hit = array_of_projections_hits[ hit_ind ]
-            std_max_hit = sqrt( max( ( self[ hit_ind ]['xVar%d' % lvl], self[ hit_ind ]['yVar%d' % lvl] ) ) )
-            pos_event = array_of_projections_events[event_ind]
-            ds = dist( pos_hit, pos_event )
-            is_matched = ds <= 2*std_max_hit
-            event_ind_matched = event_ind[is_matched]
-            if len( event_ind_matched ) == 0:
-                matched_id.append( 0 )
-                matched_distances.append( 0 )
-                matched_Q.append( 0 )
-                matched_z.append( -1 )
-                continue
-            
-            if len( event_ind_matched ) > 1:
-                matched_id.append( 2 )
-                matched_distances.append( ds.min() )
-                matched_Q.append( sum( events.q[event_ind_matched] ) )
-                matched_z.append( -1 )
+        print( 'events.xy', events.xy )
+        x = zeros(N)
+        y = zeros(N)
+        z = zeros(N)
+        q = zeros(N)
+        E = zeros(N)
+        id_code = zeros(N)
+        sigma = zeros(N)
+        for i, hit in enumerate(self.__recarray__):
+            xPix0 = hit.xPix[ hit.level==0 ]
+            yPix0 = hit.yPix[ hit.level==0 ]
+            print( 'hitSummary.xy', zip(xPix0, yPix0) )
+            for j, index in enumerate(indices):
+                event = events[index]
+                print( 'event.xy', event.x, event.y )
+                if event.x in xPix0 and event.y in yPix0:
+                    print( 'match', event.x, event.y )
+                    x[i] = event.x
+                    y[i] = event.y
+                    z[i] = event.z
+                    sigma[i] = event.sigma
+                    q[i] = event.q_eff
+                    E[i] = event.E_eff
+                    id_code[i] = event.id_code()
+                    del indices[j]
+                    break
+                        
+        print( 'matched', count_nonzero(id_code) )
+        exit()
                 
-            if len( event_ind_matched ) == 1:
-                matched_id.append( events.get_id_code()[event_ind_matched[0]] )
-                matched_distances.append( ds[0] )
-                matched_Q.append( events.q[event_ind_matched[0]] )
-                matched_z.append( events.z[event_ind_matched[0]] )
-                
-            #for ei, d in zip(event_ind_matched, ds[is_matched]):
-                #matched_indices.append( (hit_ind, ei, d, is_mult) )
-
-        #print( 'matched id', matched_id )
-        #matched = array(matched)
-        new_fields = ['id', 'Q', 'z', 'dist' ]
-        self = self.add_fields( new_fields, (matched_id, matched_Q, matched_z, matched_distances), (int,int,float,float) )
+        #new_fields = ['id', 'Q', 'z', 'dist' ]
+        #self = self.add_fields( new_fields, (matched_id, matched_Q, matched_z, matched_distances), (int,int,float,float) )
         return self
         
         
@@ -552,7 +549,8 @@ def match( args ):
     print( simulation.E )
     print( simulation.z )
     print( simulation.sigma )
-    
+    hitSummary.match( simulation )
+    #NeighborIndexHistogram( simulation.xy, 5 )
 
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
