@@ -737,13 +737,15 @@ class Section( np.ndarray ):
         #if mode == 'cluster':
             #return self._extract_clusters_( **kwargs )
 
-    def get_clusters( self, threshold, border ):
+    def get_clusters( self, threshold, border, verbose=0 ):
         labeled_clusters = label_clusters( self >= threshold )
-        #print( 'number of clusters above threshold', labeled_clusters.max() )
+        if verbose:
+            print( 'number of clusters above threshold', labeled_clusters.max() )
         is_cluster = labeled_clusters > 0
         distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
         labeled_clusters = label_clusters( distances_to_cluster <= border )
-        #print( 'number of clusters with border', labeled_clusters.max() )
+        if verbose:
+            print( 'number of clusters with border', labeled_clusters.max() )
         return labeled_clusters, distances_to_cluster
 
     def get_background( self, threshold, border ):
@@ -756,13 +758,16 @@ class Section( np.ndarray ):
         #print('hits removed', len(self.flatten()), len(self[labeled_clusters == 0]) )
         return data
         
-    def extract_hits( self, threshold, border ):
-        labeled_clusters, distances_to_cluster = self.get_clusters( threshold, border )
+    def extract_hits( self, threshold, border, verbose=0 ):
+        labeled_clusters, distances_to_cluster = self.get_clusters( threshold, border, verbose )
         
+        indices = np.unique(labeled_clusters)[1:]
+        if verbose:
+            print( 'extracted {}'.format(len(indices)) )
         list_of_clusters = scipy.ndimage.labeled_comprehension(
             self,
             labeled_clusters,
-            index = np.unique(labeled_clusters), 
+            index = indices, 
             func = lambda e, p: [e, p], 
             out_dtype=list, 
             default=-1,
@@ -771,7 +776,7 @@ class Section( np.ndarray ):
         levels = scipy.ndimage.labeled_comprehension( 
             distances_to_cluster, 
             labeled_clusters, 
-            index= np.unique(labeled_clusters),
+            index = indices,
             func = lambda v: v, 
             default=-1, 
             out_dtype=list 
@@ -789,7 +794,7 @@ class Section( np.ndarray ):
             ('level', object),
             ]
         ret = np.array( list_of_clusters, dtype = dtype ).view(np.recarray)
-        return ret[1:]
+        return ret
 
     def spectrum( self, output, gain, lambda_, sigma, binsize = 2 ):
         
@@ -1115,7 +1120,7 @@ def add_display_options( p ):
     
     p.set_defaults( func=display )
 
-def group_filenames( input_files ):
+def group_filenames( input_files, verbose=0 ):
     paths = sorted(glob( input_files ))
     list_of_paths = []
     for path in paths:
@@ -1127,9 +1132,10 @@ def group_filenames( input_files ):
             entry = tuple(sorted(glob( base_path+'_p*.fits*' )))
         if not entry in list_of_paths:
             list_of_paths.append( entry )
-            #print( 'added group:' )
-            #for e in entry:
-                #print(e)
+            if verbose:
+                print( 'added group:' )
+                for e in entry:
+                    print(e)
     return list_of_paths
 
 def apply_to_files( args ):
@@ -1143,6 +1149,8 @@ def apply_to_files( args ):
                 part_index = j+1
                 for i, HDU in enumerate(listHDU):
                     ohdu = HDU.header['OHDU']
+                    if 'verbose' in args:
+                        print( 'opening ohdu', ohdu )
                     if HDU.data is None: continue
                     if 'exclude' in args and args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
                     if 'ohdu' in args and args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
@@ -1155,6 +1163,8 @@ def apply_to_files( args ):
                 image.path = path_group
                 image.ohdu = image.header['OHDU']
                 returnDict[image.path][image.ohdu] = args.func( image, args )
+                if 'verbose' in args:
+                    print( 'applied function to ohdu', image.ohdu )
     return returnDict
     
 def display( args ):

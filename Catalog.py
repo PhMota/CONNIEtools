@@ -42,7 +42,8 @@ from termcolor import colored
 from PrintVar import print_var
 
 class HitSummary:
-    def __init__( self, recarray, transpose=True ):
+    def __init__( self, recarray, transpose=True, verbose=False ):
+        self.verbose = verbose
         if transpose:
             recarray.xPix, recarray.yPix = recarray.yPix, recarray.xPix
         self.__updateattrs__(recarray)
@@ -66,37 +67,14 @@ class HitSummary:
     def extend(self, a):
         self.__updateattrs__(rfn.stack_arrays( (self.__recarray__, a), asrecarray=True ))
     
-    def add_fields( self, names, types=None, arrays=None, verbose=False ):
-        if verbose: print( 'added', names )
-        if type(names) is str:
-            if names == 'flag' or names == 'nSat':
-                types = int32
-                arrays = [0]*len(self)
-            elif names == 'nSavedPix':
-                types = int32
-                arrays = self.__apply_to_entries( self.__nSavedPix )
-            #elif re.match( r'^n[0-3]$', names ):
-                #lvl = int(re.search( r'^n([0-3])$', names ).groups()[0])
-                #types = int32
-                #arrays = self.__apply_to_entries( self.__n, self.__level_mask(lvl) )
-            #elif re.match( r'^E[0-3]$', names ):
-                #lvl = int(re.search( r'^E([0-3])$', names ).groups()[0])
-                #types = float32
-                #arrays = self.__apply_to_entries( self.__E, self.__level_mask(lvl) )
-            #elif re.match( r'^[xy]Bary[0-3]$', names ):
-                #axis, lvl = re.search( r'^([xy])Bary([0-3])$', names ).groups()
-                #types = float32
-                #arrays = self.__Bary(axis,lvl)
-            #elif re.match( r'^[xy]Var[0-3]$', names ):
-                #axis, lvl = re.search( r'^([xy])Var([0-3])$', names ).groups()
-                #types = float32
-                #arrays = self.__Var(axis,lvl)
+    def add_fields( self, names, types=None, arrays=None ):
+        if self.verbose: print( 'adding', names )
         self.__updateattrs__( rfn.append_fields( self.__recarray__, names, arrays, dtypes=types, asrecarray=True ) )
 
     def __apply_to_entries( self, func, mask=None ):
         if mask is None:
             return array( map( func, self.__recarray__ ) )
-        return array( map( func, zip(self.__recarray__, mask) ) )
+        return array( map( lambda p: func(p[0], p[1]), zip(self.__recarray__, mask) ) )
     
     def __energy_mask(self, eThr):
         return map( lambda e: e >= eThr, self.ePix )
@@ -130,15 +108,32 @@ class HitSummary:
         xBary = self.__Bary(entry, mask, 'x')
         yBary = self.__Bary(entry, mask, 'y')
         xVar = self.__SqrBary(entry, mask, 'x') - xBary**2
-        xVar = self.__SqrBary(entry, mask, 'y') - xBary**2
+        yVar = self.__SqrBary(entry, mask, 'y') - yBary**2
         return n, E, xBary, yBary, xVar, yVar
-
+    
+    def __basic_vars( self, entry ):
+        flag = 0
+        nSat = 0
+        nSavedPix = self.__nSavedPix(entry)
+        return flag, nSat, nSavedPix
+        
+    def add_basic_fields( self ):
+        self.add_fields( ['flag','nSat','nSavedPix'],
+                        types=(int,int,int),
+                        arrays=self.__apply_to_entries( self.__basic_vars ).T
+                        )        
+        
     def add_energy_threshold_fields( self, eThr ):
         self.add_fields( [ '{}{}'.format(name,int(eThr)) for name in ['n','E','xBary','yBary','xVar','yVar']],
-                        dtypes=(int,float,float,float,float,float),
-                        arrays=self.__apply_to_entries( self.__thr_vars, self.__energy_mask(eThr) )
+                        types=(int,float,float,float,float,float),
+                        arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__lvl_mask(eThr) ).T
                         )
         
+    def add_level_fields( self, lvl ):
+        self.add_fields( [ '{}{}'.format(name,int(lvl)) for name in ['n','E','xBary','yBary','xVar','yVar']],
+                        types=(int,float,float,float,float,float),
+                        arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__energy_mask(lvl) ).T
+                        )
         
     def match_simulated_events( self, events, lvl, length ):
         import itertools
@@ -267,46 +262,40 @@ class HitSummary:
         for name in self.__recarray__.dtype.names[::-1]:
             type_ = getattr( self.__recarray__, name ).dtype
             if name.startswith('n') and name != 'nSavedPix' and name != 'nSat':
-                field = name
                 var = '&c_{}'.format(name)
                 expr = '{}/F'.format(name)
                 declarations += 'Float_t c_{};\n'.format(name)
                 assignments += '\tc_{} = {}[n];\n'.format( name, name )
-            elif type_ == int32:
-                field = name
+            elif type_ == int32 or type_ == int:
                 var = '&c_{}'.format(name)
                 expr = '{}/I'.format(name)
                 declarations += 'Int_t c_{};\n'.format(name)
                 assignments += '\tc_{} = {}[n];\n'.format( name, name )
-            elif type_ == float32:
-                field = name
+            elif type_ == float32 or type_ == float:
                 var = '&c_{}'.format(name)
                 expr = '{}/F'.format(name)
                 declarations += 'Float_t c_{};\n'.format(name)
                 assignments += '\tc_{} = {}[n];\n'.format( name, name )
             elif name in ['level','xPix','yPix']:
-                field = '{}[c_nSavedPix]'.format(name)
-                field = name
                 var = 'c_{}'.format(name)
                 expr = '{}[nSavedPix]/I'.format(name)
                 declarations += 'Int_t c_{}[knSavedPix];\n'.format(name)
                 assignmentsArray += '\t\tc_{}[i] = ((Long_t*) PyArray_DATA(PyList_GetItem({},n))) [i];\n'.format( name, name )
             elif name == 'ePix':
-                field = '{}[c_nSavedPix]'.format(name)
-                field = name
                 var = 'c_{}'.format(name)
                 expr = '{}[nSavedPix]/F'.format(name)
                 declarations += 'Float_t c_{}[knSavedPix];\n'.format(name)
                 assignmentsArray += '\t\tc_{}[i] = ((Double_t*) PyArray_DATA(PyList_GetItem({},n))) [i];\n'.format( name, name )
-            branch += 'tree->Branch( "{}", {}, "{}" );\n'.format( field, var, expr )
-            setbranch += 'tree->SetBranchAddress("{}", {});\n'.format(field, var)
+            else:
+                print( 'not implemented', name, type_ )
+                exit(0)
+            branch += 'tree->Branch( "{}", {}, "{}" );\n'.format( name, var, expr )
+            setbranch += 'tree->SetBranchAddress("{}", {});\n'.format(name, var)
         
         code = '''
         const Int_t knSavedPix = Nmax;
         
-        char fname[32];
-        strcpy(fname, output.c_str());
-        TFile f( strcat(fname,".root"), mode.c_str() );
+        TFile f( fname.c_str(), mode.c_str() );
         
         char c_mode[32];
         strcpy(c_mode, mode.c_str());
@@ -341,11 +330,12 @@ class HitSummary:
         yPix = [ array(y) for y in self.__recarray__.yPix ]
         level = [ array(l).astype(int) for l in self.__recarray__.level ]
         
+        fname = basename+'.root'
         mode = 'recreate'
-        if os.path.exists( basename+'.root' ):
+        if os.path.exists( fname ):
             mode = 'update'
         
-        varnames = ['basename', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
+        varnames = ['fname', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
         weave.inline( code, varnames,
                             headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
                             libraries=['Core'],
@@ -355,7 +345,12 @@ class HitSummary:
                             compiler='gcc',
                             #verbose=1,
                             )
-        return basename + '.root'
+        number_of_entries = len(root_numpy.root2array( fname, treename='hitSumm', branches=['E0'] ))
+        if mode == 'recreate':
+            print( 'saved catalog {} with {}'.format(fname, number_of_entries) )
+        elif mode == 'update':
+            print( 'updated catalog {} with {}'.format(fname, number_of_entries) )
+        return fname
     
 def open_HitSummary( file, branches=None, selection=None, start=None, stop=None, runID_range=None ):
     if runID_range:
@@ -549,32 +544,38 @@ def build_new_catalog_from_recarray__( input, output ):
 
 def match( args ):
     simulation = Simulation.simulation_from_file( args.basename )
+    hitSummary = open_HitSummary( args.catalog, branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
     print( simulation.x )
     print( simulation.q )
     print( simulation.q_eff )
     print( simulation.E )
+    print( simulation.z )
+    print( simulation.sigma )
+    
 
 def add_match_options(p):
-    p.add_argument('basename', type=str, help = 'basename of the simulation' )
-    p.add_argument('--dummy', type=str, help = 'dummy' )
-    p.add_argument('--a', type=str, help = 'dummy' )
+    p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
+    p.add_argument('catalog', type=str, help = 'basename of the simulation catalog' )
     p.set_defaults( _func=match )
 
 def extract( args ):
+    verbose = 0
+    if 'verbose' in args:
+        verbose = 1
     if os.path.exists( args.basename +'.root' ):
         print( 'catalog {}.root already exists'.format(args.basename) )
         exit(1)
     args.input_files = args.fits_files
     def image_extract( image, args ):
-        hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border ), trasnpose=True )
+        hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border, verbose ), transpose=True, verbose=verbose )
         for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
             if field.upper() in image.header:
                 hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )
         print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
         hitSummary.add_fields( 'thr', float32, [args.threshold]*len(hitSummary) )
-        
-        for field in ['flag', 'nSavedPix', 'nSat' ] + [ fmt.format(lvl) for lvl in range(args.border+1) for fmt in ['n{}', 'E{}', 'xBary{}', 'yBary{}', 'xVar{}', 'yVar{}'] ]:
-            hitSummary.add_fields( field )
+        hitSummary.add_basic_fields()
+        hitSummary.add_level_fields(0)
+        hitSummary.add_level_fields(1)
         hitSummary.save_catalog( args.basename )
         return
     args.func = image_extract
@@ -589,7 +590,7 @@ def add_extract_options(p):
     #p.add_argument('branches', nargs=2, type=str, default= ['E0','xVar0'], help = 'branches used for x- and y-axis' )
     p.add_argument('--ohdu', nargs='+', type=int, default=range(2,16), help = 'ohdus to be extracted' )
     p.add_argument('--exclude', nargs='+', type=int, default=[11,12,14], help = 'ohdus NOT to be extracted' )
-    p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
+    p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.set_defaults(_func=extract)
 
 def get_selections( file, branches, selections, global_selection=None, runID_range=None, extra_branches = [] ):

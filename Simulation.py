@@ -12,6 +12,7 @@ import scipy.stats
 from numpy.lib import recfunctions as rfn
 import json
 import os
+import time
 import astropy.io.fits
 from Timer import Timer
 from termcolor import colored, cprint
@@ -196,6 +197,11 @@ class Simulation( recarray, object ):
             header['noise'] = self.readout_noise
             header['dc'] = self.dark_current
             header['OHDU'] = -1
+            header['RUNID'] = -1
+            now = time.time()
+            print( 'now', now )
+            header['expstart'] = now
+            header['expstop'] = now + args.expose_hours*60*60
 
             fits_image = astropy.io.fits.ImageHDU( image.astype(eval(args.image_type)), header=header )
             header['OHDU'] = 0
