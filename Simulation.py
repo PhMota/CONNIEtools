@@ -87,7 +87,7 @@ class Simulation:
         E = self.q * self.charge_gain
         E_eff = q_eff * self.charge_gain
         sigma = self.diffusion_function( self.z )
-        map_id = {'random': 1, 'Cu': 11, 'Cu2': 12, 'Si':10}
+        map_id = {'random': 1, 'Si':10, 'Cu': 11, 'Cu2': 12}
         id_code = map( lambda i: map_id[i], self.id )
         try:
             self.count = len( self.q )
