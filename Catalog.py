@@ -85,8 +85,11 @@ class HitSummary:
         self.__recarray__ = recarray
         for name in self.__recarray__.dtype.names:
             setattr(self, name, getattr(self.__recarray__, name) )
-        
+        self.shape = recarray.shape
+    
     def __getitem__(self, *args):
+        if type(args[0]) == str:
+            return self.__recarray__[args[0]]
         return self.__recarray__[args]
 
     def __len__(self):
@@ -184,8 +187,8 @@ class HitSummary:
         id_code = zeros(N_hits)
         sigma = zeros(N_hits)
         for i, hit in enumerate(self.__recarray__):
-            xPix0 = hit.xPix[ hit.level==0 ]
-            yPix0 = hit.yPix[ hit.level==0 ]
+            xPix0 = hit.xPix[ hit.level<=1 ]
+            yPix0 = hit.yPix[ hit.level<=1 ]
             if verbose:
                 print( 'hitSummary.xy', zip(xPix0, yPix0) )
             for j, index in enumerate(indices):
@@ -261,19 +264,31 @@ class HitSummary:
         
         print( 'added columns {}'.format(varnames) )
         return
+    
+    def efficiency( self, events, args ):
+        E_bins = arange( 0, max(events.E_eff), args.E_binsize )
+        x, simE = stats.make_histogram( events.E, E_bins )
+        x, recE = stats.make_histogram( self.E[ id_code==1 ], E_bins )
+        x, E0 = stats.make_histogram( self.E0[ id_code==1 ], E_bins )
+        x, E1 = stats.make_histogram( self.E1[ id_code==1 ], E_bins )
+        print( simE, recE.astype(float)/simE )
+        exit()
         
-    def match( self, events, verbose, basename ):
-        
+    
+    def match( self, events, args ):
+        if 'sigma' in self.__recarray__.dtype.names:
+            print( 'catalog already matched' )
+            return
         N = len(events)
 
-        if verbose:
+        if 'verbose' in args:
             print( 'events.xy', events.xy )
         
         xy2event_ind = {}
         for i, event in enumerate(events):
             key = ( int(event.x), int(event.y) )
             xy2event_ind[key] = i
-        if verbose:
+        if 'verbose' in args:
             print( xy2event_ind.keys() )
         
         N_hits = len(self.__recarray__)
@@ -284,18 +299,21 @@ class HitSummary:
         E = zeros(N_hits)
         id_code = zeros(N_hits)
         sigma = zeros(N_hits)
+        
+        matched = zeros(N)
 
         for i, hit in enumerate(self.__recarray__):
-            xPix0 = hit.xPix[ hit.level==0 ]
-            yPix0 = hit.yPix[ hit.level==0 ]
-            if verbose:
+            xPix0 = hit.xPix[ hit.level<=1 ]
+            yPix0 = hit.yPix[ hit.level<=1 ]
+            if 'verbose' in args:
                 print( 'hitSummary.xy', zip(xPix0, yPix0) )
             for xPix, yPix in zip(xPix0, yPix0):
                 key = ( xPix, yPix )
                 try:
                     event_ind = xy2event_ind[key]
                     event = events[event_ind]
-                    if verbose:
+                    matched[event_ind] = 1
+                    if 'verbose' in args:
                         print( 'match', event.x, event.y )
                     if id_code[i] == 0:
                         x[i] = event.x
@@ -317,6 +335,12 @@ class HitSummary:
                     pass
         
         print( 'matched', count_nonzero(id_code) )
+        print( 'not matched', count_nonzero(matched==0) )
+        print( 'not matched events' )
+        print( events.xy[matched==0] )
+        print( 'not matched hits' )
+        print( zip(self.__recarray__.xBary1[ id_code==0 ], self.__recarray__.yBary1[ id_code==0 ]) )
+        
         code = '''
         TFile f( fname.c_str(), "update" );
         TTree *t = (TTree*) f.Get("hitSumm");
@@ -357,7 +381,7 @@ class HitSummary:
         }
         t->Write("", TObject::kOverwrite);
         '''
-        fname = basename + '.root'
+        fname = args.basename + '.root'
         varnames = ['x','y','z','q','sigma','E','id_code','fname']
         weave.inline( code, varnames,
                             headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
@@ -704,13 +728,55 @@ def build_new_catalog_from_recarray__( input, output ):
     #output_file.Close()
     #input_file.Close()
 
+def simulate( args ):
+    if os.path.exists(args.basename):
+        print( 'folder already exists', args.basename )
+        exit()
+    os.mkdir( args.basename )
+    print( 'created folder', args.basename )
+    basename = str(args.basename)
+    args.basename = '{0}/{0}'.format(args.basename)
+    args.csv = True
+    args.no_fits = True
+    simulation = Simulation.simulate_events( args )
+    HDUlist = simulation.generate_image( args )
+    print( 'saved {}.csv'.format( args.basename ) )
+    imageHDU = HDUlist[-1]
+    part = Image.Part(imageHDU)
+    image = Image.Image([part])
+    thresholds = list(args.threshold)
+    for threshold in thresholds:
+        args.threshold = threshold
+        args.basename = '{0}/{0}_{1}'.format( basename, threshold )
+        image_extract( image, args )
+        hitSummary = open_HitSummary( args.basename + '.root', branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
+        hitSummary.match( simulation, args )
+        hitSummary.efficiency( simulation, args )
+    
+
+def add_simulate_options(p):
+    p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
+    p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
+    p.add_argument('-t', '--threshold', nargs='+', type=float, default=[30,40,50,60], help = 'energy threshold in ADU' )
+    p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )    
+    p.add_argument('--E-binsize', action='store_true', default=argparse.SUPRESS, help = 'E binsize' )
+    p.add_argument('--z-binsize', action='store_true', default=argparse.SUPRESS, help = 'z binsize' )
+    p.add_argument('--sigma-binsize', action='store_true', default=argparse.SUPRESS, help = 'sigma binsize' )
+    Simulation.add_params_options(p)
+    Simulation.add_geometry_options(p)
+    Simulation.add_depth_options(p)
+    Simulation.add_charges_options(p)
+    Simulation.add_modulation_options(p)
+    
+    p.set_defaults( _func=simulate )
+
 def match( args ):
     simulation = Simulation.simulation_from_file( args.basename )
     hitSummary = open_HitSummary( args.catalog, branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
     verbose = 0
     if 'verbose' in args:
         verbose = 1
-    hitSummary.match( simulation, verbose, args.basename )
+    hitSummary.match( simulation, args )
 
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
@@ -718,26 +784,27 @@ def add_match_options(p):
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )    
     p.set_defaults( _func=match )
 
-def extract( args ):
+def image_extract( image, args ):
     verbose = 0
     if 'verbose' in args:
         verbose = 1
+    hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
+    for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
+        if field.upper() in image.header:
+            hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )
+    print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
+    hitSummary.add_fields( 'thr', float32, [args.threshold]*len(hitSummary) )
+    hitSummary.add_basic_fields()
+    hitSummary.add_level_fields(0)
+    hitSummary.add_level_fields(1)
+    hitSummary.save_catalog( args.basename )
+    return
+
+def extract( args ):
     if os.path.exists( args.basename +'.root' ):
         print( 'catalog {}.root already exists'.format(args.basename) )
         exit(1)
     args.input_files = args.fits_files
-    def image_extract( image, args ):
-        hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
-        for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
-            if field.upper() in image.header:
-                hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )
-        print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
-        hitSummary.add_fields( 'thr', float32, [args.threshold]*len(hitSummary) )
-        hitSummary.add_basic_fields()
-        hitSummary.add_level_fields(0)
-        hitSummary.add_level_fields(1)
-        hitSummary.save_catalog( args.basename )
-        return
     args.func = image_extract
     image = Image.apply_to_files( args )
     
@@ -840,7 +907,6 @@ def scatter( args ):
         plt.show()
     return
 
-
 def add_scatter_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('--branches', nargs=2, type=str, default= ['E0','xVar0'], help = 'branches used for x- and y-axis' )
@@ -868,13 +934,12 @@ def pdf( x, E, n, sigma ):
 def histogram( args ):
     with Timer('histogram'):
         file = glob.glob(args.root_file)
-        data = open_HitSummary(file[0], args.branch, selection='flag==0' )
+        #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
 
-        start, stop = None, None
-        if 'runID_range' in args:
-            start, stop = get_start_stop_from_runID_range(file[0], args.runID_range)
-        data_selection, lims = get_selections( file[0], [args.branch], args.selections, args.global_selection, start=start, stop=stop,
-                                              extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
+        if not 'runID_range' in args:
+            args.runID_range = None
+        data_selection, lims = get_selections( file[0], [args.branch], args.selections, args.global_selection, runID_range=args.runID_range )
+                                              #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
 
         first_data_selection = data_selection.values()[0][args.branch]
         if 'binsize' in args:
@@ -893,9 +958,9 @@ def histogram( args ):
                 print( 'selection', data_selection[selection][args.branch].shape, len(bins) )
                 datum = data_selection[selection]
 
-                sigma = 12.5
+                #sigma = 12.5
                 #ax.step( bins, pdf( bins, datum.E0, datum.n0, sigma ), where='mid', label='E0')
-                ax.step( bins, pdf( bins, datum.E1, datum.n1, sigma ), where='mid', label='E1')
+                #ax.step( bins, pdf( bins, datum.E1, datum.n1, sigma ), where='mid', label='E1')
 
                 #ax.step( bins, pdf( bins, datum.E2, datum.n2, sigma ), where='mid', label='E2')
 
@@ -914,6 +979,7 @@ def histogram( args ):
                 #n30 = n30[ logical_or(var30[0]<.3, var30[0]>.8) ]
                 #pdf30 = lambda x: sum( [stats.norm.pdf(x, E, n*Eerr) for E, n in zip(E30,n30)], axis=0 )
                 #ax.step( bins, pdf30(bins), where='mid', label='E30*')
+                ax.hist( datum[args.branch], bins=bins, histtype='step', label=selection )
         ax.legend()
         ax.set_xlabel(args.branch)
         #ax.set_yscale('log')
@@ -927,7 +993,7 @@ def add_histogram_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('branch', type=str, default= 'E0', help = 'branch used for x-axis' )
     p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selections' )
-    p.add_argument('--global-selection', type=str, default='0', help = 'global selection' )
+    p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
@@ -973,6 +1039,8 @@ if __name__ == '__main__':
     add_scatter_options( subparsers.add_parser('scatter', help='make scatter from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_extract_options( subparsers.add_parser('extract', help='extract events from image', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_match_options( subparsers.add_parser('match', help='match catalog with simulation', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_simulate_options( subparsers.add_parser('simulation', help='simulate, extract and match', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+
     args = parser.parse_args()
     
     _func = args._func

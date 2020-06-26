@@ -93,13 +93,20 @@ class Simulation:
         self.vertical_modulation_function = eval( 'vectorize(lambda y: {})'.format( self.vertical_modulation_function ) )
         self.horizontal_modulation_function = eval( 'vectorize(lambda x: {})'.format( self.horizontal_modulation_function ) )
         
-        q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
-        E = self.q * self.charge_gain
-        E_eff = q_eff * self.charge_gain
-        sigma = self.diffusion_function( self.z )
-        map_id = {'random': 1, 'Si':10, 'Cu': 11, 'Cu2': 12}
-        print( 'id', self.id )
-        id_code = map( lambda i: map_id[i], self.__recarray__.id )
+        if len( self.q ) > 1:
+            q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
+            E = self.q * self.charge_gain
+            E_eff = q_eff * self.charge_gain
+            sigma = self.diffusion_function( self.z )
+            map_id = {'random': 1, 'Si':10, 'Cu': 11, 'Cu2': 12}
+            id_code = map( lambda i: map_id[i], self.__recarray__.id )
+        else:
+            q_eff = []
+            E = []
+            E_eff = []
+            sigma = []
+            id_code = []
+        
         try:
             self.count = len( self.q )
         except TypeError:
