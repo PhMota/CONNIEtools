@@ -33,11 +33,14 @@ class Timer:
             else: s = '%ss%sms' % (int(t), int(t*1e3)%1000 )
         return s
 
-    def check(self, secs, N):
+    def check(self, wait_secs, total_loop_number):
         try:
             self.loop_number +=1
-            if self.seconds()/secs > self.count:
-                print('eta', colored( self.time( float(N)/self.loop_number-1 ), 'yellow') )
+            if self.seconds()/wait_secs > self.count:
+                secs_per_loop = self.seconds(1./self.loop_number)
+                remaining_loops = total_loop_number - self.loop_number
+                eta_secs = secs_per_loop * remaining_loops
+                print('eta', colored( self.time( eta_secs ), 'yellow') )
                 self.count += 1
         except:
             self.loop_number = 0

@@ -129,14 +129,28 @@ class HitSummary:
     def __E( self, entry, mask ): return sum(entry.ePix[mask])
 
     def __Bary(self, entry, mask, axis ):
-        return average( getattr(entry, '{}Pix'.format(axis))[mask], weights=entry.ePix[mask], axis=0 )
+        weights = entry.ePix[mask]
+        try:
+            return average( getattr(entry, '{}Pix'.format(axis))[mask], weights=weights, axis=0 )
+        except ZeroDivisionError:
+            return mean( getattr(entry, '{}Pix'.format(axis))[mask], axis=0 )
 
     def __Var(self, entry, mask, axis ):
-        return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=entry.ePix[mask], axis=0 ) \
-                - average( getattr(entry, '{}Pix'.format(axis))[mask], weights=entry.ePix[mask], axis=0 )**2
+        weights = entry.ePix[mask]
+        try:
+            return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=weights, axis=0 ) \
+                    - average( getattr(entry, '{}Pix'.format(axis))[mask], weights=weights, axis=0 )**2
+        except ZeroDivisionError:
+            return mean( getattr(entry, '{}Pix'.format(axis))[mask]**2, axis=0 ) \
+                    - mean( getattr(entry, '{}Pix'.format(axis))[mask], axis=0 )**2
+            
 
     def __SqrBary(self, entry, mask, axis ):
-        return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=entry.ePix[mask], axis=0 )
+        weights = entry.ePix[mask]
+        try:
+            return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=weights, axis=0 )
+        except ZeroDivisionError:
+            return mean( getattr(entry, '{}Pix'.format(axis))[mask]**2, axis=0 )
         
     def __thr_vars( self, entry, mask ):
         n = self.__n(entry, mask)
@@ -290,8 +304,7 @@ class HitSummary:
         print( simsigma, recsigma.astype(float)/simsigma )
         exit()
         
-    
-    def match( self, events, args ):
+    def match_slow( self, events, args ):
         if 'sigma' in self.__recarray__.dtype.names:
             print( 'catalog already matched' )
             return
@@ -356,10 +369,18 @@ class HitSummary:
         print( 'matched', count_nonzero(id_code) )
         print( 'multiple matched', count_nonzero(id_code==2) )
         print( 'not matched', count_nonzero(matched==0) )
-        print( 'not matched events' )
-        print( events.xy[matched==0] )
-        print( 'not matched hits' )
-        print( zip(self.__recarray__.xBary1[ id_code==0 ], self.__recarray__.yBary1[ id_code==0 ]) )
+        if 'verbose' in args:
+            print( 'not matched events' )
+            print( events.xy[matched==0] )
+            print( 'not matched hits' )
+            print( zip(self.__recarray__.xBary1[ id_code==0 ], self.__recarray__.yBary1[ id_code==0 ]) )
+
+        fname = args.basename + '.root'
+        varnames = ['x','y','z','q','sigma','E','id_code']
+        self.add_fields( varnames, (float, float, float, int, float, float, int), [x, y, z, q, sigma, E, id_code] )
+        
+        if 'no_catalog' in args:
+            return
         
         code = '''
         TFile f( fname.c_str(), "update" );
@@ -401,9 +422,134 @@ class HitSummary:
         }
         t->Write("", TObject::kOverwrite);
         '''
+
+        varnames += ['fname']
+        weave.inline( code, varnames,
+                            headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
+                            libraries=['Core'],
+                            include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
+                            library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
+                            extra_compile_args=['-O3', '-Wunused-variable'],
+                            compiler='gcc',
+                            #verbose=1,
+                            )
+        
+        print( 'added columns {}'.format(varnames) )
+        return
+
+    def match( self, events, args ):
+        if 'sigma' in self.__recarray__.dtype.names:
+            print( 'catalog already matched' )
+            return
+        N = len(events)
+
+        if 'verbose' in args:
+            print( 'events.xy', events.xy )
+        
+        with Timer('build occupied bins'):
+            xy2hit_ind = { ( xPix, yPix ): i for i, hit in enumerate(self.__recarray__) for xPix, yPix, level in zip(hit.xPix, hit.yPix, hit.level)  }
+
+        if 'verbose' in args:
+            print( xy2hit_ind.keys() )
+        
+        N_hits = len(self.__recarray__)
+        x = zeros(N_hits)
+        y = zeros(N_hits)
+        z = zeros(N_hits)
+        q = zeros(N_hits)
+        E = zeros(N_hits)
+        #E_eff = zeros(N_hits)
+        id_code = zeros(N_hits)
+        sigma = zeros(N_hits)
+        
+        matched = zeros(N)
+        
+        with Timer('matching'):
+            for event_ind, event in enumerate(events):
+                if 'verbose' in args:
+                    print( 'hitSummary.xy', zip(xPix0, yPix0) )
+                key = ( int(event.x), int(event.y) )
+                try:
+                    hit_ind = xy2hit_ind[key]
+                    event = events[event_ind]
+                    matched[event_ind] = 1
+                    if 'verbose' in args:
+                        print( 'match', event.x, event.y )
+                    if id_code[hit_ind] == 0:
+                        x[hit_ind] = event.x
+                        y[hit_ind] = event.y
+                        z[hit_ind] = event.z
+                        sigma[hit_ind] = event.sigma
+                        q[hit_ind] = event.q
+                        E[hit_ind] = event.E
+                        id_code[hit_ind] = event.id_code
+                    else:
+                        id_code[hit_ind] = 2
+                        E[hit_ind] += event.E
+                        q[hit_ind] += event.q
+                        x[hit_ind] = -1
+                        y[hit_ind] = -1
+                        z[hit_ind] = -1
+                        sigma[hit_ind] = -1
+                except KeyError:
+                    pass
+        
+        print( 'matched', count_nonzero(id_code) )
+        print( 'multiple matched', count_nonzero(id_code==2) )
+        print( 'not matched', count_nonzero(matched==0) )
+        if 'verbose' in args:
+            print( 'not matched events' )
+            print( events.xy[matched==0] )
+            print( 'not matched hits' )
+            print( zip(self.__recarray__.xBary1[ id_code==0 ], self.__recarray__.yBary1[ id_code==0 ]) )
+
         fname = args.basename + '.root'
         varnames = ['x','y','z','q','sigma','E','id_code']
         self.add_fields( varnames, (float, float, float, int, float, float, int), [x, y, z, q, sigma, E, id_code] )
+        
+        if 'no_catalog' in args:
+            return
+        
+        code = '''
+        TFile f( fname.c_str(), "update" );
+        TTree *t = (TTree*) f.Get("hitSumm");
+        Long64_t nentries = t->GetEntries();
+        
+        Float_t c_x;
+        Float_t c_y;
+        Float_t c_z;
+        Int_t c_q;
+        Float_t c_sigma;
+        Float_t c_E;
+        Int_t c_id_code;
+
+        TBranch *x_branch = t->Branch("x", &c_x, "x/F");
+        TBranch *y_branch = t->Branch("y", &c_y, "y/F");
+        TBranch *z_branch = t->Branch("z", &c_z, "z/F");
+        TBranch *q_branch = t->Branch("q", &c_q, "q/I");
+        TBranch *sigma_branch = t->Branch("sigma", &c_sigma, "sigma/F");
+        TBranch *E_branch = t->Branch("E", &c_E, "E/F");
+        TBranch *id_code_branch = t->Branch("id_code", &c_id_code, "id_code/I");
+
+        for( int n=0; n<nentries; ++n ){
+            c_x = x[n];
+            c_y = y[n];
+            c_z = z[n];
+            c_q = q[n];
+            c_sigma = sigma[n];
+            c_E = E[n];
+            c_id_code = id_code[n];
+            
+            x_branch->Fill();
+            y_branch->Fill();
+            z_branch->Fill();
+            q_branch->Fill();
+            sigma_branch->Fill();
+            E_branch->Fill();
+            id_code_branch->Fill();
+        }
+        t->Write("", TObject::kOverwrite);
+        '''
 
         varnames += ['fname']
         weave.inline( code, varnames,
@@ -759,34 +905,47 @@ def simulate( args ):
     print( 'created folder', args.basename )
     basename = str(args.basename)
     args.basename = '{0}/{0}'.format(args.basename)
-    args.csv = True
     args.no_fits = True
-    simulation = Simulation.simulate_events( args )
-    HDUlist = simulation.generate_image( args )
-    print( 'saved {}.csv'.format( args.basename ) )
-    imageHDU = HDUlist[-1]
-    part = Image.Part(imageHDU)
-    image = Image.Image([part])
+    images = []
+    simulations = []
+    with Timer('simulate all') as t:
+        for i in range(args.number_of_images):
+            args.runID = i
+            simulation = Simulation.simulate_events( args )
+            HDUlist = simulation.generate_image( args )
+            #print( 'saved {}.csv'.format( args.basename ) )
+            imageHDU = HDUlist[-1]
+            part = Image.Part(imageHDU)
+            images.append( Image.Image([part]) )
+            simulations.append( simulation )
+            t.check( 10, args.number_of_images )
+        
     thresholds = list(args.threshold)
-    for threshold in thresholds:
-        args.threshold = threshold
-        args.basename = '{0}/{0}_{1}'.format( basename, threshold )
-        image_extract( image, args )
-        hitSummary = open_HitSummary( args.basename + '.root', branches = ['ePix', 'xPix', 'yPix', 'level', 'E0', 'E1', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
-        hitSummary.match( simulation, args )
-        if 'efficiency' in args:
-            hitSummary.efficiency( simulation, args )
+    with Timer('extract&match all') as t2:
+        for threshold in thresholds:
+            args.threshold = threshold
+            args.basename = '{0}/{0}_{1}'.format( basename, threshold )
+            args.no_catalog = True
+            for image, simulation in zip(images,simulations):
+                with Timer('extract'):
+                    hitSummary = image_extract( image, args )
+                with Timer('match'):
+                    hitSummary.match( simulation, args )
+                with Timer('save catalog'):
+                    hitSummary.save_catalog( args.basename )
+                t2.check( 60, len(thresholds)*len(images) )
     
 
 def add_simulate_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
-    p.add_argument('-t', '--threshold', nargs='+', type=float, default=[30,40,50,60], help = 'energy threshold in ADU' )
+    p.add_argument('-t', '--threshold', nargs='+', type=float, default=[60,50,40,30], help = 'energy threshold in ADU' )
     p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )    
-    p.add_argument('--E-binsize', type=float, default=1, help = 'E binsize' )
-    p.add_argument('--z-binsize', type=float, default=10, help = 'z binsize' )
-    p.add_argument('--sigma-binsize', type=float, default=.1, help = 'sigma binsize' )
-    p.add_argument('--efficiency', action='store_true', default=argparse.SUPPRESS, help = 'sigma binsize' )
+    #p.add_argument('--E-binsize', type=float, default=1, help = 'E binsize' )
+    #p.add_argument('--z-binsize', type=float, default=10, help = 'z binsize' )
+    #p.add_argument('--sigma-binsize', type=float, default=.1, help = 'sigma binsize' )
+    #p.add_argument('--efficiency', action='store_true', default=argparse.SUPPRESS, help = 'sigma binsize' )
+    p.add_argument('--number-of-images', type=int, default=1, help = 'number of images to each threshold' )
     Simulation.add_params_options(p)
     Simulation.add_geometry_options(p)
     Simulation.add_depth_options(p)
@@ -822,8 +981,9 @@ def image_extract( image, args ):
     hitSummary.add_basic_fields()
     hitSummary.add_level_fields(0)
     hitSummary.add_level_fields(1)
-    hitSummary.save_catalog( args.basename )
-    return
+    if not 'no_catalog' in args:
+        hitSummary.save_catalog( args.basename )
+    return hitSummary
 
 def extract( args ):
     if os.path.exists( args.basename +'.root' ):
@@ -963,10 +1123,10 @@ def histogram( args ):
 
         if not 'runID_range' in args:
             args.runID_range = None
-        data_selection, lims = get_selections( file[0], [args.branch], args.selections, args.global_selection, runID_range=args.runID_range )
+        data_selection, lims = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
                                               #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
 
-        first_data_selection = data_selection.values()[0][args.branch]
+        first_data_selection = data_selection.values()[0][args.branches[0]]
         if 'binsize' in args:
             bins = arange( min(first_data_selection), max(first_data_selection), args.binsize )
         elif 'nbins' in args:
@@ -976,11 +1136,11 @@ def histogram( args ):
         
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.set_title(args.branch)
+        ax.set_title(', '.join(args.branches))
         #ax.hist(data, bins=bins, histtype='step', label='all')
         if 'selections' in args:
             for selection in args.selections:
-                print( 'selection', data_selection[selection][args.branch].shape, len(bins) )
+                print( 'selection', data_selection[selection][args.branches[0]].shape, len(bins) )
                 datum = data_selection[selection]
 
                 #sigma = 12.5
@@ -1004,27 +1164,42 @@ def histogram( args ):
                 #n30 = n30[ logical_or(var30[0]<.3, var30[0]>.8) ]
                 #pdf30 = lambda x: sum( [stats.norm.pdf(x, E, n*Eerr) for E, n in zip(E30,n30)], axis=0 )
                 #ax.step( bins, pdf30(bins), where='mid', label='E30*')
-                ax.hist( datum[args.branch], bins=bins, histtype='step', label=selection )
+                for branch in args.branches:
+                    factor = 1
+                    if 'factor' in args:
+                        factor = args.factor
+                    ax.hist( datum[branch], bins=bins, histtype='step', label='{}:{}'.format(branch,selection), weights=[factor]*len(datum[branch]) )
         ax.legend()
-        ax.set_xlabel(args.branch)
+        ax.set_xlabel(args.branches[0])
         #ax.set_yscale('log')
     if 'output' in args:
+        if args.output == '':
+            args.output = args.root_file
+    if 'pdf' in args:
         fig.savefig(args.output+'.pdf')
+        print( 'saved', args.output+'.pdf' )
+    elif 'png' in args:
+        fig.savefig(args.output+'.png')
+        print( 'saved', args.output+'.png' )
     else:
         plt.show()
     return
 
 def add_histogram_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('branch', type=str, default= 'E0', help = 'branch used for x-axis' )
+    p.add_argument('branches', nargs='+', type=str, default= ['E0'], help = 'branch used for x-axis' )
     p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selections' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
-    p.add_argument('--binsize', type=float, default=argparse.SUPPRESS, help = 'binsize' )
+    p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
+    p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
+    p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
+    
     
     p.set_defaults(_func=histogram)
 

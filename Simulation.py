@@ -216,6 +216,8 @@ class Simulation:
             header['dc'] = self.dark_current
             header['OHDU'] = -1
             header['RUNID'] = -1
+            if 'runID' in args:
+                header['RUNID'] = args.runID
             now = time.time()
             print( 'now', now )
             header['expstart'] = now
@@ -343,6 +345,8 @@ def add_output_options(p):
                    action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--csv', help = 'generate csv output',
                    action='store_true', default=argparse.SUPPRESS )
+    g.add_argument('--runID', help = 'runID to be written on the header',
+                   type=int, default=-1 )
     return
 
 def add_image_options( p ):
