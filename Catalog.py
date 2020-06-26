@@ -168,44 +168,99 @@ class HitSummary:
                         arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__level_mask(lvl) ).T
                         )
         
-    def match( self, events ):
+    def match( self, events, verbose, basename ):
         
         N = len(events)
         indices = range(N)
         
-        print( 'events.xy', events.xy )
-        x = zeros(N)
-        y = zeros(N)
-        z = zeros(N)
-        q = zeros(N)
-        E = zeros(N)
-        id_code = zeros(N)
-        sigma = zeros(N)
+        if verbose:
+            print( 'events.xy', events.xy )
+        N_hits = len(self.__recarray__)
+        x = zeros(N_hits)
+        y = zeros(N_hits)
+        z = zeros(N_hits)
+        q = zeros(N_hits)
+        E = zeros(N_hits)
+        id_code = zeros(N_hits)
+        sigma = zeros(N_hits)
         for i, hit in enumerate(self.__recarray__):
             xPix0 = hit.xPix[ hit.level==0 ]
             yPix0 = hit.yPix[ hit.level==0 ]
-            print( 'hitSummary.xy', zip(xPix0, yPix0) )
+            if verbose:
+                print( 'hitSummary.xy', zip(xPix0, yPix0) )
             for j, index in enumerate(indices):
                 event = events[index]
-                print( 'event.xy', event.x, event.y )
-                if event.x in xPix0 and event.y in yPix0:
-                    print( 'match', event.x, event.y )
+                corr_y = event.y - events.vertical_overscan
+                if verbose:
+                    print( 'event.xy', event.x, event.y )
+                if int(event.x) in xPix0 and int(corr_y) in yPix0:
+                    if verbose:
+                        print( 'match', event.x, event.y )
                     x[i] = event.x
-                    y[i] = event.y
+                    y[i] = corr_y
                     z[i] = event.z
                     sigma[i] = event.sigma
                     q[i] = event.q_eff
                     E[i] = event.E_eff
-                    id_code[i] = event.id_code()
+                    id_code[i] = event.id_code
                     del indices[j]
                     break
-                        
+        
         print( 'matched', count_nonzero(id_code) )
-        exit()
-                
-        #new_fields = ['id', 'Q', 'z', 'dist' ]
-        #self = self.add_fields( new_fields, (matched_id, matched_Q, matched_z, matched_distances), (int,int,float,float) )
-        return self
+        code = '''
+        TFile f( fname.c_str(), "update" );
+        TTree *t = (TTree*) f.Get("hitSumm");
+        Long64_t nentries = t->GetEntries();
+        
+        Float_t c_x;
+        Float_t c_y;
+        Float_t c_z;
+        Int_t c_q;
+        Float_t c_sigma;
+        Float_t c_E;
+        Int_t c_id_code;
+
+        TBranch *x_branch = t->Branch("x", &c_x, "x/F");
+        TBranch *y_branch = t->Branch("y", &c_y, "y/F");
+        TBranch *z_branch = t->Branch("z", &c_z, "z/F");
+        TBranch *q_branch = t->Branch("q", &c_q, "q/I");
+        TBranch *sigma_branch = t->Branch("sigma", &c_sigma, "sigma/F");
+        TBranch *E_branch = t->Branch("E", &c_E, "E/F");
+        TBranch *id_code_branch = t->Branch("id_code", &c_id_code, "id_code/I");
+
+        for( int n=0; n<nentries; ++n ){
+            c_x = x[n];
+            c_y = y[n];
+            c_z = z[n];
+            c_q = q[n];
+            c_sigma = sigma[n];
+            c_E = E[n];
+            c_id_code = id_code[n];
+            
+            x_branch->Fill();
+            y_branch->Fill();
+            z_branch->Fill();
+            q_branch->Fill();
+            sigma_branch->Fill();
+            E_branch->Fill();
+            id_code_branch->Fill();
+        }
+        t->Write("", TObject::kOverwrite);
+        '''
+        fname = basename + '.root'
+        varnames = ['x','y','z','q','sigma','E','id_code','fname']
+        weave.inline( code, varnames,
+                            headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
+                            libraries=['Core'],
+                            include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
+                            library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
+                            extra_compile_args=['-O3', '-Wunused-variable'],
+                            compiler='gcc',
+                            #verbose=1,
+                            )
+        
+        print( 'added columns {}'.format(varnames) )
+        return
         
         
     def compute_sizelike_each( self, entry, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
@@ -543,18 +598,15 @@ def build_new_catalog_from_recarray__( input, output ):
 def match( args ):
     simulation = Simulation.simulation_from_file( args.basename )
     hitSummary = open_HitSummary( args.catalog, branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
-    print( simulation.x )
-    print( simulation.q )
-    print( simulation.q_eff )
-    print( simulation.E )
-    print( simulation.z )
-    print( simulation.sigma )
-    hitSummary.match( simulation )
-    #NeighborIndexHistogram( simulation.xy, 5 )
+    verbose = 0
+    if 'verbose' in args:
+        verbose = 1 
+    hitSummary.match( simulation, verbose, args.basename )
 
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
     p.add_argument('catalog', type=str, help = 'basename of the simulation catalog' )
+    p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )    
     p.set_defaults( _func=match )
 
 def extract( args ):

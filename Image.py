@@ -360,12 +360,13 @@ class Part:
         else:
             self.parse_shape( imageHDU.data.shape )
         
-        self.data = Section( imageHDU.data[ None:-1, 10:(self.width-self.bias_width) ] )
-        self.bias = Section( imageHDU.data[ None:-1, (self.width-self.bias_width): self.width ] )
+        # important to remove the first line, but not doing it now
+        self.data = Section( imageHDU.data[ None:None, 10:(self.width-self.bias_width) ] )
+        self.bias = Section( imageHDU.data[ None:None, (self.width-self.bias_width): self.width ] )
         
         if self.has_right:
-            self.dataR = Section( imageHDU.data[:,::-1][ None:-1, None:(self.width-self.bias_width) ] )
-            self.biasR = Section( imageHDU.data[:,::-1][ None:-1, (self.width-self.bias_width):self.width ] )
+            self.dataR = Section( imageHDU.data[:,::-1][ None:None, None:(self.width-self.bias_width) ] )
+            self.biasR = Section( imageHDU.data[:,::-1][ None:None, (self.width-self.bias_width):self.width ] )
         
     def remove_outliers_from_bias( self, pmin = 1e-5 ):
         self.bias = Section(outliers2nanp( self.bias, axis=1, pmin=pmin ))
@@ -482,23 +483,23 @@ class Image:
                     self.biasR = part.biasR
                     
 
-        self.vbias = self.data[ None:self.bias_height-1, : ].view(Section)
+        self.vbias = self.data[ None:self.bias_height, : ].view(Section)
         self.vbias_err = 1
         
-        self.data = self.data[ self.bias_height-1:None, : ].view(Section)
+        self.data = self.data[ self.bias_height:None, : ].view(Section)
         self.data_err = 1
         
-        self.dbias = self.bias[ None:self.bias_height-1, : ].view(Section)
+        self.dbias = self.bias[ None:self.bias_height, : ].view(Section)
         self.dbias_err = 1
         
-        self.bias = self.bias[ self.bias_height-1:None, : ].view(Section)
+        self.bias = self.bias[ self.bias_height:None, : ].view(Section)
         self.bias_err = 1
         
         if self.has_right:
-            self.vbiasR = self.dataR[ None:self.bias_height-1, : ].view(Section)
-            self.dataR = self.dataR[ self.bias_height-1:None, : ].view(Section)
-            self.dbiasR = self.biasR[ None:self.bias_height-1, : ].view(Section)
-            self.biasR = self.biasR[ self.bias_height-1:None, : ].view(Section)
+            self.vbiasR = self.dataR[ None:self.bias_height, : ].view(Section)
+            self.dataR = self.dataR[ self.bias_height:None, : ].view(Section)
+            self.dbiasR = self.biasR[ None:self.bias_height, : ].view(Section)
+            self.biasR = self.biasR[ self.bias_height:None, : ].view(Section)
             
     
     def remove_outliers_from_vbias(self, pmin=1e-5):

@@ -38,84 +38,79 @@ def simulation_from_file( basename ):
     json_str = open( fname ).readline().strip(' #').replace('\'','"')
     args_dict = json.loads( json_str )
     args = to_object(args_dict)
-    data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('n', int), ('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(Simulation)
+    if 'verbose' in args:
+        del args.verbose
+    data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('n', int), ('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(recarray)
     return Simulation( data, args )
     
-class Simulation( recarray, object ):
+class Simulation:
+    def __updateattrs__(self, data ):
+        self.__recarray__ = data
+        for name in self.__recarray__.dtype.names:
+            setattr(self, name, getattr(self.__recarray__, name) )
     
-    def __new__(cls, data, args ):
-
-        obj = data.view(Simulation)
+    def __init__(self, data, args ):
+        if not isinstance(data, recarray):
+            print( 'type(data)', type(data) )
+        self.__updateattrs__( data )
         
         for key, arg in vars(args).items():
-            setattr( obj, key, arg )
+            if 'verbose' in args:
+                print( key, arg )
+            setattr( self, key, arg )
         if 'image_mode' in args:
             if args.image_mode == 1:
-                obj.ccd_shape = constants.ccd_shape
-                obj.horizontal_overscan = 150
-                obj.vertical_overscan = 90
-                obj.rebin = [1,1]
-                obj.expose_hours = 3
+                self.ccd_shape = constants.ccd_shape
+                self.horizontal_overscan = 150
+                self.vertical_overscan = 90
+                self.rebin = [1,1]
+                self.expose_hours = 3
             elif args.image_mode == 5:
-                obj.ccd_shape = constants.ccd_shape
-                obj.horizontal_overscan = 450
-                obj.vertical_overscan = 74
-                obj.rebin = [5,1]
-                obj.expose_hours = 1
+                self.ccd_shape = constants.ccd_shape
+                self.horizontal_overscan = 450
+                self.vertical_overscan = 74
+                self.rebin = [5,1]
+                self.expose_hours = 1
             else:
-                print( 'image_mode {} not recognized. Ignoring.'.format(obj.image_mode) )
+                print( 'image_mode {} not recognized. Ignoring.'.format(self.image_mode) )
         
-        obj.rebin = array(obj.rebin)
-        obj.ccd_shape = array(obj.ccd_shape)
-        obj.rebinned_ccd_shape = obj.ccd_shape/obj.rebin
-        obj.image_shape = obj.rebinned_ccd_shape + [obj.vertical_overscan, obj.horizontal_overscan]
-        obj.diffusion_function = eval( 'vectorize(lambda z: {})'.format( obj.diffusion_function ) )
-        obj.charge_efficiency_function = eval( 'vectorize(lambda z: {})'.format( obj.charge_efficiency_function ) )
-        obj.vertical_modulation_function = eval( 'vectorize(lambda y: {})'.format( obj.vertical_modulation_function ) )
-        obj.horizontal_modulation_function = eval( 'vectorize(lambda x: {})'.format( obj.horizontal_modulation_function ) )
+        self.rebin = array(self.rebin)
+        self.ccd_shape = array(self.ccd_shape)
+        self.rebinned_ccd_shape = self.ccd_shape/self.rebin
+        self.image_shape = self.rebinned_ccd_shape + [self.vertical_overscan, self.horizontal_overscan]
+        self.diffusion_function = eval( 'vectorize(lambda z: {})'.format( self.diffusion_function ) )
+        self.charge_efficiency_function = eval( 'vectorize(lambda z: {})'.format( self.charge_efficiency_function ) )
+        self.vertical_modulation_function = eval( 'vectorize(lambda y: {})'.format( self.vertical_modulation_function ) )
+        self.horizontal_modulation_function = eval( 'vectorize(lambda x: {})'.format( self.horizontal_modulation_function ) )
         
+        q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
+        E = self.q * self.charge_gain
+        E_eff = q_eff * self.charge_gain
+        sigma = self.diffusion_function( self.z )
+        map_id = {'random': 1, 'Cu': 11, 'Cu2': 12, 'Si':10}
+        id_code = map( lambda i: map_id[i], self.id )
         try:
-            obj.count = len( obj.q )
+            self.count = len( self.q )
         except TypeError:
-            obj.count = 1
-        return obj
+            print( 'charges', self.q )
+            self.count = 1
+
+        self.__updateattrs__( rfn.append_fields( self.__recarray__, ['q_eff', 'E', 'E_eff', 'sigma', 'id_code'], [q_eff, E, E_eff, sigma, id_code], dtypes=(int, float, float, float, int), asrecarray=True ) )
+        
+        return
     
-    @property
-    def q_eff(self):
-        if not '__q_eff' in self.__dict__:
-            self.__q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
-        return self.__q_eff
+    def __len__(self):
+        return len(self.__recarray__)
+    
+    def __getitem__(self, i):
+        return self.__recarray__[i]
     
     @property
     def xy( self ):
         if not '__xy' in self.__dict__:
             self.__xy = array( (self.x, self.y) ).T
         return self.__xy
-
-    @property
-    def E( self ):
-        if not '__E' in self.__dict__:
-            self.__E = self.q*self.charge_gain
-        return self.__E
-    
-    @property
-    def E_eff( self ):
-        if not '__E_eff' in self.__dict__:
-            self.__E_eff = self.q_eff*self.charge_gain
-        return self.__E_eff
-    
-    def id_code( self, entry = None ):
-        map_id = {'random': 1, 'Cu': 11, 'Cu2': 12, 'Si':10}
-        if entry is None:
-            return map( lambda i: map_id[i], self.id )
-        return map_id[entry.id]
-
-    @property
-    def sigma( self, entry=None ):
-        if not '__sigma' in self.__dict__:
-            self.__sigma = self.diffusion_function( self.z )
-        return self.__sigma
-            
+        
     def generate_image( self, args ):
         if self.count > 0:
             Q = sum( self.q_eff )
@@ -128,6 +123,11 @@ class Simulation( recarray, object ):
                 arange(self.ccd_shape[1]+1)
                 ]
             image = histogramdd( xy, bins = bins )[0] * self.charge_gain
+            if 'verbose' in args:
+                print( 'bin len', len( bins[0]), min(bins[0]), max(bins[0]), bins[0][1] - bins[0][0] )
+                print( 'image.shape', image.shape )
+                print( 'xy', self.xy )
+                print( argwhere( image > 60 ) )
         else:
             image = zeros( self.ccd_shape )
 
@@ -141,7 +141,7 @@ class Simulation( recarray, object ):
             image += dark_current_image * self.charge_gain
             if 'verbose' in args:
                 max_ADU = max_charge * self.charge_gain
-                print_var( ['max_charge', 'max_ADU', 'total_dark_charge'], locals() )
+                #print_var( ['max_charge', 'max_ADU', 'total_dark_charge'], locals() )
         
         image = image.reshape( (self.rebinned_ccd_shape[0], -1, self.rebinned_ccd_shape[1]) ).sum(axis = 1)
 
@@ -322,7 +322,7 @@ def add_output_options(p):
     g.add_argument('--spectrum', help = 'generate energy spectrum',
                    action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--verbose', help = 'verbose level', 
-                   type=int, default=argparse.SUPPRESS )
+                   action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--csv', help = 'generate csv output',
                    action='store_true', default=argparse.SUPPRESS )
     return
@@ -375,9 +375,9 @@ def simulate_events( args ):
     types = [int, float, float, float, float, 'S16']
     fmt = ['%d', '%.4f', '%.4f', '%.4f', '%.4f', '%s']
     dtype = zip( cols, types )
-    data = empty( (0,len(dtype)), dtype=dtype )
+    data = empty( (0,len(dtype)), dtype=dtype ).view(recarray)
     if len(array_of_depths) > 0:
-        data = array( zip(arange(len(array_of_depths)), array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype )
+        data = array( zip(arange(len(array_of_depths)), array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype ).view(recarray)
         
     if 'csv' in args:
         output = args.basename + '.csv'
