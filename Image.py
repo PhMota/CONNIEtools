@@ -361,7 +361,7 @@ class Part:
             self.parse_shape( imageHDU.data.shape )
         
         # important to remove the first line, but not doing it now
-        self.data = Section( imageHDU.data[ None:None, 10:(self.width-self.bias_width) ] )
+        self.data = Section( imageHDU.data[ None:None, None:(self.width-self.bias_width) ] )
         self.bias = Section( imageHDU.data[ None:None, (self.width-self.bias_width): self.width ] )
         
         if self.has_right:

@@ -168,7 +168,7 @@ class HitSummary:
                         arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__level_mask(lvl) ).T
                         )
         
-    def match( self, events, verbose, basename ):
+    def match_bruteforce( self, events, verbose, basename ):
         
         N = len(events)
         indices = range(N)
@@ -262,6 +262,115 @@ class HitSummary:
         print( 'added columns {}'.format(varnames) )
         return
         
+    def match( self, events, verbose, basename ):
+        
+        N = len(events)
+
+        if verbose:
+            print( 'events.xy', events.xy )
+        
+        xy2event_ind = {}
+        for i, event in enumerate(events):
+            key = ( int(event.x), int(event.y) )
+            xy2event_ind[key] = i
+        if verbose:
+            print( xy2event_ind.keys() )
+        
+        N_hits = len(self.__recarray__)
+        x = zeros(N_hits)
+        y = zeros(N_hits)
+        z = zeros(N_hits)
+        q = zeros(N_hits)
+        E = zeros(N_hits)
+        id_code = zeros(N_hits)
+        sigma = zeros(N_hits)
+
+        for i, hit in enumerate(self.__recarray__):
+            xPix0 = hit.xPix[ hit.level==0 ]
+            yPix0 = hit.yPix[ hit.level==0 ]
+            if verbose:
+                print( 'hitSummary.xy', zip(xPix0, yPix0) )
+            for xPix, yPix in zip(xPix0, yPix0):
+                key = ( xPix, yPix )
+                try:
+                    event_ind = xy2event_ind[key]
+                    event = events[event_ind]
+                    if verbose:
+                        print( 'match', event.x, event.y )
+                    if id_code[i] == 0:
+                        x[i] = event.x
+                        y[i] = event.y
+                        z[i] = event.z
+                        sigma[i] = event.sigma
+                        q[i] = event.q_eff
+                        E[i] = event.E_eff
+                        id_code[i] = event.id_code
+                    else:
+                        id_code[i] = 2
+                        E[i] += event.E_eff
+                        q[i] += event.q_eff
+                        x[i] = -1
+                        y[i] = -1
+                        z[i] = -1
+                        sigma[i] = -1
+                except KeyError:
+                    pass
+        
+        print( 'matched', count_nonzero(id_code) )
+        code = '''
+        TFile f( fname.c_str(), "update" );
+        TTree *t = (TTree*) f.Get("hitSumm");
+        Long64_t nentries = t->GetEntries();
+        
+        Float_t c_x;
+        Float_t c_y;
+        Float_t c_z;
+        Int_t c_q;
+        Float_t c_sigma;
+        Float_t c_E;
+        Int_t c_id_code;
+
+        TBranch *x_branch = t->Branch("x", &c_x, "x/F");
+        TBranch *y_branch = t->Branch("y", &c_y, "y/F");
+        TBranch *z_branch = t->Branch("z", &c_z, "z/F");
+        TBranch *q_branch = t->Branch("q", &c_q, "q/I");
+        TBranch *sigma_branch = t->Branch("sigma", &c_sigma, "sigma/F");
+        TBranch *E_branch = t->Branch("E", &c_E, "E/F");
+        TBranch *id_code_branch = t->Branch("id_code", &c_id_code, "id_code/I");
+
+        for( int n=0; n<nentries; ++n ){
+            c_x = x[n];
+            c_y = y[n];
+            c_z = z[n];
+            c_q = q[n];
+            c_sigma = sigma[n];
+            c_E = E[n];
+            c_id_code = id_code[n];
+            
+            x_branch->Fill();
+            y_branch->Fill();
+            z_branch->Fill();
+            q_branch->Fill();
+            sigma_branch->Fill();
+            E_branch->Fill();
+            id_code_branch->Fill();
+        }
+        t->Write("", TObject::kOverwrite);
+        '''
+        fname = basename + '.root'
+        varnames = ['x','y','z','q','sigma','E','id_code','fname']
+        weave.inline( code, varnames,
+                            headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
+                            libraries=['Core'],
+                            include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
+                            library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
+                            extra_compile_args=['-O3', '-Wunused-variable'],
+                            compiler='gcc',
+                            #verbose=1,
+                            )
+        
+        print( 'added columns {}'.format(varnames) )
+        return
         
     def compute_sizelike_each( self, entry, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
         _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
@@ -600,7 +709,7 @@ def match( args ):
     hitSummary = open_HitSummary( args.catalog, branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
     verbose = 0
     if 'verbose' in args:
-        verbose = 1 
+        verbose = 1
     hitSummary.match( simulation, verbose, args.basename )
 
 def add_match_options(p):

@@ -41,18 +41,28 @@ def simulation_from_file( basename ):
     if 'verbose' in args:
         del args.verbose
     data = genfromtxt( fname, delimiter= ', ', names = True, skip_header = 1, dtype = [('n', int), ('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(recarray)
+    print( 'read events', data.size, data.n )
+    if data.size == 1:
+        data = array( [(data.n, data.x, data.y, data.z, data.q, data.id)], dtype = [('n', int), ('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(recarray)
+        print( 'read events', data.size, data.n )
+        
     return Simulation( data, args )
     
 class Simulation:
-    def __updateattrs__(self, data ):
+    def __updateattrs__(self, data, verbose=0 ):
         self.__recarray__ = data
         for name in self.__recarray__.dtype.names:
+            if verbose:
+                print( name )
             setattr(self, name, getattr(self.__recarray__, name) )
     
     def __init__(self, data, args ):
         if not isinstance(data, recarray):
             print( 'type(data)', type(data) )
-        self.__updateattrs__( data )
+        verbose = 0
+        if 'verbose' in args:
+            verbose = 1
+        self.__updateattrs__( data, verbose )
         
         for key, arg in vars(args).items():
             if 'verbose' in args:
@@ -88,7 +98,8 @@ class Simulation:
         E_eff = q_eff * self.charge_gain
         sigma = self.diffusion_function( self.z )
         map_id = {'random': 1, 'Si':10, 'Cu': 11, 'Cu2': 12}
-        id_code = map( lambda i: map_id[i], self.id )
+        print( 'id', self.id )
+        id_code = map( lambda i: map_id[i], self.__recarray__.id )
         try:
             self.count = len( self.q )
         except TypeError:
