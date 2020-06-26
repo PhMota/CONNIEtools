@@ -266,12 +266,28 @@ class HitSummary:
         return
     
     def efficiency( self, events, args ):
-        E_bins = arange( 0, max(events.E_eff), args.E_binsize )
-        x, simE = stats.make_histogram( events.E, E_bins )
-        x, recE = stats.make_histogram( self.E[ id_code==1 ], E_bins )
-        x, E0 = stats.make_histogram( self.E0[ id_code==1 ], E_bins )
-        x, E1 = stats.make_histogram( self.E1[ id_code==1 ], E_bins )
-        print( simE, recE.astype(float)/simE )
+        print( 'fields', self.__recarray__.dtype.names )
+        E_bins = arange( 0, max(events.E), args.E_binsize )
+        simE, x, dx = stats.make_histogram( events.E, E_bins )
+        recE, x, dx = stats.make_histogram( self.E[ self.id_code==1 ], E_bins )
+        E0, x, dx = stats.make_histogram( self.E0[ self.id_code==1 ], E_bins )
+        E1, x, dx = stats.make_histogram( self.E1[ self.id_code==1 ], E_bins )
+        print( simE, recE.astype(float)/simE, E0.astype(float)/simE, E1.astype(float)/simE )
+        
+        
+        z_bins = arange( 0, max(events.z), args.z_binsize )
+        simz, x, dx = stats.make_histogram( events.z, z_bins )
+        recz, x, dx = stats.make_histogram( self.z[ self.id_code==1 ], z_bins )
+        print( simz, recz.astype(float)/simz )
+
+        sigma_bins = arange( 0, max(events.z), args.sigma_binsize )
+        simsigma, x, dx = stats.make_histogram( events.sigma, sigma_bins )
+        recsigma, x, dx = stats.make_histogram( self.sigma[ self.id_code==1 ], sigma_bins )
+        yVar0, x, dx = stats.make_histogram( self.yVar0[ self.id_code==1 ], sigma_bins )
+        xVar0, x, dx = stats.make_histogram( self.xVar0[ self.id_code==1 ], sigma_bins )
+        yVar1, x, dx = stats.make_histogram( self.yVar1[ self.id_code==1 ], sigma_bins )
+        xVar1, x, dx = stats.make_histogram( self.xVar1[ self.id_code==1 ], sigma_bins )
+        print( simsigma, recsigma.astype(float)/simsigma )
         exit()
         
     
@@ -297,6 +313,7 @@ class HitSummary:
         z = zeros(N_hits)
         q = zeros(N_hits)
         E = zeros(N_hits)
+        #E_eff = zeros(N_hits)
         id_code = zeros(N_hits)
         sigma = zeros(N_hits)
         
@@ -320,13 +337,15 @@ class HitSummary:
                         y[i] = event.y
                         z[i] = event.z
                         sigma[i] = event.sigma
-                        q[i] = event.q_eff
-                        E[i] = event.E_eff
+                        q[i] = event.q
+                        E[i] = event.E
+                        #E_eff[i] = event.E_eff
                         id_code[i] = event.id_code
                     else:
                         id_code[i] = 2
-                        E[i] += event.E_eff
-                        q[i] += event.q_eff
+                        E[i] += event.E
+                        #E_eff[i] += event.E_eff
+                        q[i] += event.q
                         x[i] = -1
                         y[i] = -1
                         z[i] = -1
@@ -335,6 +354,7 @@ class HitSummary:
                     pass
         
         print( 'matched', count_nonzero(id_code) )
+        print( 'multiple matched', count_nonzero(id_code==2) )
         print( 'not matched', count_nonzero(matched==0) )
         print( 'not matched events' )
         print( events.xy[matched==0] )
@@ -382,7 +402,10 @@ class HitSummary:
         t->Write("", TObject::kOverwrite);
         '''
         fname = args.basename + '.root'
-        varnames = ['x','y','z','q','sigma','E','id_code','fname']
+        varnames = ['x','y','z','q','sigma','E','id_code']
+        self.add_fields( varnames, (float, float, float, int, float, float, int), [x, y, z, q, sigma, E, id_code] )
+
+        varnames += ['fname']
         weave.inline( code, varnames,
                             headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
                             libraries=['Core'],
@@ -749,9 +772,10 @@ def simulate( args ):
         args.threshold = threshold
         args.basename = '{0}/{0}_{1}'.format( basename, threshold )
         image_extract( image, args )
-        hitSummary = open_HitSummary( args.basename + '.root', branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
+        hitSummary = open_HitSummary( args.basename + '.root', branches = ['ePix', 'xPix', 'yPix', 'level', 'E0', 'E1', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
         hitSummary.match( simulation, args )
-        hitSummary.efficiency( simulation, args )
+        if 'efficiency' in args:
+            hitSummary.efficiency( simulation, args )
     
 
 def add_simulate_options(p):
@@ -759,9 +783,10 @@ def add_simulate_options(p):
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.add_argument('-t', '--threshold', nargs='+', type=float, default=[30,40,50,60], help = 'energy threshold in ADU' )
     p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )    
-    p.add_argument('--E-binsize', action='store_true', default=argparse.SUPRESS, help = 'E binsize' )
-    p.add_argument('--z-binsize', action='store_true', default=argparse.SUPRESS, help = 'z binsize' )
-    p.add_argument('--sigma-binsize', action='store_true', default=argparse.SUPRESS, help = 'sigma binsize' )
+    p.add_argument('--E-binsize', type=float, default=1, help = 'E binsize' )
+    p.add_argument('--z-binsize', type=float, default=10, help = 'z binsize' )
+    p.add_argument('--sigma-binsize', type=float, default=.1, help = 'sigma binsize' )
+    p.add_argument('--efficiency', action='store_true', default=argparse.SUPPRESS, help = 'sigma binsize' )
     Simulation.add_params_options(p)
     Simulation.add_geometry_options(p)
     Simulation.add_depth_options(p)
