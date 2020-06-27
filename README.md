@@ -117,8 +117,6 @@ output options:
   --csv                 generate csv output
 ```
 
-
-
 The only necessary option is the `basename` which specifies the basename for the output files, the rest of the options will fall to their defaults.
 A test run
 
@@ -139,7 +137,7 @@ This run generated complete black images with no readout noise, no dark current 
 A sample
 
 ```sh
-./simulation image sample -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv
+$ ./simulation image sample -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv
 using parameters:
         number_of_Cu_charges 0 horizontal_overscan 10 basename sample expose_hours 1 readout_noise 12.0000 horizontal_modulation_function 0 
         charge_gain 7.2500 charge_range [5, 200] number_of_Si_charges 0 rebin [1, 1] image_type <type 'float'> number_of_charges 10 
@@ -171,3 +169,24 @@ and the `sample.png` file
 
 ![](sample.png)
 
+```sh
+$ ./simulation image sample5 -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv --rebin 5 1
+```
+
+![](sample5.png)
+
+
+```sh
+$ ./simulation image sample5mod -N 10 -dc .1 -rn 12 -g 7.25 --image-type float -os 10 -vos 10 --ccd-shape 90 90 --png --csv --vertical-modulation-function '50*cos(2*pi*y/50)'
+```
+![](sample5mod.png)
+
+### Notes
+
+The careful reader might catch the fact that the axes are inverted in the default CCD shape `[4130,4120]`.
+In fact, this has been an intentional choice, albeit potentially confusing for the user.
+This is to keep comatibility with the CONNIE fit files which have the axes inverted also. 
+The rebin feature is supposed to be given as `--rebin 5 1` to emulate the 1x5 rebinning.
+
+Also the vertical overscan apperas at the bottom of the image.
+This is also made to mimick the offical fit images which are written backwards.
