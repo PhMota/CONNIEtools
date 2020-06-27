@@ -1016,7 +1016,6 @@ def get_selections( file, branches, selections, global_selection=None, runID_ran
         data_selection[selection] = open_HitSummary( file, branches=list(set(branches+extra_branches)), selection='flag==0 && '+selection_string, runID_range=runID_range )
         if lims is None:
             lims = [ ( min(data_selection[selection][branch]), max(data_selection[selection][branch]) ) for branch in branches ]
-        print( selection, data_selection[selection].shape )
     return data_selection, lims
 
 
@@ -1057,49 +1056,89 @@ def test_std_correction():
 def scatter( args ):
     with Timer('scatter'):
         file = glob.glob(args.root_file)
+        
+        args.xbranches = []
+        args.ybranches = []
+        args.cbranches = []
+        args.selections = []
+        has_color = False
+        #print( args.branch_selections )
+        for branch_selection in args.branch_selections:
+            args.xbranches.append( branch_selection[0] )
+            args.ybranches.append( branch_selection[1] )
+            if len(branch_selection) == 4:
+                args.cbranches.append( branch_selection[2] )
+                has_color = True
+            args.selections.append( branch_selection[-1] )
+        if not has_color:
+            args.cbranches = args.xbranches
+        
         if not 'runID_range' in args:
             args.runID_range = None
-        data_selection, lims = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range, extra_branches=[ 'ePix', 'xPix', 'yPix', 'xVar1', 'E0', 'E1', 'n0', 'n1' ] )
+        data_selection, lims = get_selections( file[0], 
+                                              args.xbranches + args.ybranches + args.cbranches,
+                                              args.selections, 
+                                              args.global_selection, 
+                                              runID_range=args.runID_range, 
+                                              #extra_branches=[ 'ePix', 'xPix', 'yPix', 'xVar1', 'E0', 'E1', 'n0', 'n1' ] 
+                                              )
         
         fig = plt.figure()
         ax = fig.add_subplot(111)
         if 'global_selection' in args:
             ax.set_title( args.global_selection )
+        scatter_obj = []
         if 'selections' in args:
             markers = ['.', '+', 'x', '^']
-            for selection, marker in zip(args.selections, markers):
+            for xbranch, ybranch, cbranches, selection, marker in zip(args.xbranches, args.ybranches, args.cbranches, args.selections, markers):
                 datum = data_selection[selection]
-                datum.add_energy_threshold(30)
-
-                Eerr = 15
-                if False:
-                    ax.scatter( datum[args.branches[0]], datum[args.branches[1]], marker=marker, alpha=.2, label=selection.replace('&&', 'and') )
-                ax.errorbar( datum.E0, datum[args.branches[1]], xerr=Eerr*datum.n0, label='E0', fmt=markers[0] )
-                ax.errorbar( datum.E1, datum[args.branches[1]], xerr=Eerr*datum.n1, label='E1', fmt=markers[1] )
-                #ax.errorbar( datum['E2'], datum[args.branches[1]], xerr=Eerr*datum['n2'], label='E3', fmt=markers[2] )
-                ax.errorbar( datum.E30, var30[0], xerr=Eerr*datum.n30, label='E30', fmt=markers[3] )
-                #ax.scatter( E30c, var30[0], marker=marker, alpha=.2, label=selection.replace('&&', 'and') )
+                if has_color:
+                    scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=datum[cbranches] ) )
+                else:
+                    ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker )
+                #ax.errorbar( datum[xbranch], datum[ybranch], xerr=Eerr*datum.n0, label='E0', fmt=markers[0] )
         ax.legend()
-        ax.set_xlim( lims[0] )
-        ax.set_ylim( lims[1] )
-        ax.set_xlabel(args.branches[0])
-        ax.set_ylabel(args.branches[1])
+        ax.set_xlim( *args.x_range )
+        ax.set_ylim( *args.y_range )
+        ax.set_xlabel( args.xbranches[0] )
+        ax.set_ylabel( args.ybranches[0] )
+        if has_color:
+            fig.colorbar( scatter_obj[0] )
     if 'ylog' in args:
         ax.set_yscale('log')
+
     if 'output' in args:
-        fig.savefig(args.output+'.pdf')
+        if args.output == '':
+            args.output = args.root_file
+    else:
+        args.output = args.root_file
+            
+    if 'pdf' in args:
+        fname = args.output+'.scatter.{}.vs.{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'))
+        fig.savefig( fname )
+        print( 'saved', fname )
+    elif 'png' in args:
+        fname = args.output+'.scatter.{}.vs.{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'))
+        fig.savefig( fname )
+        print( 'saved', fname )
     else:
         plt.show()
     return
 
 def add_scatter_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('--branches', nargs=2, type=str, default= ['E0','xVar0'], help = 'branches used for x- and y-axis' )
-    p.add_argument('--global-selection', type=str, default='0', help = 'global selection' )
-    p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('--branch-selections', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branches used for x- and y-axis' )
+    p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
+    #p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
     p.add_argument('--define', nargs='+', type=str, default=argparse.SUPPRESS, help = 'definitions' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
+    p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of x' )
+    p.add_argument('--y-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of y' )
+    p.add_argument('--c-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of color' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
+    p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
+    p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
+    
     p.set_defaults(_func=scatter)
 
 def energy_threshold( datum, threshold ):
@@ -1120,61 +1159,55 @@ def histogram( args ):
     with Timer('histogram'):
         file = glob.glob(args.root_file)
         #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
-
+        
+        args.branches = []
+        args.selections = []
+        print( args.branch_selections )
+        for branch_selection in args.branch_selections:
+            args.branches.append( branch_selection[0] )
+            args.selections.append( branch_selection[1] )
+        
         if not 'runID_range' in args:
             args.runID_range = None
         data_selection, lims = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
                                               #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-
-        first_data_selection = data_selection.values()[0][args.branches[0]]
-        if 'binsize' in args:
-            bins = arange( min(first_data_selection), max(first_data_selection), args.binsize )
-        elif 'nbins' in args:
-            bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
+        print( 'lims', lims )
+        if 'x_range' in args:
+            bins = arange( args.x_range[0], args.x_range[1], args.binsize )
         else:
-            bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
+            first_data_selection = data_selection.values()[0][args.branches[0]]
+            if 'binsize' in args:
+                bins = arange( min(first_data_selection), max(first_data_selection), args.binsize )
+            elif 'nbins' in args:
+                bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
+            else:
+                bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
         
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.set_title(', '.join(args.branches))
         #ax.hist(data, bins=bins, histtype='step', label='all')
         if 'selections' in args:
-            for selection in args.selections:
-                print( 'selection', data_selection[selection][args.branches[0]].shape, len(bins) )
+            for branch, selection in zip(args.branches, args.selections):
+                print( 'selection', data_selection[selection][branch].shape, len(bins) )
                 datum = data_selection[selection]
 
-                #sigma = 12.5
-                #ax.step( bins, pdf( bins, datum.E0, datum.n0, sigma ), where='mid', label='E0')
-                #ax.step( bins, pdf( bins, datum.E1, datum.n1, sigma ), where='mid', label='E1')
-
-                #ax.step( bins, pdf( bins, datum.E2, datum.n2, sigma ), where='mid', label='E2')
-
-                #dat45 = energy_threshold( datum, 45)
-                #ax.step( bins, pdf( bins, dat45.E45, dat45.n45, sigma ), where='mid', label='E45')
-                #dat30 = energy_threshold( datum, 30)
-                #ax.step( bins, pdf( bins, dat30.E30, dat30.n30, sigma ), where='mid', label='E30')
-
-                #dat15 = energy_threshold( datum, 15)
-                #ax.step( bins, pdf( bins, dat15.E15, dat15.n15, sigma ), where='mid', label='E15')
-                
-                #pdf30 = lambda x: sum( [stats.norm.pdf(x, E, n*Eerr) for E, n in zip(E30,n30)], axis=0 )
-                #ax.step( bins, pdf30(bins), where='mid', label='E30')
-                
-                #E30 = E30[ logical_or(var30[0]<.3, var30[0]>.8) ]
-                #n30 = n30[ logical_or(var30[0]<.3, var30[0]>.8) ]
-                #pdf30 = lambda x: sum( [stats.norm.pdf(x, E, n*Eerr) for E, n in zip(E30,n30)], axis=0 )
-                #ax.step( bins, pdf30(bins), where='mid', label='E30*')
-                for branch in args.branches:
-                    factor = 1
-                    if 'factor' in args:
-                        factor = args.factor
-                    ax.hist( datum[branch], bins=bins, histtype='step', label='{}:{}'.format(branch,selection), weights=[factor]*len(datum[branch]) )
+                factor = 1
+                if 'factor' in args:
+                    factor = args.factor
+                hist, x, dx = stats.make_histogram( datum[branch], bins )
+                ax.errorbar( x, hist*factor/dx, xerr=dx/2, yerr=sqrt(hist)*factor/dx, label='{}:{}'.format(branch,selection), fmt='.' )
         ax.legend()
         ax.set_xlabel(args.branches[0])
+        ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
         #ax.set_yscale('log')
+
     if 'output' in args:
         if args.output == '':
             args.output = args.root_file
+    else:
+        args.output = args.root_file
+    
     if 'pdf' in args:
         fig.savefig(args.output+'.pdf')
         print( 'saved', args.output+'.pdf' )
@@ -1187,19 +1220,18 @@ def histogram( args ):
 
 def add_histogram_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('branches', nargs='+', type=str, default= ['E0'], help = 'branch used for x-axis' )
-    p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selections' )
+    p.add_argument('--branch-selections', action='append', nargs=2, type=str, default=argparse.SUPPRESS, help = 'selections' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
+    p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
     p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
     p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-    
     
     p.set_defaults(_func=histogram)
 

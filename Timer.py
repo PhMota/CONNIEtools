@@ -26,21 +26,24 @@ class Timer:
     
     def time(self, N=1):
         t = self.seconds(N)
+        return self.make_str(t)
+
+    def make_str(self, t):
         if t > 60*60:
             s = '%sh%sm%ss%sms' %( int(t)/60/60, int(t/60)%60, int(t)%60, int(t*1e3)%1000 )
         else: 
             if t > 60: s = '%sm%ss%sms' %( int(t)/60, int(t)%60, int(t*1e3)%1000 )
             else: s = '%ss%sms' % (int(t), int(t*1e3)%1000 )
         return s
-
+        
     def check(self, wait_secs, total_loop_number):
         try:
             self.loop_number +=1
             if self.seconds()/wait_secs > self.count:
-                secs_per_loop = self.seconds(1./self.loop_number)
+                secs_per_loop = self.seconds()/self.loop_number
                 remaining_loops = total_loop_number - self.loop_number
                 eta_secs = secs_per_loop * remaining_loops
-                print('eta', colored( self.time( eta_secs ), 'yellow') )
+                print('eta', colored( self.make_str( eta_secs ), 'yellow') )
                 self.count += 1
         except:
             self.loop_number = 0

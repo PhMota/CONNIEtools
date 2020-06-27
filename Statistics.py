@@ -177,6 +177,82 @@ def make_histogram( X, bins=None, binwidth=None ):
     x = .5*(edges[1:]+edges[:-1])
     return hist, x, edges[1]-edges[0]
 
+binom = scipy.stats.binom
+class binom_norm:
+    @classmethod
+    def pdf( cls, q, Qt, p, sigma_q ):
+        Qt = int(Qt)
+        if sigma_q == 0:
+            return binom.pmf( q.astype(int), Qt, p )
+        Q = np.arange(Qt).astype(int)[:,None]
+        return sum( binom.pmf( Q, Qt, p[None,:] ) * norm.pdf( q[None,:] - Q, scale = sigma_q ), axis = 0 )
+
+    @classmethod
+    def pdf2( cls, q, Qt, p, sigma_q ):
+        Qt = int(Qt)
+        if sigma_q == 0:
+            return binom.pmf( q.astype(int), Qt, p )
+        Q = np.arange(Qt).astype(int)[:,None]
+        __b = binom.pmf( Q, Qt, p[None,:] )
+        __n = norm.pdf( q[None,:] - Q, scale = sigma_q )
+        return sum( __b*__n, axis = 0 )
+    
+class norm2d_binom_norm:
+    @classmethod
+    def pdf( cls, q, Qt, sigma_q, x, y, mux, muy, sigmax, sigmay ):
+        return binom_norm.pdf( q, Qt, self.__p(x, mux, sigmax)*self.__p(y, muy, sigmay), sigma_q )
+    
+    @classmethod
+    def __p( cls, x, mu, sigma ):
+        return -.5*( erf( -( x+1 - mu)/( sqrt2*sigma )) - erf( -( x - mu )/( sqrt2*sigma ) ) )
+    
+    @classmethod
+    def fit( cls ):
+        pass
+
+def integral_norm_pixel( x, mu, sigma ):
+    return -.5*( erf( -( x+1 - mu)/( sqrt(2)*sigma )) - erf( -( x - mu )/( sqrt(2)*sigma ) ) )
+
+class norm2d_norm:
+    mu_bounds = (None,None)
+    sigma_bound = (.1, None)
+    @classmethod
+    def pdf( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma ):
+        x_p = norm.pdf( x, x_mu, x_sigma )
+        y_p = norm.pdf( y, y_mu, y_sigma )
+        P = sum( integral_norm_pixel( x, x_mu, x_sigma )*integral_norm_pixel( y, y_mu, y_sigma ) )
+        E = sum( e )
+        e_p = norm.pdf( e, x_p*y_p*E/P, e_sigma )
+        return e_p
+    
+    @classmethod
+    def fit( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma, fix_e_sigma=False ):
+        func = lambda x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma: cls.pdf( x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma )
+        bounds = ( mu_bounds, mu_bounds, sigma_bounds, sigma_bounds, sigma_bounds )
+        p0 = ( x_mu, y_mu, x_sigma, y_sigma, e_sigma )
+        if fix_e_sigma:
+            func = lambda x, y, e, x_mu, y_mu, x_sigma, y_sigma: cls.pdf( x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma )
+            bounds = ( mu_bounds, mu_bounds, sigma_bounds, sigma_bounds )
+            p0 = ( x_mu, y_mu, x_sigma, y_sigma )
+        
+        f = lambda params: -sum( weights*log( pdf( x, y, e, *params )) )
+        ret = scipy.optimize.minimize( f, p0, bounds=bounds )
+        print( ret )
+        return ret['x']
+
+def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False ):
+    integral_norm_pixel_x = -.5*( erf( -( xPix+1 - mu[0])/( sqrt2*sigma[0] )) - erf( -( xPix - mu[0] )/( sqrt2*sigma[0] ) ) )
+    integral_norm_pixel_y = -.5*( erf( -( yPix+1 - mu[1])/( sqrt2*sigma[1] )) - erf( -( yPix - mu[1] )/( sqrt2*sigma[1] ) ) )
+    
+    prob = integral_norm_pixel_x * integral_norm_pixel_y
+    prob_i = prob[:,None]
+    ePix_i = ePix[:,None]
+    q_j = np.arange(E).astype(int)[None,:]
+    j = -1
+    val = np_sum( binom_pmf( q_j, E, prob_i ) * norm_pdf( ePix_i - q_j, scale = sigma_noise ), axis = j )
+    val = val[ val > 0 ]
+    return -np.nansum( np.log( val ) )
+
 class poisson_norm:
     verbose = False
     mu_bounds = (None,None)
@@ -249,7 +325,6 @@ class poisson_norm:
         
         params = scipy.optimize.curve_fit()
         
-            
     @classmethod
     def fit( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False ):
         func = cls.pdf
