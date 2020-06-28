@@ -3,6 +3,8 @@ Analysis tools for the CONNIE colaboration
 
 This is a set of tool for analysing the CONNIE 
 
+visit https://github.com/PhMota/CONNIEtools/wiki for more details
+
 ### Simulation
 
 The `simulate` tool is responsable for generating simulated images. The implemented functionalities and defaults are described by the `--help` as
