@@ -320,7 +320,8 @@ def read_image_from_fits( path, ohdu ):
     return imagesHDU
     
 def label_clusters( condition_image ):
-    s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    #s33 = [[1,1,1], [1,1,1], [1,1,1]]
+    s33 = [[0,1,0], [1,1,1], [0,1,0]]
     return scipy.ndimage.label( condition_image, structure=s33 )[0]
 
 def blockshaped(arr, nrows, ncols):
@@ -392,11 +393,11 @@ class Part:
     
     def parse_shape( self, shape ):
         height, width = shape
-        number_of_amplifiers = width//constants.ccd_shape.width
+        number_of_amplifiers = width//constants.ccd_width
         #print( 'number of amplifiers', number_of_amplifiers )
         side_width = width/number_of_amplifiers
-        bias_width = side_width - constants.ccd_shape.width
-        #print( 'bias_width', side_width - constants.ccd_shape.width )
+        bias_width = side_width - constants.ccd_width
+        #print( 'bias_width', side_width - constants.ccd_width )
         self.parse_height( shape[0] )
         self.parse_width( shape[1] )
     
@@ -760,6 +761,60 @@ class Section( np.ndarray ):
         data = Section( np.where( labeled_clusters == 0, self, np.nan ) )
         #print('hits removed', len(self.flatten()), len(self[labeled_clusters == 0]) )
         return data
+
+    def get_clusters_noise( self, threshold, border, noise, verbose=0 ):
+        p_value_image = .5*erf( self/sqrt(2)/noise )
+        z_value_image = sqrt(2)*erfi(1 - 2*p_value_image)
+        
+        labeled_clusters = label_clusters( self >= threshold )
+        if verbose:
+            print( 'number of pixels labeled', np.count_nonzero(labeled_clusters) )
+            print( 'number of clusters above threshold', labeled_clusters.max() )
+        is_cluster = labeled_clusters > 0
+        distances_to_cluster = scipy.ndimage.distance_transform_edt( is_cluster == False )
+        labeled_clusters = label_clusters( distances_to_cluster <= border*np.sqrt(2) )
+        if verbose:
+            print( 'number of pixels labeled', np.count_nonzero(labeled_clusters) )
+            print( 'number of clusters with border', labeled_clusters.max() )
+        return labeled_clusters, distances_to_cluster
+
+    def extract_hits_noise( self, threshold, border, verbose=0 ):
+        labeled_clusters, distances_to_cluster = self.get_clusters( threshold, border, verbose )
+        
+        indices = np.unique(labeled_clusters)[1:]
+        if verbose:
+            print( 'extracted {}'.format(len(indices)) )
+        list_of_clusters = scipy.ndimage.labeled_comprehension(
+            self,
+            labeled_clusters,
+            index = indices, 
+            func = lambda e, p: [e, p], 
+            out_dtype=list, 
+            default=-1,
+            pass_positions=True 
+            )
+        levels = scipy.ndimage.labeled_comprehension( 
+            distances_to_cluster, 
+            labeled_clusters, 
+            index = indices,
+            func = lambda v: v, 
+            default=-1, 
+            out_dtype=list 
+            )
+        def process( cluster ):
+            ei, level = cluster
+            x, y = np.unravel_index(ei[1], self.shape)
+            return ei[0], x, y, level.astype(int)
+        list_of_clusters = map( process, zip(list_of_clusters, levels) )
+
+        dtype = [
+            ('ePix', object),
+            ('xPix', object),
+            ('yPix', object),
+            ('level', object),
+            ]
+        ret = np.array( list_of_clusters, dtype = dtype ).view(np.recarray)
+        return ret
         
     def extract_hits( self, threshold, border, verbose=0 ):
         labeled_clusters, distances_to_cluster = self.get_clusters( threshold, border, verbose )
@@ -996,7 +1051,7 @@ def add_simulate_options(p):
     Simulation.add_folder_options(p)
     #print( p._actions )
     p.add_argument('--folder', type=str, default = 'test', help = 'name of the simulation folder' )
-    p.add_argument('--overwrite', action='store_true', default=argparse.SUPPRESS, help = 'overwrites folder' )
+    #p.add_argument('--overwrite', action='store_true', default=argparse.SUPPRESS, help = 'overwrites folder' )
     p.add_argument('--append', action='store_true', default=argparse.SUPPRESS, help = 'appends to folder' )
     p.set_defaults( func=simulate )
     
@@ -1191,13 +1246,13 @@ def display( args ):
         data = imageHDU.data.astype(float)
         
         height, width = data.shape
-        number_of_amplifiers = width // constants.ccd_shape.width
+        number_of_amplifiers = width // constants.ccd_width
         side_width = width/number_of_amplifiers
-        bias_width = int( np.ceil( (side_width - constants.ccd_shape.width)/150. ) )*150
+        bias_width = int( np.ceil( (side_width - constants.ccd_width)/150. ) )*150
         print( 'bias_width', bias_width )
-        trim = constants.ccd_shape.width + bias_width - side_width
+        trim = constants.ccd_width + bias_width - side_width
         print( 'trim', trim )
-        #bias_width = ( side_width + trim ) % constants.ccd_shape.width
+        #bias_width = ( side_width + trim ) % constants.ccd_width
 
         height_trim = 1
         
@@ -1211,11 +1266,11 @@ def display( args ):
                 else:
                     data = data[None:-height_trim, None:side_width]
                 if 'half' in args:
-                    data = data[None:None, constants.ccd_shape.width/2:None]
+                    data = data[None:None, constants.ccd_width/2:None]
             elif args.side == 'right' or args.side == '1':
                 data = data[None:-height_trim, side_width:None][:,::-1]
                 if 'half' in args:
-                    data = data[None:None, constants.ccd_shape.width/2:None]
+                    data = data[None:None, constants.ccd_width/2:None]
 
         if 'trim' in args:
             data = data[None:None, 10:]

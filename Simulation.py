@@ -56,6 +56,7 @@ class Simulation:
                 print( name )
             setattr(self, name, getattr(self.__recarray__, name) )
     
+        
     def __init__(self, data, args ):
         if not isinstance(data, recarray):
             print( 'type(data)', type(data) )
@@ -93,7 +94,7 @@ class Simulation:
         self.vertical_modulation_function = eval( 'vectorize(lambda y: {})'.format( self.vertical_modulation_function ) )
         self.horizontal_modulation_function = eval( 'vectorize(lambda x: {})'.format( self.horizontal_modulation_function ) )
         
-        if len( self.q ) > 1:
+        if len( self.q ) > 0:
             q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
             E = self.q * self.charge_gain
             E_eff = q_eff * self.charge_gain
@@ -132,7 +133,7 @@ class Simulation:
     def generate_image( self, args ):
         if self.count > 0:
             Q = sum( self.q_eff )
-            xy_norm = scipy.stats.norm.rvs( size = 2*Q ).reshape( -1, 2 )
+            xy_norm = scipy.stats.norm.rvs( size=2*Q ).reshape( -1, 2 )
             sigma_per_charge = repeat( self.sigma, self.q_eff )
             xy_per_charge = repeat( self.xy, self.q_eff, axis=0 )
             xy = xy_per_charge + sigma_per_charge[:,None] * xy_norm
@@ -283,7 +284,7 @@ def add_geometry_options(p):
     #p.add_argument('-vpt', '--vertical-pretrim', type=int, default = 1, help = 'size of the vertical overscan in pixels' )
     g.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape.tolist(), help = 'shape of the image as 2d pixels' )
     g.add_argument('--rebin', nargs=2, type=int, default = [1,1], help = '2d rebinning strides' )
-    g.add_argument('--image-type', type=str, default='int', help = 'image type' )
+    g.add_argument('--image-type', type=str, default='float', help = 'image type' )
     g.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5', 
                     type=int, default = argparse.SUPPRESS )
     return

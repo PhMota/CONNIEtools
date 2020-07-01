@@ -41,9 +41,10 @@ import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
 from scipy.sparse import csr_matrix
+from scipy.stats import binned_statistic
 
 
-def binned_statistic(x, values, func, nbins, range):
+def binned_statistic_fast(x, values, func, nbins, range):
     '''The usage is nearly the same as scipy.stats.binned_statistic''' 
 
     N = len(values)
@@ -441,7 +442,6 @@ class HitSummary:
         if 'sigma' in self.__recarray__.dtype.names:
             print( 'catalog already matched' )
             return
-        N = len(events)
 
         if 'verbose' in args:
             print( 'events.xy', events.xy )
@@ -453,16 +453,15 @@ class HitSummary:
             print( xy2hit_ind.keys() )
         
         N_hits = len(self.__recarray__)
-        x = zeros(N_hits)
-        y = zeros(N_hits)
-        z = zeros(N_hits)
-        q = zeros(N_hits)
-        E = zeros(N_hits)
-        #E_eff = zeros(N_hits)
-        id_code = zeros(N_hits)
-        sigma = zeros(N_hits)
+        xSim = zeros(N_hits)
+        ySim = zeros(N_hits)
+        zSim = zeros(N_hits)
+        qSim = zeros(N_hits)
+        ESim = zeros(N_hits)
+        idSim = zeros(N_hits)
+        sigmaSim = zeros(N_hits)
         
-        matched = zeros(N)
+        matched = zeros( len(events) )
         
         with Timer('matching'):
             for event_ind, event in enumerate(events):
@@ -471,41 +470,49 @@ class HitSummary:
                 key = ( int(event.x), int(event.y) )
                 try:
                     hit_ind = xy2hit_ind[key]
-                    event = events[event_ind]
                     matched[event_ind] = 1
+                    #print( 'matched', key, hit_ind )
+                    #print( 'Bary0', self.__recarray__[hit_ind].xBary0, self.__recarray__[hit_ind].yBary0 )
+                    #print( 'Bary1', self.__recarray__[hit_ind].xBary1, self.__recarray__[hit_ind].yBary1 )
+                    #print( 'xy', event.x, event.y )
                     if 'verbose' in args:
                         print( 'match', event.x, event.y )
-                    if id_code[hit_ind] == 0:
-                        x[hit_ind] = event.x
-                        y[hit_ind] = event.y
-                        z[hit_ind] = event.z
-                        sigma[hit_ind] = event.sigma
-                        q[hit_ind] = event.q
-                        E[hit_ind] = event.E
-                        id_code[hit_ind] = event.id_code
+                    if idSim[hit_ind] == 0:
+                        xSim[hit_ind] = float(event.x)
+                        ySim[hit_ind] = float(event.y)
+                        zSim[hit_ind] = float(event.z)
+                        sigmaSim[hit_ind] = float(event.sigma)
+                        qSim[hit_ind] = int(event.q)
+                        ESim[hit_ind] = float(event.E)
+                        idSim[hit_ind] = int(event.id_code)
                     else:
-                        id_code[hit_ind] = 2
-                        E[hit_ind] += event.E
-                        q[hit_ind] += event.q
-                        x[hit_ind] = -1
-                        y[hit_ind] = -1
-                        z[hit_ind] = -1
-                        sigma[hit_ind] = -1
+                        idSim[hit_ind] = 2
+                        ESim[hit_ind] += event.E
+                        qSim[hit_ind] += event.q
+                        xSim[hit_ind] = -1
+                        ySim[hit_ind] = -1
+                        zSim[hit_ind] = -1
+                        sigmaSim[hit_ind] = -1
                 except KeyError:
                     pass
         
-        print( 'matched', count_nonzero(id_code) )
-        print( 'multiple matched', count_nonzero(id_code==2) )
+        #print( 'x', xSim[xSim!=0] )
+        #print( 'y', ySim[ySim!=0] )
+        print( 'matched', count_nonzero(idSim) )
+        print( 'multiple matched', count_nonzero(idSim==2) )
         print( 'not matched', count_nonzero(matched==0) )
         if 'verbose' in args:
             print( 'not matched events' )
             print( events.xy[matched==0] )
             print( 'not matched hits' )
-            print( zip(self.__recarray__.xBary1[ id_code==0 ], self.__recarray__.yBary1[ id_code==0 ]) )
+            print( zip(self.__recarray__.xBary1[ idSim==0 ], self.__recarray__.yBary1[ idSim==0 ]) )
 
         fname = args.basename + '.root'
-        varnames = ['x','y','z','q','sigma','E','id_code']
-        self.add_fields( varnames, (float, float, float, int, float, float, int), [x, y, z, q, sigma, E, id_code] )
+        varnames = ['xSim','ySim','zSim','qSim','sigmaSim','ESim','idSim']
+
+        self.add_fields( varnames, (float, float, float, int, float, float, int), [xSim, ySim, zSim, qSim, sigmaSim, ESim, idSim] )
+        
+        print( 'added columns {}'.format(varnames) )
         
         if 'no_catalog' in args:
             return
@@ -515,30 +522,30 @@ class HitSummary:
         TTree *t = (TTree*) f.Get("hitSumm");
         Long64_t nentries = t->GetEntries();
         
-        Float_t c_x;
-        Float_t c_y;
-        Float_t c_z;
-        Int_t c_q;
-        Float_t c_sigma;
-        Float_t c_E;
-        Int_t c_id_code;
+        Float_t c_xSim;
+        Float_t c_ySim;
+        Float_t c_zSim;
+        Int_t c_qSim;
+        Float_t c_sigmaSim;
+        Float_t c_ESim;
+        Int_t c_idSim;
 
-        TBranch *x_branch = t->Branch("x", &c_x, "x/F");
-        TBranch *y_branch = t->Branch("y", &c_y, "y/F");
-        TBranch *z_branch = t->Branch("z", &c_z, "z/F");
-        TBranch *q_branch = t->Branch("q", &c_q, "q/I");
-        TBranch *sigma_branch = t->Branch("sigma", &c_sigma, "sigma/F");
-        TBranch *E_branch = t->Branch("E", &c_E, "E/F");
-        TBranch *id_code_branch = t->Branch("id_code", &c_id_code, "id_code/I");
+        TBranch *x_branch = t->Branch("xSim", &c_xSim, "xSim/F");
+        TBranch *y_branch = t->Branch("ySim", &c_ySim, "ySim/F");
+        TBranch *z_branch = t->Branch("zSim", &c_zSim, "zSim/F");
+        TBranch *q_branch = t->Branch("qSim", &c_qSim, "qSim/I");
+        TBranch *sigma_branch = t->Branch("sigmaSim", &c_sigmaSim, "sigmaSim/F");
+        TBranch *E_branch = t->Branch("ESim", &c_ESim, "ESim/F");
+        TBranch *id_code_branch = t->Branch("idSim", &c_idSim, "idSim/I");
 
         for( int n=0; n<nentries; ++n ){
-            c_x = x[n];
-            c_y = y[n];
-            c_z = z[n];
-            c_q = q[n];
-            c_sigma = sigma[n];
-            c_E = E[n];
-            c_id_code = id_code[n];
+            c_xSim = xSim[n];
+            c_ySim = ySim[n];
+            c_zSim = zSim[n];
+            c_qSim = qSim[n];
+            c_sigmaSim = sigmaSim[n];
+            c_ESim = ESim[n];
+            c_idSim = idSim[n];
             
             x_branch->Fill();
             y_branch->Fill();
@@ -561,8 +568,7 @@ class HitSummary:
                             compiler='gcc',
                             #verbose=1,
                             )
-        
-        print( 'added columns {}'.format(varnames) )
+
         return
         
     def compute_sizelike_each( self, entry, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
@@ -680,10 +686,10 @@ class HitSummary:
         for name in self.__recarray__.dtype.names:
             exec '{} = array(self.__recarray__.{})'.format(name, name)
 
-        ePix = [ array(e) for e in self.__recarray__.ePix ]
-        xPix = [ array(x) for x in self.__recarray__.xPix ]
-        yPix = [ array(y) for y in self.__recarray__.yPix ]
-        level = [ array(l).astype(int) for l in self.__recarray__.level ]
+        ePix = [ array(e_) for e_ in self.__recarray__.ePix ]
+        xPix = [ array(x_) for x_ in self.__recarray__.xPix ]
+        yPix = [ array(y_) for y_ in self.__recarray__.yPix ]
+        level = [ array(l_).astype(int) for l_ in self.__recarray__.level ]
         
         fname = basename+'.root'
         mode = 'recreate'
@@ -906,14 +912,16 @@ def simulate( args ):
     basename = str(args.basename)
     args.basename = '{0}/{0}'.format(args.basename)
     args.no_fits = True
+    args.csv = True
     images = []
     simulations = []
     with Timer('simulate all') as t:
         for i in range(args.number_of_images):
             args.runID = i
+            args.basename = '{0}/{0}_{1}'.format( basename, i )
             simulation = Simulation.simulate_events( args )
             HDUlist = simulation.generate_image( args )
-            #print( 'saved {}.csv'.format( args.basename ) )
+            print( 'saved {}.csv'.format( args.basename ) )
             imageHDU = HDUlist[-1]
             part = Image.Part(imageHDU)
             images.append( Image.Image([part]) )
@@ -1051,8 +1059,6 @@ def test_std_correction():
     print( stats.norm.fit_curve( y, x, A=sum(y), mu=mu, sigma=std ), dx )
     return
 
-#test_std_correction()
-
 def scatter( args ):
     with Timer('scatter'):
         file = glob.glob(args.root_file)
@@ -1062,7 +1068,7 @@ def scatter( args ):
         args.cbranches = []
         args.selections = []
         has_color = False
-        #print( args.branch_selections )
+        
         for branch_selection in args.branch_selections:
             args.xbranches.append( branch_selection[0] )
             args.ybranches.append( branch_selection[1] )
@@ -1080,7 +1086,7 @@ def scatter( args ):
                                               args.selections, 
                                               args.global_selection, 
                                               runID_range=args.runID_range, 
-                                              #extra_branches=[ 'ePix', 'xPix', 'yPix', 'xVar1', 'E0', 'E1', 'n0', 'n1' ] 
+                                              extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'yVar1', 'E0', 'E1', 'n0', 'n1' ] 
                                               )
         
         fig = plt.figure()
@@ -1092,12 +1098,79 @@ def scatter( args ):
             markers = ['.', '+', 'x', '^']
             for xbranch, ybranch, cbranches, selection, marker in zip(args.xbranches, args.ybranches, args.cbranches, args.selections, markers):
                 datum = data_selection[selection]
+                
                 if has_color:
-                    scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=datum[cbranches] ) )
+                    colors = datum[cbranches]
                 else:
-                    ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker )
+                    colors = None
+                
+                scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=.1 ) )
+                
+                bin_means, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='mean', bins=20 )
+                bin_std, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='std', bins=bin_edges )
+                x = .5*(bin_edges[1:] + bin_edges[:-1])
+                dx = bin_edges[1] - bin_edges[0]
+                ax.errorbar( x, bin_means, xerr = dx/2, yerr = bin_std, fmt='.' )
+                
+                if 'fit' in args:
+                    with Timer('computing new fields'):
+                        xmu, ymu, xsigma, ysigma, Et = zip(*[ stats.norm2d_norm.fit( dat.xPix, dat.yPix, dat.ePix, dat.xBary1, dat.yBary1, sqrt(dat.xVar1), sqrt(dat.yVar1), sum(dat.ePix), sigma_e = [1.]*len(dat.ePix), ftol=1e-6 ) for dat in datum ])
+                    
+                    x = datum[xbranch]
+                    y = datum[ybranch]
+                    
+                    if xbranch == 'xBary0' or xbranch == 'xBary1':
+                        xbranch = 'xMu'
+                        x = xmu
+
+                    if ybranch == 'xBary0' or ybranch == 'xBary1':
+                        ybranch = 'xMu'
+                        y = xmu
+
+                    if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
+                        xbranch = 'xSigma'
+                        x = xsigma
+
+                    if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
+                        ybranch = 'xSigma'
+                        y = xsigma
+                        
+                    if ybranch in ['E0','E1']:
+                        ybranch = 'Et'
+                        y = Et
+                        
+                    if xbranch in ['E0','E1']:
+                        xbranch = 'Et'
+                        x = Et
+                            
+                    if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
+                        ybranch = '(Et-ESim)/ESim'
+                        y = (Et - datum.ESim)/datum.ESim
+
+                    if ybranch in ['(E0-ESim)/sqrt(ESim)', '(E1-ESim)/sqrt(ESim)']:
+                        ybranch = '(Et-ESim)/sqrt(ESim)'
+                        y = (Et - datum.ESim)/sqrt(datum.ESim)
+                        
+                    if ybranch in ['(sqrt(xVar0)-sigmaSim)/sigmaSim', '(sqrt(xVar1)-sigmaSim)/sigmaSim']:
+                        ybranch = '(xSigma-sigmaSim)/sigmaSim'
+                        y = (xsigma - datum.sigmaSim)/datum.sigmaSim
+
+                    if ybranch in ['(sqrt(xVar0)-sigmaSim)/sqrt(sigmaSim)', '(sqrt(xVar1)-sigmaSim)/sqrt(sigmaSim)']:
+                        ybranch = '(xSigma-sigmaSim)/sqrt(sigmaSim)'
+                        y = (xsigma - datum.sigmaSim)/sqrt(datum.sigmaSim)
+                    
+                    ax.scatter( x, y, label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, alpha=.1 )
+                    
+                    bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
+                    bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
+                    x = .5*(bin_edges[1:] + bin_edges[:-1])
+                    dx = bin_edges[1] - bin_edges[0]
+                    ax.errorbar( x+.1*dx, bin_means, xerr = dx/2, yerr = bin_std, fmt='.' )
+
+                        
                 #ax.errorbar( datum[xbranch], datum[ybranch], xerr=Eerr*datum.n0, label='E0', fmt=markers[0] )
         ax.legend()
+        ax.grid()
         ax.set_xlim( *args.x_range )
         ax.set_ylim( *args.y_range )
         ax.set_xlabel( args.xbranches[0] )
@@ -1138,7 +1211,7 @@ def add_scatter_options(p):
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-    
+    p.add_argument('--fit', action='store_true', default=argparse.SUPPRESS, help = 'include fit column' )
     p.set_defaults(_func=scatter)
 
 def energy_threshold( datum, threshold ):
@@ -1223,7 +1296,7 @@ def add_histogram_options(p):
     p.add_argument('--branch-selections', action='append', nargs=2, type=str, default=argparse.SUPPRESS, help = 'selections' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
-    p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
+    #p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
     p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
     p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )

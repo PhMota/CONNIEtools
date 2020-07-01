@@ -1,8 +1,9 @@
 # coding: utf-8
 
+from __future__ import print_function
 from numpy import *
 import scipy.stats
-import scipy.special as special
+from scipy.special import erf
 from Timer import Timer
 
 def stdCovMed( x, y ):
@@ -103,11 +104,11 @@ norm = scipy.stats.norm
 def _norm_fit_( X, mu=0, sigma=1., fix_mu=False, fix_sigma=False, weights=1 ):
     if fix_mu:
         pdf = lambda X, sigma: norm.pdf(X, mu, sigma)
-        p0 = (sigma)
+        p0 = (sigma,)
         bounds = ( (0, None) )
     elif fix_sigma:
         pdf = lambda X, mu: norm.pdf(X, mu, sigma)
-        p0 = (mu)
+        p0 = (mu,)
         bounds = ( (None, None) )
     else:
         pdf = lambda X, mu, sigma: norm.pdf(X, mu, sigma)
@@ -211,34 +212,101 @@ class norm2d_binom_norm:
         pass
 
 def integral_norm_pixel( x, mu, sigma ):
-    return -.5*( erf( -( x+1 - mu)/( sqrt(2)*sigma )) - erf( -( x - mu )/( sqrt(2)*sigma ) ) )
+    f = 1./( sqrt(2)*sigma )
+    #return -.5*( erf( -f*( x+1 - mu) ) - erf( -f*( x - mu ) ) )
+    return .5*( erf( f*( x+1 - mu) ) - erf( f*( x - mu ) ) )
 
+def integral_x_norm_pixel( x, mu, sigma ):
+    f = 1./( sqrt(2)*sigma )
+    a = .5*mu * erf( f*(x - mu) ) - sigma/sqrt(2*pi) * exp( -f**2*(x - mu)**2 )
+    b = .5*mu * erf( f*(x+1 - mu) ) - sigma/sqrt(2*pi) * exp( -f**2*(x+1 - mu)**2 )
+    return b - a
+
+def integral_xSqr_norm_pixel( x, mu, sigma ):
+    f = 1./( sqrt(2)*sigma )
+    a = .5*(mu**2+sigma**2) * erf( f*(x - mu) ) - sigma*(mu+sigma)/sqrt(2*pi) * exp( -f**2*(x - mu)**2 )
+    b = .5*(mu**2+sigma**2) * erf( f*(x+1 - mu) ) - sigma*(mu+sigma)/sqrt(2*pi) * exp( -f**2*(x+1 - mu)**2 )
+    return b - a
+
+    
 class norm2d_norm:
     mu_bounds = (None,None)
-    sigma_bound = (.1, None)
+    sigma_bounds = ( 0., None)
     @classmethod
-    def pdf( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma ):
-        x_p = norm.pdf( x, x_mu, x_sigma )
-        y_p = norm.pdf( y, y_mu, y_sigma )
-        P = sum( integral_norm_pixel( x, x_mu, x_sigma )*integral_norm_pixel( y, y_mu, y_sigma ) )
+    def pdf( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma, E ):
+        x_p = integral_norm_pixel( x, x_mu, x_sigma )
+        y_p = integral_norm_pixel( y, y_mu, y_sigma )
+        P = sum( x_p*y_p )
         E = sum( e )
-        e_p = norm.pdf( e, x_p*y_p*E/P, e_sigma )
+        if e_sigma == 0:
+            return x_p*y_p*e
+        e_p = E*x_p*y_p * norm.pdf( e/E, x_p*y_p, e_sigma/E )
         return e_p
-    
+
     @classmethod
-    def fit( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma, fix_e_sigma=False ):
-        func = lambda x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma: cls.pdf( x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma )
-        bounds = ( mu_bounds, mu_bounds, sigma_bounds, sigma_bounds, sigma_bounds )
-        p0 = ( x_mu, y_mu, x_sigma, y_sigma, e_sigma )
-        if fix_e_sigma:
-            func = lambda x, y, e, x_mu, y_mu, x_sigma, y_sigma: cls.pdf( x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma )
-            bounds = ( mu_bounds, mu_bounds, sigma_bounds, sigma_bounds )
-            p0 = ( x_mu, y_mu, x_sigma, y_sigma )
+    def E( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma ):
+        x_p = integral_norm_pixel( x, x_mu, x_sigma )
+        y_p = integral_norm_pixel( y, y_mu, y_sigma )
+        return sum( e )/sum( x_p*y_p )
         
-        f = lambda params: -sum( weights*log( pdf( x, y, e, *params )) )
-        ret = scipy.optimize.minimize( f, p0, bounds=bounds )
-        print( ret )
+    @classmethod
+    def mle( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma, E, fix_e_sigma=False, fix_mu=False, fix_sigma=False, fix_E=False ):
+
+        if fix_e_sigma:
+            func = lambda p: \
+                -sum( log( cls.pdf( x, y, e, p[0], p[1], p[2], p[3], p[4], e_sigma ) ) )
+            bounds = ( (x_mu-1, x_mu+1), (y_mu-1, y_mu+1), (x_sigma-.2, x_sigma+.2), (y_sigma-.2, y_sigma+.2), (E, None) )
+            p0 = ( x_mu, y_mu, x_sigma, y_sigma, E )
+
+        if fix_e_sigma and fix_mu:
+            func = lambda p: \
+                -sum( log( cls.pdf( x, y, e, x_mu, y_mu, p[0], p[1], p[2], e_sigma ) ) )
+            bounds = ( cls.sigma_bounds, cls.sigma_bounds, (E, None) )
+            p0 = ( x_sigma, y_sigma, E )
+
+        if fix_e_sigma and fix_sigma and fix_E:
+            func = lambda p: \
+                -sum( log( cls.pdf( x, y, e, p[0], p[1], x_sigma, y_sigma, E, e_sigma ) ) )
+            bounds = ( (x_mu-1, x_mu+1), (y_mu-1, y_mu+1) )
+            p0 = ( x_mu, y_mu )
+
+        if fix_e_sigma and fix_mu and fix_E:
+            func = lambda p: \
+                -sum( log( cls.pdf( x, y, e, x_mu, y_mu, p[0], p[1], E, e_sigma ) ) )
+            bounds = ( cls.sigma_bounds, cls.sigma_bounds )
+            p0 = ( x_sigma, y_sigma )
+        
+        #print( 'bounds', bounds )
+        #print( 'p0', p0 )
+        #f = lambda *params: -sum( log( func( x, y, e, *params )) )
+        ret = scipy.optimize.minimize( func, p0, bounds=bounds )
+        #print( ret['fun'] )
         return ret['x']
+
+    @classmethod
+    def fit( cls, x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, ftol=1e-8 ):
+        def func( _x_, _xmu_, _ymu_, _xsigma_, _ysigma_, _E_ ):
+            _pxysigma_ = sum( integral_xSqr_norm_pixel( _x_[0] - _xmu_, 0, _xsigma_ )*integral_xSqr_norm_pixel( _x_[1] - _ymu_, 0, _ysigma_ ) )
+            A = _xsigma_**2 * _ysigma_**2
+            _pxsigma_ = _pxysigma_/_ysigma_**2
+            _pysigma_ = _pxysigma_/_xsigma_**2
+            #print( 'xsigma', _xsigma_**2, _pxsigma_, _xsigma_ - sqrt(_pxsigma_) )
+            #print( 'ysigma', _ysigma_**2, _pysigma_, _ysigma_ - sqrt(_pysigma_) )
+            _deltaxsigma_ = 0 #_xsigma_ - sqrt(_pxsigma_)
+            _deltaysigma_ = 0 #_ysigma_ - sqrt(_pysigma_)
+            #a = _xsigma_*( 1 - _xsigma_
+            p = integral_norm_pixel( _x_[0], _xmu_, _xsigma_+_deltaxsigma_ )*integral_norm_pixel( _x_[1], _ymu_, _ysigma_+_deltaysigma_ )
+            return _E_*( 1 - (1-sum(p)) ) *p
+        
+        mins = (xmu-2, ymu-2, 0.01, 0.01, E )
+        maxs = (xmu+2, ymu+2, xsigma+.5, ysigma+.5, inf )
+        try:
+            p, pcov = scipy.optimize.curve_fit( func, [x, y], e, bounds=( mins, maxs ), sigma=sigma_e, ftol=ftol )
+            #print( 'p', p )
+        except RuntimeError:
+            p = [xmu, ymu, xsigma, ysigma, E]
+            #print( 'optimal parameters not found' )
+        return p
 
 def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False ):
     integral_norm_pixel_x = -.5*( erf( -( xPix+1 - mu[0])/( sqrt2*sigma[0] )) - erf( -( xPix - mu[0] )/( sqrt2*sigma[0] ) ) )
@@ -381,12 +449,12 @@ class binom_norm2d:
 def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
     if not normed:
         pdf_max = -scipy.optimize.fmin( lambda x: -pdf(x), 0, full_output=True )[1]
-        if verbose: print 'pdf_max', pdf_max
+        if verbose: print( 'pdf_max', pdf_max )
         normedpdf = lambda x: pdf(x)/pdf_max
     else:
         normedpdf = pdf
     results = []
-    if verbose: print '(random',
+    if verbose: print( '(random', end=' ' )
     while 1:
         x = (b - a) * random.random_sample( N ) + a
         tests = random.random_sample( N )
@@ -394,8 +462,8 @@ def monteCarlo_rvs( pdf, a, b, N, normed=False, verbose=False ):
         mask = tests < y
         results = concatenate( (results, x[mask]) )
         if len(results) >= N: break
-        if verbose: print '%.2f'%( float(len(results))/N ),
-    if verbose: print ')'
+        if verbose: print( '%.2f'%( float(len(results))/N ), end=' ' )
+    if verbose: print( ')' )
     return results[:N]
 
 def negloglikelihood( pdf, params, X, weights ):
@@ -426,7 +494,7 @@ def sign(x):
     return -1 if x<0 else ( 1 if x>0 else 0 )
 
 def pprint( msg, f ):
-    print msg
+    print( msg )
     return f
 
     def __pow__( self, a ):
@@ -557,7 +625,7 @@ class ufloat:
 
     @classmethod
     def add_conversion(cls, unit1, unit2, value ):
-        print 'add', unit1, unit2, value
+        print( 'add', unit1, unit2, value )
         
         new_units = list( cls.__units__ )
         N = len(cls.__units__)
@@ -595,9 +663,9 @@ class ufloat:
     
     @classmethod
     def show_conversion_matrix(cls):
-        print ' '*5 + ' '.join([ '%5s'%u for u in cls.__units__ ])
+        print( ' '*5 + ' '.join([ '%5s'%u for u in cls.__units__ ]) )
         for i1, u1 in enumerate(cls.__units__):
-            print '%4s '%u1 + ' '.join([ '%.3f' % cls.__conversion_matrix__[i1][i2] for i2,u2 in enumerate(cls.__units__ )])
+            print( '%4s '%u1 + ' '.join([ '%.3f' % cls.__conversion_matrix__[i1][i2] for i2,u2 in enumerate(cls.__units__ )]) )
         return
     
     def asunit( self, unit ):
@@ -846,14 +914,14 @@ class uarray:
         return ufloat( std(self.val), errSqr = mean((self.val-mean(self.val))**4)/len(self.val)/var(self.val), unit = self.unit )
     
     def summary(self):
-        print 'uarray', self
-        print 'mean', self.mean(), self.mean_stats(), self.mean_list()
-        print 'std', self.std(), self.std_stats(), self.std_list(), self.std_list2()
+        print( 'uarray', self )
+        print( 'mean', self.mean(), self.mean_stats(), self.mean_list() )
+        print( 'std', self.std(), self.std_stats(), self.std_list(), self.std_list2() )
         
     def append(self, entry):
         self.val = self.val.tolist()
         self.errSqr = self.errSqr.tolist()
-        print 'append', entry
+        print( 'append', entry )
         if isinstance( entry, ufloat ):
             self.val.append( entry.val )
             self.errSqr.append( entry.errSqr )
@@ -885,74 +953,74 @@ if __name__=='__main__':
     a = ufloat(5.123456, err = .055, unit='keV')
     a1 = ufloat(5.123456, err = 50, unit='eV')
     b = ufloat(2, unit = 'eV')
-    print 'a', a
-    print 'b', b
-    print 'abs(a)', abs(a)
-    print 'a+b', a+b
-    print 'a*2', a*2
-    print 'a/1000', a/1e3
-    print 'a+a', a+2*a
-    print 'a*a', a*a
-    print 'a**2', a**2
-    print 'a/(2a)', a/(2*a)
-    print 'a/b', a/b
-    print 'sqrt(a*a)', sqrt( a*a )
-    print 'sqrt(a**2)', sqrt( a**2 )
-    #print 'sqrt(a)', sqrt(a)
-    print 'a-a', a-a
+    print( 'a', a )
+    print( 'b', b )
+    print( 'abs(a)', abs(a) )
+    print( 'a+b', a+b )
+    print( 'a*2', a*2 )
+    print( 'a/1000', a/1e3 )
+    print( 'a+a', a+2*a )
+    print( 'a*a', a*a )
+    print( 'a**2', a**2 )
+    print( 'a/(2a)', a/(2*a) )
+    print( 'a/b', a/b )
+    print( 'sqrt(a*a)', sqrt( a*a ) )
+    print( 'sqrt(a**2)', sqrt( a**2 ) )
+    #print( 'sqrt(a)', sqrt(a) )
+    print( 'a-a', a-a )
     b = ufloat(10, err=.02, unit='ADU')
-    print 'b', b
-    print '1/b', 1./b
-    print 'b^{-1}', b**(-1)
-    print 'a*b', a*b
-    #print 2**a
-    print 'a/2',a/2
-    print '1/a',1/a
-    print 'a**2', a**2, (a**2).asunit('ADU')
-    print '1ADU', ufloat(1,unit='ADU').asunit('eV')
-    print '1ADU', ufloat(1,unit='ADU').asunit('e-').asunit('eV')
+    print( 'b', b )
+    print( '1/b', 1./b )
+    print( 'b^{-1}', b**(-1) )
+    print( 'a*b', a*b )
+    #print( 2**a )
+    print( 'a/2',a/2 )
+    print( '1/a',1/a )
+    print( 'a**2', a**2, (a**2).asunit('ADU') )
+    print( '1ADU', ufloat(1,unit='ADU').asunit('eV') )
+    print( '1ADU', ufloat(1,unit='ADU').asunit('e-').asunit('eV') )
     #print 'cos', cos( ufloat(1,err=.1) )
-    print ufloat(5,.01)
+    print( ufloat(5,.01) )
     c = uarray( [1, 2, 3, 4, 5.5, 5], unit='keV')
-    print 'c', c
-    print 'mean', c.mean()
-    print 'std', c.std()
+    print( 'c', c )
+    print( 'mean', c.mean() )
+    print( 'std', c.std() )
     c.append( ufloat(4,err=.1,unit='keV') )
     c.append( ufloat(3.5,err=.1,unit='keV') )
     c.append( ufloat(3.25,err=.1,unit='keV') )
-    print 'c', c
-    print 'mean', c.mean()
-    print 'std', c.std()
-    print '2*c', 2*c
-    print 'c**2', c**2
+    print( 'c', c )
+    print( 'mean', c.mean() )
+    print( 'std', c.std() )
+    print( '2*c', 2*c )
+    print( 'c**2', c**2 )
     exit(0)
     
     
     a = uncertanty(2.5,errRel=.2)
-    print 'a', a
-    print 'a+a', a+a
-    print '2*a', 2*a
-    print '-a',-a
-    print '9.4*a', 9.5*a
-    print 10*a
-    print 100*a
-    print a**2
-    print 2**a
-    print a**.5
-    print sqrt(a)
-    print 'a/2', a/2
-    print '1/a', 1/a
-    print a/1000
+    print( 'a', a )
+    print( 'a+a', a+a )
+    print( '2*a', 2*a )
+    print( '-a',-a )
+    print( '9.4*a', 9.5*a )
+    print( 10*a )
+    print( 100*a )
+    print( a**2 )
+    print( 2**a )
+    print( a**.5 )
+    print( sqrt(a) )
+    print( 'a/2', a/2 )
+    print( '1/a', 1/a )
+    print( a/1000 )
     
     exit(0)
     X = norm.rvs(loc=2.,scale=4.,size=int(1e5))
     poisson_norm.verbose = True
     Y = poisson_norm.rvs(loc=3,scale=2.,g=1904, mu=.4, size=1000)
-    print 'pn.rvs', len(X)
-    print 'norm.fit', norm.fit(X)
-    print 'MLE', maxloglikelihood( lambda x, loc, scale: norm2(x, loc, scale), X, p0=(0.,1.), jac=None, bounds=((None,None),(0,None)) )['x']
-    print 'pn.fit2', poisson_norm.fit2(X)
+    print( 'pn.rvs', len(X) )
+    print( 'norm.fit', norm.fit(X) )
+    print( 'MLE', maxloglikelihood( lambda x, loc, scale: norm2(x, loc, scale), X, p0=(0.,1.), jac=None, bounds=((None,None),(0,None)) )['x'] )
+    print( 'pn.fit2', poisson_norm.fit2(X) )
     #print 'pn.fit', poisson_norm.fit(X)
     
-    print 'pn.fit', poisson_norm.fit2(Y)
+    print( 'pn.fit', poisson_norm.fit2(Y) )
     exit(0)
