@@ -1107,68 +1107,75 @@ def scatter( args ):
                 scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=.1 ) )
                 
                 bin_means, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='mean', bins=20 )
-                bin_std, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='std', bins=bin_edges )
                 x = .5*(bin_edges[1:] + bin_edges[:-1])
                 dx = bin_edges[1] - bin_edges[0]
-                ax.errorbar( x, bin_means, xerr = dx/2, yerr = bin_std, fmt='.' )
+                yerr = [0]*len(bin_means)
+                if 'errorbar' in args:
+                    bin_std, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='std', bins=bin_edges )
+                    yerr = bin_std    
+                ax.errorbar( x, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
                 
                 if 'fit' in args:
-                    with Timer('computing new fields'):
-                        xmu, ymu, xsigma, ysigma, Et = zip(*[ stats.norm2d_norm.fit( dat.xPix, dat.yPix, dat.ePix, dat.xBary1, dat.yBary1, sqrt(dat.xVar1), sqrt(dat.yVar1), sum(dat.ePix), sigma_e = [1.]*len(dat.ePix), ftol=1e-6 ) for dat in datum ])
-                    
-                    x = datum[xbranch]
-                    y = datum[ybranch]
-                    
-                    if xbranch == 'xBary0' or xbranch == 'xBary1':
-                        xbranch = 'xMu'
-                        x = xmu
-
-                    if ybranch == 'xBary0' or ybranch == 'xBary1':
-                        ybranch = 'xMu'
-                        y = xmu
-
-                    if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
-                        xbranch = 'xSigma'
-                        x = xsigma
-
-                    if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
-                        ybranch = 'xSigma'
-                        y = xsigma
+                    for mode in args.fit:
+                        with Timer('computing new fields'):
+                            xmu, ymu, xsigma, ysigma, Et = zip(*[ stats.norm2d_norm.fit( dat.xPix, dat.yPix, dat.ePix, dat.xBary1, dat.yBary1, sqrt(dat.xVar1), sqrt(dat.yVar1), sum(dat.ePix), sigma_e = [1.]*len(dat.ePix), ftol=1e-6, mode=mode ) for dat in datum ])
                         
-                    if ybranch in ['E0','E1']:
-                        ybranch = 'Et'
-                        y = Et
+                        x = datum[xbranch]
+                        y = datum[ybranch]
                         
-                    if xbranch in ['E0','E1']:
-                        xbranch = 'Et'
-                        x = Et
+                        new_xbranch = xbranch
+                        new_ybranch = ybranch
+                        if xbranch == 'xBary0' or xbranch == 'xBary1':
+                            new_xbranch = 'xMu'
+                            x = xmu
+
+                        if ybranch == 'xBary0' or ybranch == 'xBary1':
+                            new_ybranch = 'xMu'
+                            y = xmu
+
+                        if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
+                            new_xbranch = 'xSigma'
+                            x = xsigma
+
+                        if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
+                            new_ybranch = 'xSigma'
+                            y = xsigma
                             
-                    if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
-                        ybranch = '(Et-ESim)/ESim'
-                        y = (Et - datum.ESim)/datum.ESim
+                        if ybranch in ['E0','E1']:
+                            new_ybranch = 'Et'
+                            y = Et
+                            
+                        if xbranch in ['E0','E1']:
+                            new_xbranch = 'Et'
+                            x = Et
+                                
+                        if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
+                            new_ybranch = '(Et-ESim)/ESim'
+                            y = (Et - datum.ESim)/datum.ESim
 
-                    if ybranch in ['(E0-ESim)/sqrt(ESim)', '(E1-ESim)/sqrt(ESim)']:
-                        ybranch = '(Et-ESim)/sqrt(ESim)'
-                        y = (Et - datum.ESim)/sqrt(datum.ESim)
+                        if ybranch in ['(E0-ESim)/sqrt(ESim)', '(E1-ESim)/sqrt(ESim)']:
+                            new_ybranch = '(Et-ESim)/sqrt(ESim)'
+                            y = (Et - datum.ESim)/sqrt(datum.ESim)
+                            
+                        if ybranch in ['(sqrt(xVar0)-sigmaSim)/sigmaSim', '(sqrt(xVar1)-sigmaSim)/sigmaSim']:
+                            new_ybranch = '(xSigma-sigmaSim)/sigmaSim'
+                            y = (xsigma - datum.sigmaSim)/datum.sigmaSim
+
+                        if ybranch in ['(sqrt(xVar0)-sigmaSim)/sqrt(sigmaSim)', '(sqrt(xVar1)-sigmaSim)/sqrt(sigmaSim)']:
+                            new_ybranch = '(xSigma-sigmaSim)/sqrt(sigmaSim)'
+                            y = (xsigma - datum.sigmaSim)/sqrt(datum.sigmaSim)
                         
-                    if ybranch in ['(sqrt(xVar0)-sigmaSim)/sigmaSim', '(sqrt(xVar1)-sigmaSim)/sigmaSim']:
-                        ybranch = '(xSigma-sigmaSim)/sigmaSim'
-                        y = (xsigma - datum.sigmaSim)/datum.sigmaSim
-
-                    if ybranch in ['(sqrt(xVar0)-sigmaSim)/sqrt(sigmaSim)', '(sqrt(xVar1)-sigmaSim)/sqrt(sigmaSim)']:
-                        ybranch = '(xSigma-sigmaSim)/sqrt(sigmaSim)'
-                        y = (xsigma - datum.sigmaSim)/sqrt(datum.sigmaSim)
-                    
-                    ax.scatter( x, y, label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, alpha=.1 )
-                    
-                    bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
-                    bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
-                    x = .5*(bin_edges[1:] + bin_edges[:-1])
-                    dx = bin_edges[1] - bin_edges[0]
-                    ax.errorbar( x+.1*dx, bin_means, xerr = dx/2, yerr = bin_std, fmt='.' )
-
+                        ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
                         
-                #ax.errorbar( datum[xbranch], datum[ybranch], xerr=Eerr*datum.n0, label='E0', fmt=markers[0] )
+                        bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
+                        x = .5*(bin_edges[1:] + bin_edges[:-1])
+                        dx = bin_edges[1] - bin_edges[0]
+                        yerr = [0]*len(bin_means)
+                        if 'errorbar' in args:
+                            bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
+                            yerr = bin_std
+                        ax.errorbar( x+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
+                        
         ax.legend()
         ax.grid()
         ax.set_xlim( *args.x_range )
@@ -1211,7 +1218,8 @@ def add_scatter_options(p):
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-    p.add_argument('--fit', action='store_true', default=argparse.SUPPRESS, help = 'include fit column' )
+    p.add_argument('--fit', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
+    p.add_argument('--errorbar', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
     p.set_defaults(_func=scatter)
 
 def energy_threshold( datum, threshold ):

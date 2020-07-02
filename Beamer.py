@@ -3,17 +3,17 @@ import os
 
 preamble = r'''
 \documentclass{beamer}
-%
-% Choose how your presentation looks.
-%
-% For more themes, color themes and font themes, see:
-% http://deic.uab.es/~iblanes/beamer_gallery/index_by_theme.html
-%
+%%
+%% Choose how your presentation looks.
+%%
+%% For more themes, color themes and font themes, see:
+%% http://deic.uab.es/~iblanes/beamer_gallery/index_by_theme.html
+%%
 \mode<presentation>
 {
-  \usetheme{default}      % or try Darmstadt, Madrid, Warsaw, ...
-  \usecolortheme{default} % or try albatross, beaver, crane, ...
-  \usefonttheme{default}  % or try serif, structurebold, ...
+  \usetheme{default}      %% or try Darmstadt, Madrid, Warsaw, ...
+  \usecolortheme{default} %% or try albatross, beaver, crane, ...
+  \usefonttheme{default}  %% or try serif, structurebold, ...
   \setbeamertemplate{navigation symbols}{}
   \setbeamertemplate{caption}[numbered]
   \setbeamertemplate{footline}[frame number]
@@ -39,21 +39,21 @@ basicstyle=\sffamily\tiny,
 keywordstyle=\bf\color{blue},
 showtabs=true,
 tabsize=2,
-% digitstyle=\color{red},
-% otherstyle=\color{red},
+%% digitstyle=\color{red},
+%% otherstyle=\color{red},
 numberstyle=\color{red},
 columns=fullflexible,
-% commentstyle=\sf\tiny\color{gray},
-% stringstyle=\color{red},
+%% commentstyle=\sf\tiny\color{gray},
+%% stringstyle=\color{red},
 showstringspaces=false,
 morekeywords={as},
-% emph={(,)},
-% emphstyle=\color{blue},
+%% emph={(,)},
+%% emphstyle=\color{blue},
 numbers=left
-% identifierstyle=\color{blue}
+%% identifierstyle=\color{blue}
 }
 \lstset{literate={-}{-}1}
-\title[Size Like]{simulation tools}
+\title[%s]{%s}
 \author{Philipe Mota}
 \institute{CBPF}
 \date{\today}
@@ -71,9 +71,9 @@ class Beamer:
     def writelines( self, s, mode = 'a' ):
         open( '%s.tex' % (self.fname+'/'+self.fname), mode ).writelines( s )
     
-    def __init__(self, fname='calculations'):
+    def __init__(self, fname='calculations', title='simulation tools'):
         self.fname = fname
-        self.writelines( preamble, mode = 'w' )
+        self.writelines( preamble %( title, title ), mode = 'w' )
     
     def __enter__(self):
         return self
@@ -87,6 +87,7 @@ class Beamer:
 
     equation_evironment = 'equation'
     def pdflatex( self ):
+        print( 'pdflatex %s.tex' % (self.fname+'/'+self.fname) )
         subprocess.check_output(['pdflatex', '%s.tex' % (self.fname+'/'+self.fname)])
 
     def section( self, text ):
@@ -211,4 +212,4 @@ class Beamer:
             s += r'}'+B
         return s
 
-def openBeamer( fname ): return Beamer( fname )
+def openBeamer( fname, title ): return Beamer( fname, title )

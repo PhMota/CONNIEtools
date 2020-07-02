@@ -22,6 +22,7 @@ import re
 
 import matplotlib
 matplotlib.use('gtk3agg')
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import Statistics as stats
 from Timer import Timer
@@ -1144,39 +1145,6 @@ def mle_poisson_norm( x, axis=None, mu=0, sigma=1, gain=1, fix_mu=False, fix_sig
         gain, lamb = fit
     return gain, lamb
 
-def add_display_options( p ):
-    p.add_argument('input_file', help = 'fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
-    p.add_argument( '--ohdu', type=int, default = 2, help = 'ohdu to be displayed' )
-    p.add_argument( '--E-span', type=int, default = 10, help = 'E' )
-    p.add_argument( '--plot', type=str, default = 'image', help = 'plot type' )
-    
-    geom = p.add_argument_group('geometry options')
-    geom.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
-    geom.add_argument( '--y-range', nargs=2, type=eval, default = [None, None], help = 'ymin ymax' )
-    geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
-    geom.add_argument( '--section', type=str, default = argparse.SUPPRESS, help = 'data or bias' )
-    geom.add_argument( '--trim', action='store_true', default = argparse.SUPPRESS, help = 'remove trim' )
-    geom.add_argument( '--half', action='store_true', default = argparse.SUPPRESS, help = 'remove half' )
-
-    corr = p.add_argument_group('correction options')
-    corr.add_argument( '--remove', type=float, default = argparse.SUPPRESS, help = 'remove energies above' )
-    corr.add_argument( '--global-bias', action='store_true', default = argparse.SUPPRESS, help = 'remove global bias' )
-    corr.add_argument( '--correct-side', action='store_true', default = argparse.SUPPRESS, help = 'subtract right side' )
-        
-    proj = p.add_argument_group('projection options')
-    proj.add_argument( '--axis', type=int, default = 0, help = 'project on axis' )
-    proj.add_argument( '--dev', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
-    proj.add_argument( '--no-max', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
-    proj.add_argument( '--no-min', action='store_true', default = argparse.SUPPRESS, help = 'supress the min line at the projection plot' )
-    proj.add_argument( '--no-mean', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
-    proj.add_argument( '--no-center', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
-    proj.add_argument( '--no-median', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
-    proj.add_argument( '--smooth', type=int, default = argparse.SUPPRESS, help = 'smoothening length' )
-    
-    spec = p.add_argument_group('spectrum options')
-    spec.add_argument( '--binsize', type=float, default=1, help = 'binsize' )
-    
-    p.set_defaults( func=display )
 
 def group_filenames( input_files, verbose=0 ):
     paths = sorted(glob( input_files ))
@@ -1224,19 +1192,62 @@ def apply_to_files( args ):
                 if 'verbose' in args:
                     print( 'applied function to ohdu', image.ohdu )
     return returnDict
+
+def add_display_options( p ):
+    p.add_argument('input_file', help = 'fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
+    p.add_argument( '--ohdu', type=int, default = 2, help = 'ohdu to be displayed' )
+    p.add_argument( '--E-span', type=int, default = 10, help = 'E' )
+    p.add_argument( '--plot', nargs='+', type=str, default = 'image', help = 'plot type' )
     
+    geom = p.add_argument_group('geometry options')
+    geom.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
+    geom.add_argument( '--y-range', nargs=2, type=eval, default = [None, None], help = 'ymin ymax' )
+    geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
+    geom.add_argument( '--section', type=str, default = argparse.SUPPRESS, help = 'data or bias' )
+    geom.add_argument( '--trim', action='store_true', default = argparse.SUPPRESS, help = 'remove trim' )
+    geom.add_argument( '--half', action='store_true', default = argparse.SUPPRESS, help = 'show half' )
+    geom.add_argument( '--quarter', action='store_true', default = argparse.SUPPRESS, help = 'show quarter' )
+    geom.add_argument( '--vmax', type=float, default = argparse.SUPPRESS, help = 'vmax' )
+
+    corr = p.add_argument_group('correction options')
+    corr.add_argument( '--remove', type=float, default=argparse.SUPPRESS, help = 'remove energies above' )
+    corr.add_argument( '--global-bias', action='store_true', default=argparse.SUPPRESS, help = 'remove global bias' )
+    corr.add_argument( '--correct-side', action='store_true', default=argparse.SUPPRESS, help = 'subtract right side' )
+    corr.add_argument( '--smooth-lines', type=int, default=argparse.SUPPRESS, help = 'smooth lines' )
+    corr.add_argument( '--sub-half', action='store_true', default=argparse.SUPPRESS, help = 'smooth lines' )
+        
+    proj = p.add_argument_group('projection options')
+    proj.add_argument( '--axis', type=int, default = 0, help = 'project on axis' )
+    proj.add_argument( '--dev', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
+    proj.add_argument( '--no-max', action='store_true', default = argparse.SUPPRESS, help = 'supress the max line at the projection plot' )
+    proj.add_argument( '--no-min', action='store_true', default = argparse.SUPPRESS, help = 'supress the min line at the projection plot' )
+    proj.add_argument( '--no-mean', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
+    proj.add_argument( '--no-center', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
+    proj.add_argument( '--no-median', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
+    proj.add_argument( '--smooth', type=int, default = argparse.SUPPRESS, help = 'smoothening length' )
+    
+    spec = p.add_argument_group('spectrum options')
+    spec.add_argument( '--binsize', type=float, default=1, help = 'binsize' )
+    
+    p.set_defaults( func=display )
+
 def display( args ):
     with Timer('plot'):
         path = glob( args.input_file )
         if len(path) > 1:
             print( 'found {}'.format(path) )
-            print( 'using the first' )
+            print( 'using the first path' )
         path = path[0]
+        print( colored('path', 'green'), path )
+        title = path.split('/')[-1]
         listHDU = astropy.io.fits.open( path )
         imageHDU = None
         for i, HDU in enumerate(listHDU):
-            if 'OHUD' in HDU.header:
-                if HDU.header['OHDU'] == args.ohdu: imageHDU = HDU
+            if 'OHDU' in HDU.header:
+                if HDU.header['OHDU'] == args.ohdu: 
+                    imageHDU = HDU
+                    print( colored('ohdu', 'green'), args.ohdu )
+                    break
             else:
                 if i+1 == args.ohdu: imageHDU = HDU
         if imageHDU is None:
@@ -1246,57 +1257,78 @@ def display( args ):
         data = imageHDU.data.astype(float)
         
         height, width = data.shape
+        print( colored('height', 'green'), height )
+        print( colored('width', 'green'), width )
         number_of_amplifiers = width // constants.ccd_width
-        side_width = width/number_of_amplifiers
+        print( colored('amplifiers', 'green'), number_of_amplifiers )
+        side_width = width//number_of_amplifiers
+        print( colored('side width', 'green'), side_width )
+        
         bias_width = int( np.ceil( (side_width - constants.ccd_width)/150. ) )*150
-        print( 'bias_width', bias_width )
+        print( colored('bias width', 'green'), bias_width )
         trim = constants.ccd_width + bias_width - side_width
         print( 'trim', trim )
         #bias_width = ( side_width + trim ) % constants.ccd_width
 
-        height_trim = 1
+        height_trim = 1 #1
         
         #data.left = data[None:-height_trim, None:side_width]
         #data.right = data[None:-height_trim, side_width:None][:,::-1]
-                    
+
         if 'side' in args:
             if args.side == 'left' or args.side == '0':
+                print( colored('side', 'green'), 'left' )
                 if 'correct_side' in args:
+                    print( colored('subtract', 'green'), 'right' )
                     data = data[None:-height_trim, None:side_width] - data[None:-height_trim, side_width:None][:,::-1]
                 else:
                     data = data[None:-height_trim, None:side_width]
-                if 'half' in args:
-                    data = data[None:None, constants.ccd_width/2:None]
             elif args.side == 'right' or args.side == '1':
+                print( colored('side', 'green'), 'right' )
                 data = data[None:-height_trim, side_width:None][:,::-1]
-                if 'half' in args:
-                    data = data[None:None, constants.ccd_width/2:None]
+                if 'sub_half' in args:
+                    print( colored('subtract line means', 'green'), 'true' )
+                    correction = np.mean( data[None:None, constants.ccd_width/2:None], axis=1 )
+                    if len(args.sub_half) > 0:
+                        l = int(args.sub_half[0])
+                        #correction = 
+                    data = data - correction[:,None]
+            else:
+                print( colored('side', 'green'), 'all' )
 
+        if 'side' in args or number_of_amplifiers == 1:
+            if 'half' in args:
+                print( colored('half', 'green'), 'true' )
+                data = data[None:None, -constants.ccd_width/2:None]
+            elif 'quarter' in args:
+                print( colored('quarter', 'green'), 'true' )
+                data = data[None:None, -constants.ccd_width/4:None]
+
+        if 'smooth_lines' in args:
+            print( colored('smooth lines', 'green'), args.smooth_lines )
+            data = scipy.ndimage.filters.uniform_filter1d( data, axis=1, size=args.smooth_lines, mode='mirror' )
+            
         if 'trim' in args:
-            data = data[None:None, 10:]
+            print( colored('trim', 'green'), '8' )
+            data = data[None:None, 8:]
 
-        if 'global_bias':
+        if 'global_bias' in args:
+            print( colored('subtract', 'green'), 'mean(OS)' )
             data = data - np.nanmean( data[None:None, -bias_width:None] )
         
         if 'section' in args:
             if args.section == 'bias' or args.section == 'os':
+                print( colored('section', 'green'), 'overscan' )
                 data = data[None:None, -bias_width+5:None]
             if args.section == 'data' or args.section == 'ac':
+                print( colored('section', 'green'), 'active' )
                 data = data[None:None, None:-bias_width+5]
                 if 'half' in args:
+                    print( colored('half', 'green'), 'true' )
                     data = data[None:None, data.shape[1]/2:None]
         
-        #if 'x_range' in args:
-            #data = data[ :, args.x_range[0]: args.x_range[1] ]
-
-        #if 'y_range' in args:
-            #data = data[ args.y_range[0]: args.y_range[1], : ]
-
-        #if 'remove_vertical_modulation' in args:
-            #if args.remove_vertical_modulation == 'mean':
-                #vertcial_correction = 
-
         if 'remove' in args:
+            print( colored('remove above', 'green'), args.remove )
             data[ data > args.remove ] = np.nan
             
         #if 'E_span' in args:
@@ -1305,8 +1337,17 @@ def display( args ):
         
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        if args.plot == 'proj':
-            axis = args.axis
+        if args.plot[0] == 'proj':
+            print( colored('plot', 'green'), 'projection' )
+            axis = args.plot[1]
+            if axis in ['lines', '1']:
+                axis = 1
+            elif axis in ['rows', '0']:
+                axis = 0
+            else:
+                print( 'axis not expected' )
+                exit()
+                
             if not 'dev' in args:
                 mins = np.nanmin( data, axis=axis )
                 if not 'no_mean' in args:
@@ -1316,11 +1357,7 @@ def display( args ):
                 if not 'no_median' in args:
                     medians = np.nanmedian( data, axis=axis )
                     ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
-                #if not 'no_center' in args:
-                    #centers = stats.FWHM( data, axis=axis, f=.5 )[1]
-                    #ax.plot( centers, '.', label='center $\mu={:.4f}$'.format(np.nanmean(centers)) )
-                #mus = mle_poisson_norm( data, axis=axis, gain=10, mu=0, sigma=20, fix_mu=False, fix_sigma=True, mode=1 )[0]
-                #ax.plot( mus, '.', label='mu[mle] $\mu={:.4f}$'.format(np.nanmean(mus)) )
+
                 if 'smooth' in args:
                     #ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
                     ax.plot( scipy.ndimage.filters.uniform_filter1d( medians, size=args.smooth, mode='nearest' ), '.', label='median{}'.format(args.smooth) )
@@ -1344,18 +1381,31 @@ def display( args ):
                 sigmas = mle_norm( data, axis=axis )[1]
                 ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )
             
-        elif args.plot == 'spectrum':
+        elif args.plot[0] == 'spectrum':
             bins = np.arange( np.nanmin(data), np.nanmax(data), args.binsize )
             y, x, dx = stats.make_histogram( data.flatten(), bins )
             ax.step( x, y, where='mid', label = '' )
             
-        elif args.plot == 'image':
-            im = np.log(data - np.nanmin(data) + 1)
-            cmap = matplotlib.cm.Blues
-            #cmap.set_bad(color='red')
-            cmap.set_bad('red',0)
+        elif args.plot[0] == 'image':
+            cmap = matplotlib.cm.seismic
+            cmap.set_bad(color='black')
+            if 'log' in args.plot[1:]:
+                im = np.log(data - np.nanmin(data) + 1)
+                cmap.set_bad('black',0)
+            else:
+                im = data
+                cmap.set_bad('black',0)
             try:
-                ax.imshow( im, cmap=cmap, origin='lower', vmin=np.nanmin(im), vmax=np.nanmax(im) )
+                vmean = np.nanmedian(im)
+                vmax = np.max(np.abs(im - vmean))
+                if 'vmax' in args:
+                    vmax = args.vmax
+                obj = ax.imshow( im, cmap=cmap, origin='lower', vmin=vmean-vmax, vmax=vmean+vmax )
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.1)
+                fig.colorbar( obj, cax )
+                title += '\n mean {:.4}'.format( np.nanmean( im ) )
+                title += '\n std {:.4}'.format( np.nanstd( im ) )
             except:
                 print( 'im.shape', im.shape, data.shape )
                 exit()
@@ -1363,7 +1413,7 @@ def display( args ):
             print( 'plot option "{}" not implemented'.format( args.plot ) )
             exit(0)
         
-        ax.set_title( str(args ), fontsize=8 )
+        ax.set_title( title, fontsize=8 )
         ax.grid()
         ax.legend()
     if 'name' in args:

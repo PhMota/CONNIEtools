@@ -284,29 +284,52 @@ class norm2d_norm:
         return ret['x']
 
     @classmethod
-    def fit( cls, x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, ftol=1e-8 ):
-        def func( _x_, _xmu_, _ymu_, _xsigma_, _ysigma_, _E_ ):
-            _pxysigma_ = sum( integral_xSqr_norm_pixel( _x_[0] - _xmu_, 0, _xsigma_ )*integral_xSqr_norm_pixel( _x_[1] - _ymu_, 0, _ysigma_ ) )
-            A = _xsigma_**2 * _ysigma_**2
-            _pxsigma_ = _pxysigma_/_ysigma_**2
-            _pysigma_ = _pxysigma_/_xsigma_**2
-            #print( 'xsigma', _xsigma_**2, _pxsigma_, _xsigma_ - sqrt(_pxsigma_) )
-            #print( 'ysigma', _ysigma_**2, _pysigma_, _ysigma_ - sqrt(_pysigma_) )
-            _deltaxsigma_ = 0 #_xsigma_ - sqrt(_pxsigma_)
-            _deltaysigma_ = 0 #_ysigma_ - sqrt(_pysigma_)
-            #a = _xsigma_*( 1 - _xsigma_
-            p = integral_norm_pixel( _x_[0], _xmu_, _xsigma_+_deltaxsigma_ )*integral_norm_pixel( _x_[1], _ymu_, _ysigma_+_deltaysigma_ )
-            return _E_*( 1 - (1-sum(p)) ) *p
-        
+    def __fit_func( cls, xy, xmu, ymu, xsigma, ysigma, E ):
+        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
+        return E*p
+
+    @classmethod
+    def __fit_func_E( cls, xy, xmu, ymu, xsigma, ysigma, E ):
+        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
+        return E*sum(p)*p
+
+    @classmethod
+    def __fit_func_E_sigma( cls, xy, xmu, ymu, xsigma, ysigma, E ):
+        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
+        p = integral_norm_pixel( xy[0], xmu, xsigma*sum(p) )*integral_norm_pixel( xy[1], ymu, ysigma*sum(p) )
+        return E*sum(p)*p
+
+    @classmethod
+    def __fit_func_E_sigma2( cls, xy, xmu, ymu, xsigma, ysigma, E ):
+        pxysigma = sum( integral_xSqr_norm_pixel( xy[0] - xmu, 0, xsigma )*integral_xSqr_norm_pixel( xy[1] - ymu, 0, ysigma ) )
+        A = xsigma**2 * ysigma**2
+        pxsigma = pxysigma/ysigma**2
+        pysigma = pxysigma/xsigma**2
+        #print( 'xsigma', _xsigma_**2, _pxsigma_, _xsigma_ - sqrt(_pxsigma_) )
+        #print( 'ysigma', _ysigma_**2, _pysigma_, _ysigma_ - sqrt(_pysigma_) )
+        deltaxsigma = 0 #_xsigma_ - sqrt(_pxsigma_)
+        deltaysigma = 0 #_ysigma_ - sqrt(_pysigma_)
+        #a = _xsigma_*( 1 - _xsigma_
+        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
+        p = integral_norm_pixel( xy[0], xmu, xsigma*sum(p) )*integral_norm_pixel( xy[1], ymu, ysigma_*sum(p) )
+        return E*sum(p)*p
+
+    @classmethod
+    def fit( cls, x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, ftol=1e-8, mode=None, loss='linear' ):
+        if mode == None or mode == '':
+            func = cls.__fit_func
+        elif mode == 'E':
+            func = cls.__fit_func_E
+        elif mode == 'Esigma':
+            func = cls.__fit_func_E_sigma
         mins = (xmu-2, ymu-2, 0.01, 0.01, E )
         maxs = (xmu+2, ymu+2, xsigma+.5, ysigma+.5, inf )
         try:
-            p, pcov = scipy.optimize.curve_fit( func, [x, y], e, bounds=( mins, maxs ), sigma=sigma_e, ftol=ftol )
-            #print( 'p', p )
+            p, pcov = scipy.optimize.curve_fit( func, [x, y], e, bounds=( mins, maxs ), sigma=sigma_e, ftol=ftol, loss=loss )
         except RuntimeError:
             p = [xmu, ymu, xsigma, ysigma, E]
-            #print( 'optimal parameters not found' )
         return p
+
 
 def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False ):
     integral_norm_pixel_x = -.5*( erf( -( xPix+1 - mu[0])/( sqrt2*sigma[0] )) - erf( -( xPix - mu[0] )/( sqrt2*sigma[0] ) ) )
