@@ -1198,6 +1198,7 @@ def add_display_options( p ):
     p.add_argument( '--ohdu', type=int, default = 2, help = 'ohdu to be displayed' )
     p.add_argument( '--E-span', type=int, default = 10, help = 'E' )
     p.add_argument( '--plot', nargs='+', type=str, default = 'image', help = 'plot type' )
+    p.add_argument( '--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png file' )
     
     geom = p.add_argument_group('geometry options')
     geom.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
@@ -1420,8 +1421,8 @@ def display( args ):
         ax.set_title( title, fontsize=8 )
         ax.grid()
         ax.legend()
-    if 'name' in args:
-        fig.savefig( args.name+'.pdf', bbox_inches='tight', pad_inches=0 )
+    if 'png' in args:
+        fig.savefig( args.input_file+'.png', bbox_inches='tight', pad_inches=0 )
     else:
         plt.show()
     return
