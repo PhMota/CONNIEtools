@@ -850,6 +850,7 @@ def simulate( args ):
             simulations[image_mode] = []
             for i in range(args.number_of_images):
                 args.runID = i
+                args.image_mode = image_mode
                 args.basename = '{0}/{0}bin{1}_{2}'.format( basename, image_mode, i )
                 simulation = Simulation.simulate_events( args )
                 HDUlist = simulation.generate_image( args )
@@ -1020,7 +1021,7 @@ def scatter( args ):
                                               args.selections, 
                                               args.global_selection, 
                                               runID_range=args.runID_range, 
-                                              extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'xVar2', 'yVar1', 'yVar2', 'E0', 'E1', 'n0', 'n1' ] 
+                                              extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'xVar2', 'yVar1', 'yVar2', 'E0', 'E1', 'n0', 'n1', 'level', 'ESim' ] 
                                               )
         
         fig = plt.figure()
@@ -1035,10 +1036,14 @@ def scatter( args ):
                 
                 if has_color:
                     colors = datum[cbranches]
+                    cmap = matplotlib.cm.plasma
+                    alpha = 1
                 else:
                     colors = None
+                    cmap = None
+                    alpha = .1
                 
-                scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=.1 ) )
+                scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
                 
                 bin_means, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='mean', bins=20 )
                 x = .5*(bin_edges[1:] + bin_edges[:-1])
@@ -1051,48 +1056,63 @@ def scatter( args ):
                 
                 if 'fit' in args:
                     for mode in args.fit:
-                        datum.xVar1 = abs(datum.xVar1)
-                        datum.yVar1 = abs(datum.yVar1)
                         with Timer('computing new fields'):
-                            xmu, ymu, xsigma, ysigma, Et = zip(*[ stats.norm2d_norm.fit( dat.xPix, dat.yPix, dat.ePix, dat.xBary1, dat.yBary1, sqrt(abs(dat.xVar2)), sqrt(abs(dat.yVar2)), sum(dat.ePix), sigma_e = [1.]*len(dat.ePix), ftol=1e-6, mode=mode, loss='soft_l1' ) for dat in datum ])
+                            lvl = 2
+                            mask = lambda entry, lvl=lvl: entry.level <= lvl
+                            print( 'level', datum[0].level[ mask(datum[0]) ] )
+                            xmu, ymu, xsigma, ysigma, Et, success = zip(*[ stats.norm2d_norm.fit( 
+                                dat.xPix[mask(dat)], 
+                                dat.yPix[mask(dat)], 
+                                dat.ePix[mask(dat)], 
+                                dat.xBary1, 
+                                dat.yBary1, 
+                                sqrt(dat.xVar1), 
+                                sqrt(dat.yVar1),
+                                sum(dat.ePix[mask(dat)]), 
+                                sigma_e = 12., ftol=1e-8, mode=mode, loss='linear' ) for dat in datum ])
                         
+                        print( 'falses', sum( array(success) == False ) )
                         x = datum[xbranch]
                         y = datum[ybranch]
                         
                         new_xbranch = xbranch
                         new_ybranch = ybranch
                         if xbranch == 'xBary0' or xbranch == 'xBary1':
-                            new_xbranch = 'xMu'
+                            new_xbranch = 'xMufit'
                             x = xmu
 
                         if ybranch == 'xBary0' or ybranch == 'xBary1':
-                            new_ybranch = 'xMu'
+                            new_ybranch = 'xMufit'
                             y = xmu
 
                         if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
-                            new_xbranch = 'xSigma'
+                            new_xbranch = 'xSigmafit'
                             x = xsigma
 
                         if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
-                            new_ybranch = 'xSigma'
+                            new_ybranch = 'xSigmafit'
                             y = xsigma
                             
                         if ybranch in ['E0','E1']:
-                            new_ybranch = 'Et'
+                            new_ybranch = 'Efit'
                             y = Et
                             
                         if xbranch in ['E0','E1']:
-                            new_xbranch = 'Et'
+                            new_xbranch = 'Efit'
                             x = Et
                                 
                         if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
-                            new_ybranch = '(Et-ESim)/ESim'
+                            new_ybranch = '(Efit-ESim)/ESim'
                             y = (Et - datum.ESim)/datum.ESim
 
                         for axis in ['x','y']:
                             if ybranch in ['(sqrt({}Var{})-sigmaSim)/sigmaSim'.format(axis,n) for n in [0,1,2,3]]:
-                                new_ybranch = '({}sigma-sigmaSim)/sigmaSim'.format(axis)
-                                exec 'y = ({}sigma - datum.sigmaSim)/datum.sigmaSim'.format(axis)
+                                new_ybranch = '({}Sigmafit-sigmaSim)/sigmaSim'.format(axis)
+                                print( colored( 'axis', 'green' ), axis )
+                                if axis == 'x':
+                                    y = (xsigma - datum.sigmaSim)/datum.sigmaSim
+                                elif axis == 'y':
+                                    y = (ysigma - datum.sigmaSim)/datum.sigmaSim
 
                         ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
                         
@@ -1130,7 +1150,7 @@ def scatter( args ):
     elif 'png' in args:
         extra = ''
         if 'fit' in args:
-            extra += '_fit{}'.format(args.fit[0])
+            extra += '_fit{}'.format(''.join(args.fit))
         fname = args.output+'.scatter.{}.vs.{}{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
         fig.savefig( fname )
         print( 'saved', fname )

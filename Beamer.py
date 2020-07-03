@@ -183,14 +183,15 @@ class Beamer:
         return s
         
     
-    def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None ):
+    def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None, center=False ):
         try:
             fname = path
             self.check_file(fname)
         except:
             fname = self.fname+'/'+path
             self.check_file(fname)
-        
+        if center:
+            s += r'\begin{center}' + B
         if width is not None:
             s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
         elif height is not None:
@@ -199,6 +200,8 @@ class Beamer:
             s += r'\includegraphics[scale={scale}]{{{fname}}}'.format(scale=scale, fname=fname) + B
         else:
             raise Exception('missing heigh or width')
+        if center:
+            s += r'\end{center}' + B
         return s
         
     def table( self, file, fontsize=12, spacing=15, func=None, divide=1 ):
@@ -224,12 +227,14 @@ class Beamer:
     def tabular( self, matrix, align=None, s='' ):
         if align in ['c','r','l']:
             align = [align]*len(matrix[0])
+        s += r'{\setlength{\tabcolsep}{0em}'+B
         s += r'\begin{center}' + B
         s += r'\begin{{tabular}}{{ {} }}'.format( ''.join(align) ) + B
         s += '\\\\ \n'.join( [ ' & '.join( line ) for line in matrix ] )
         s += r'\end{tabular}' + B
         s += r'\end{center}' + B
-        print( s )
+        s += r'}' + B
+        #print( s )
         return s
         
 def openBeamer( fname, title ): return Beamer( fname, title )
