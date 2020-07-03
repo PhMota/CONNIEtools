@@ -67,12 +67,20 @@ numbers=left
 
 B = '\n'
 
+def pdflatex( basename ):
+    print( 'pdflatex %s.tex' % basename )
+    subprocess.check_output(['pdflatex', '{}.tex'.format(basename)])
+
+#class Frame:
+    
+
 class Beamer:
     def writelines( self, s, mode = 'a' ):
         open( '%s.tex' % (self.fname+'/'+self.fname), mode ).writelines( s )
     
     def __init__(self, fname='calculations', title='simulation tools'):
         self.fname = fname
+        self.basename = '{0}/{0}'.format(fname)
         self.writelines( preamble %( title, title ), mode = 'w' )
     
     def __enter__(self):
@@ -80,15 +88,12 @@ class Beamer:
     
     def __exit__(self, type, value, traceback):
         self.writelines( [r'\end{document}'] )
-        self.pdflatex()
+        pdflatex( self.basename )
     
     def par( self, s ):
         self.writelines( [s + '\n'] )
 
     equation_evironment = 'equation'
-    def pdflatex( self ):
-        print( 'pdflatex %s.tex' % (self.fname+'/'+self.fname) )
-        subprocess.check_output(['pdflatex', '%s.tex' % (self.fname+'/'+self.fname)])
 
     def section( self, text ):
         self.writelines( [ r'\section{%s}' % text] )
@@ -179,8 +184,12 @@ class Beamer:
         
     
     def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None ):
-        fname = self.fname+'/'+path
-        self.check_file(fname)
+        try:
+            fname = path
+            self.check_file(fname)
+        except:
+            fname = self.fname+'/'+path
+            self.check_file(fname)
         
         if width is not None:
             s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
@@ -211,5 +220,16 @@ class Beamer:
             s += r'}'+B
             s += r'}'+B
         return s
-
+    
+    def tabular( self, matrix, align=None, s='' ):
+        if align in ['c','r','l']:
+            align = [align]*len(matrix[0])
+        s += r'\begin{center}' + B
+        s += r'\begin{{tabular}}{{ {} }}'.format( ''.join(align) ) + B
+        s += '\\\\ \n'.join( [ ' & '.join( line ) for line in matrix ] )
+        s += r'\end{tabular}' + B
+        s += r'\end{center}' + B
+        print( s )
+        return s
+        
 def openBeamer( fname, title ): return Beamer( fname, title )

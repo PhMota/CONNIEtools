@@ -200,16 +200,33 @@ class binom_norm:
     
 class norm2d_binom_norm:
     @classmethod
-    def pdf( cls, q, Qt, sigma_q, x, y, mux, muy, sigmax, sigmay ):
-        return binom_norm.pdf( q, Qt, self.__p(x, mux, sigmax)*self.__p(y, muy, sigmay), sigma_q )
+    def pdf( cls, x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e, g ):
+        Qt = int(Et/g)
+        q = arange(1, Qt)[:, None]
+        e = e[None,:]
+        return sum( cls.__binom(q, x, y, Qt, mux, muy, sigmax, sigmay) * norm.pdf( e/g - q, scale=sigma_e/g ), axis=0 )
+    
+    @classmethod
+    def __binom( cls, q, x, y, Qt, mux, muy, sigmax, sigmay ):
+        p = cls.__p(x, mux, sigmax) * cls.__p(y, muy, sigmay)
+        return binom.pmf( q, Qt, p )
     
     @classmethod
     def __p( cls, x, mu, sigma ):
         return -.5*( erf( -( x+1 - mu)/( sqrt2*sigma )) - erf( -( x - mu )/( sqrt2*sigma ) ) )
     
     @classmethod
-    def fit( cls ):
-        pass
+    def mle( cls, x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e, g ):
+        def func( p ):
+            mux, muy, sigmax, sigmay, Et = p
+            #print( p )
+            pdf = cls.pdf( e, x, y, mux, muy, sigmax, sigmay, Et, sigma_e, g )
+            pdf = pdf[pdf>0]
+            return -sum( log( pdf ) )
+        p0 = (mux, muy, sigmax, sigmay, Et)
+        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, sigmax+.5), (0.01, sigmay+.5), (sum(e), None))
+        mux, muy, sigmax, sigmay, Et = scipy.optimize.minimize( func, p0, bounds=bounds )['x']
+        return mux, muy, sigmax, sigmay, Et
 
 def integral_norm_pixel( x, mu, sigma ):
     f = 1./( sqrt(2)*sigma )
@@ -316,18 +333,31 @@ class norm2d_norm:
 
     @classmethod
     def fit( cls, x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, ftol=1e-8, mode=None, loss='linear' ):
-        if mode == None or mode == '':
+        if xsigma < 0.01:
+            xsigma = 0.01
+        if ysigma < 0.01:
+            ysigma = 0.01        
+
+        if mode == None or mode == 'fit':
             func = cls.__fit_func
         elif mode == 'E':
             func = cls.__fit_func_E
         elif mode == 'Esigma':
             func = cls.__fit_func_E_sigma
+        elif mode == 'mle':
+            p = norm2d_binom_norm.mle( x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, g=7.25 )
+            return p
         mins = (xmu-2, ymu-2, 0.01, 0.01, E )
         maxs = (xmu+2, ymu+2, xsigma+.5, ysigma+.5, inf )
+        p0 = ( xmu, ymu, xsigma, ysigma, E )
         try:
-            p, pcov = scipy.optimize.curve_fit( func, [x, y], e, bounds=( mins, maxs ), sigma=sigma_e, ftol=ftol, loss=loss )
+            p, pcov = scipy.optimize.curve_fit( func, [x, y], e, p0=p0, bounds=( mins, maxs ), sigma=sigma_e, ftol=ftol, loss=loss )
         except RuntimeError:
             p = [xmu, ymu, xsigma, ysigma, E]
+            print('RuntimeError in fit', p )
+        except ValueError:
+            p = [xmu, ymu, xsigma, ysigma, E]
+            print( 'ValueError in fit', p )
         return p
 
 

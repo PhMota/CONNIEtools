@@ -131,27 +131,19 @@ class HitSummary:
 
     def __Bary(self, entry, mask, axis ):
         weights = entry.ePix[mask]
-        try:
-            return average( getattr(entry, '{}Pix'.format(axis))[mask], weights=weights, axis=0 )
-        except ZeroDivisionError:
-            return mean( getattr(entry, '{}Pix'.format(axis))[mask], axis=0 )
+        pos = weights > 0
+        return average( getattr(entry, '{}Pix'.format(axis))[mask][pos], weights=weights[pos], axis=0 )
 
     def __Var(self, entry, mask, axis ):
         weights = entry.ePix[mask]
-        try:
-            return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=weights, axis=0 ) \
-                    - average( getattr(entry, '{}Pix'.format(axis))[mask], weights=weights, axis=0 )**2
-        except ZeroDivisionError:
-            return mean( getattr(entry, '{}Pix'.format(axis))[mask]**2, axis=0 ) \
-                    - mean( getattr(entry, '{}Pix'.format(axis))[mask], axis=0 )**2
-            
+        pos = weights > 0
+        return average( getattr(entry, '{}Pix'.format(axis))[mask][pos]**2, weights=weights[pos], axis=0 ) \
+                - average( getattr(entry, '{}Pix'.format(axis))[mask][pos], weights=weights[pos], axis=0 )**2
 
     def __SqrBary(self, entry, mask, axis ):
         weights = entry.ePix[mask]
-        try:
-            return average( getattr(entry, '{}Pix'.format(axis))[mask]**2, weights=weights, axis=0 )
-        except ZeroDivisionError:
-            return mean( getattr(entry, '{}Pix'.format(axis))[mask]**2, axis=0 )
+        pos = weights > 0
+        return average( getattr(entry, '{}Pix'.format(axis))[mask][pos]**2, weights=weights[pos], axis=0 )
         
     def __thr_vars( self, entry, mask ):
         n = self.__n(entry, mask)
@@ -186,6 +178,17 @@ class HitSummary:
                         arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__level_mask(lvl) ).T
                         )
         
+    def add_fit_fields( self ):
+        self.add_fields( ['pfit','Efit','xMufit','yMufit','xSigmafit','ySigmafit'],
+                        types=(float,float,float,float,float,float),
+                        arrays=self.__apply_to_entries( self.__fit_vars ).T
+                        )
+    
+    def __fit_vars( self, entry, noise ):
+        xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit( entry.xPix, entry.yPix, entry.ePix, entry.xBary1, entry.yBary1, sqrt(entry.xVar1), sqrt(entry.yVar1), sum(entry.ePix), sigma_e = [noise]*len(dat.ePix), ftol=1e-6, mode=mode, loss='soft_l1' )
+        return pfit, Efit, xMufit, yMufit, xSigmafit, ySigmafit
+
+    
     def match_bruteforce( self, events, verbose, basename ):
         
         N = len(events)
@@ -467,7 +470,7 @@ class HitSummary:
             for event_ind, event in enumerate(events):
                 if 'verbose' in args:
                     print( 'hitSummary.xy', zip(xPix0, yPix0) )
-                key = ( int(event.x), int(event.y) )
+                key = ( int(event.x/events.rebin[0]), int(event.y/events.rebin[1]) )
                 try:
                     hit_ind = xy2hit_ind[key]
                     matched[event_ind] = 1
@@ -478,8 +481,8 @@ class HitSummary:
                     if 'verbose' in args:
                         print( 'match', event.x, event.y )
                     if idSim[hit_ind] == 0:
-                        xSim[hit_ind] = float(event.x)
-                        ySim[hit_ind] = float(event.y)
+                        xSim[hit_ind] = float(event.x/events.rebin[0])
+                        ySim[hit_ind] = float(event.y/events.rebin[1])
                         zSim[hit_ind] = float(event.z)
                         sigmaSim[hit_ind] = float(event.sigma)
                         qSim[hit_ind] = int(event.q)
@@ -792,81 +795,6 @@ def build_new_catalog_from_recarray__( input, output ):
     with Timer('fill') as t:
         root_numpy.array2root( input, output + '.root', treename='hitSumm', mode='recreate' )
 
-
-#def build_new_catalog_from_recarray( input, output ):
-    #N = len(input)
-    #print( input.xPix[1] )
-    #print( 'build_new_catalog_from_recarray2', N )
-    #Nmax = max( input.nSavedPix )
-    #print( 'Nmax', Nmax )
-    
-    #declarations = 'const Int_t knSavedPix = {};\n'.format(Nmax)
-    #assignments = ''
-    #assignmentsArray = ''
-    #branch = ''
-    #for name in input.dtype.names[::-1]:
-        #type_ = getattr( input, name ).dtype
-        #if name.startswith('n') and name != 'nSavedPix' and name != 'nSat':
-            #field = name
-            #var = '&c_{}'.format(name)
-            #expr = '{}/F'.format(name)
-            #declarations += 'Float_t c_{};\n'.format(name)
-            #assignments += '\tc_{} = {}[n];\n'.format( name, name )
-        #elif type_ == int32:
-            #field = name
-            #var = '&c_{}'.format(name)
-            #expr = '{}/I'.format(name)
-            #declarations += 'Int_t c_{};\n'.format(name)
-            #assignments += '\tc_{} = {}[n];\n'.format( name, name )
-        #elif type_ == float32:
-            #field = name
-            #var = '&c_{}'.format(name)
-            #expr = '{}/F'.format(name)
-            #declarations += 'Float_t c_{};\n'.format(name)
-            #assignments += '\tc_{} = {}[n];\n'.format( name, name )
-        #elif name in ['level','xPix','yPix']:
-            #field = '{}[c_nSavedPix]'.format(name)
-            #field = name
-            #var = 'c_{}'.format(name)
-            #expr = '{}[nSavedPix]/I'.format(name)
-            #declarations += 'Int_t c_{}[knSavedPix];\n'.format(name)
-            #assignmentsArray += '\t\tc_{}[i] = ((Long_t*) PyArray_DATA(PyList_GetItem({},n))) [i];\n'.format( name, name )
-        #elif name == 'ePix':
-            #field = '{}[c_nSavedPix]'.format(name)
-            #field = name
-            #var = 'c_{}'.format(name)
-            #expr = '{}[nSavedPix]/F'.format(name)
-            #declarations += 'Float_t c_{}[knSavedPix];\n'.format(name)
-            #assignmentsArray += '\t\tc_{}[i] = ((Double_t*) PyArray_DATA(PyList_GetItem({},n))) [i];\n'.format( name, name )
-        #branch += 'tree->Branch( "{}", {}, "{}" );\n'.format( field, var, expr )
-    
-    #code = declarations + '\n';
-    #code += 'TFile f( "{}.root", "recreate" );\n'.format( output )
-    #code += 'TTree *tree = new TTree( "hitSumm", "hitSumm" );\n'
-    #code += '\n' + branch + '\n';
-    #code += 'for(int n=0; n<{}; ++n){{\n'.format( len(input) )
-    #code += assignments
-    #code += '\tfor(int i=0; i<nSavedPix[n]; ++i){\n'
-    #code += assignmentsArray
-    #code += '\t}\n'
-    #code += '\ttree->Fill();\n'
-    #code += '}\n'
-    #code += '\ntree->Write();\n'
-    
-    #for name in input.dtype.names:
-        #exec '{} = array(input.{})'.format(name, name)
-    #ePix = [ array(e) for e in input.ePix ]
-    #xPix = [ array(x) for x in input.xPix ]
-    #yPix = [ array(y) for y in input.yPix ]
-    #level = [ array(l).astype(int) for l in input.level ]
-    #weave.inline( code, input.dtype.names,
-                        #headers=['"TFile.h"', '"TTree.h"'],
-                        #libraries=['Core'],
-                        #include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
-                        #library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
-                        ##extra_compile_args=['-O3'],
-                        #verbose=1,
-                        #)    
         
 #def build_new_root_from_existing_rootpy( input, output, condition = None, selection = '' ):
     #with Timer('open file') as t:
@@ -912,43 +840,49 @@ def simulate( args ):
     basename = str(args.basename)
     args.basename = '{0}/{0}'.format(args.basename)
     args.no_fits = True
+    args.png = True
     args.csv = True
-    images = []
-    simulations = []
+    images = {}
+    simulations = {}
     with Timer('simulate all') as t:
-        for i in range(args.number_of_images):
-            args.runID = i
-            args.basename = '{0}/{0}_{1}'.format( basename, i )
-            simulation = Simulation.simulate_events( args )
-            HDUlist = simulation.generate_image( args )
-            print( 'saved {}.csv'.format( args.basename ) )
-            imageHDU = HDUlist[-1]
-            part = Image.Part(imageHDU)
-            images.append( Image.Image([part]) )
-            simulations.append( simulation )
-            t.check( 10, args.number_of_images )
+        for image_mode in args.image_modes:
+            images[image_mode] = []
+            simulations[image_mode] = []
+            for i in range(args.number_of_images):
+                args.runID = i
+                args.basename = '{0}/{0}bin{1}_{2}'.format( basename, image_mode, i )
+                simulation = Simulation.simulate_events( args )
+                HDUlist = simulation.generate_image( args )
+                print( 'saved {}.csv'.format( args.basename ) )
+                imageHDU = HDUlist[-1]
+                part = Image.Part(imageHDU)
+                images[image_mode].append( Image.Image([part]) )
+                simulations[image_mode].append( simulation )
+                t.check( 10, args.number_of_images*len(args.image_modes) )
         
     thresholds = list(args.threshold)
     with Timer('extract&match all') as t2:
-        for threshold in thresholds:
-            args.threshold = threshold
-            args.basename = '{0}/{0}_{1}'.format( basename, threshold )
-            args.no_catalog = True
-            for image, simulation in zip(images,simulations):
-                with Timer('extract'):
-                    hitSummary = image_extract( image, args )
-                with Timer('match'):
-                    hitSummary.match( simulation, args )
-                with Timer('save catalog'):
-                    hitSummary.save_catalog( args.basename )
-                t2.check( 60, len(thresholds)*len(images) )
+        for image_mode in args.image_modes:
+            for threshold in thresholds:
+                args.threshold = threshold
+                args.basename = '{0}/{0}_bin{1}t{2}'.format( basename, image_mode, threshold )
+                args.no_catalog = True
+                for image, simulation in zip(images[image_mode],simulations[image_mode]):
+                    with Timer('extract'):
+                        hitSummary = image_extract( image, args )
+                    with Timer('match'):
+                        hitSummary.match( simulation, args )
+                    with Timer('save catalog'):
+                        hitSummary.save_catalog( args.basename )
+                    t2.check( 60, len(thresholds)*len(images)*len(args.image_modes) )
     
 
 def add_simulate_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.add_argument('-t', '--threshold', nargs='+', type=float, default=[60,50,40,30], help = 'energy threshold in ADU' )
-    p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )    
+    p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )   
+    p.add_argument('--image-modes', nargs='+', type=int, default=[1,5], help = 'image modes' )
     #p.add_argument('--E-binsize', type=float, default=1, help = 'E binsize' )
     #p.add_argument('--z-binsize', type=float, default=10, help = 'z binsize' )
     #p.add_argument('--sigma-binsize', type=float, default=.1, help = 'sigma binsize' )
@@ -987,8 +921,8 @@ def image_extract( image, args ):
     print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
     hitSummary.add_fields( 'thr', float32, [args.threshold]*len(hitSummary) )
     hitSummary.add_basic_fields()
-    hitSummary.add_level_fields(0)
-    hitSummary.add_level_fields(1)
+    for lvl in range( args.border ):
+        hitSummary.add_level_fields(lvl)
     if not 'no_catalog' in args:
         hitSummary.save_catalog( args.basename )
     return hitSummary
@@ -1086,7 +1020,7 @@ def scatter( args ):
                                               args.selections, 
                                               args.global_selection, 
                                               runID_range=args.runID_range, 
-                                              extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'yVar1', 'E0', 'E1', 'n0', 'n1' ] 
+                                              extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'xVar2', 'yVar1', 'yVar2', 'E0', 'E1', 'n0', 'n1' ] 
                                               )
         
         fig = plt.figure()
@@ -1117,8 +1051,10 @@ def scatter( args ):
                 
                 if 'fit' in args:
                     for mode in args.fit:
+                        datum.xVar1 = abs(datum.xVar1)
+                        datum.yVar1 = abs(datum.yVar1)
                         with Timer('computing new fields'):
-                            xmu, ymu, xsigma, ysigma, Et = zip(*[ stats.norm2d_norm.fit( dat.xPix, dat.yPix, dat.ePix, dat.xBary1, dat.yBary1, sqrt(dat.xVar1), sqrt(dat.yVar1), sum(dat.ePix), sigma_e = [1.]*len(dat.ePix), ftol=1e-6, mode=mode ) for dat in datum ])
+                            xmu, ymu, xsigma, ysigma, Et = zip(*[ stats.norm2d_norm.fit( dat.xPix, dat.yPix, dat.ePix, dat.xBary1, dat.yBary1, sqrt(abs(dat.xVar2)), sqrt(abs(dat.yVar2)), sum(dat.ePix), sigma_e = [1.]*len(dat.ePix), ftol=1e-6, mode=mode, loss='soft_l1' ) for dat in datum ])
                         
                         x = datum[xbranch]
                         y = datum[ybranch]
@@ -1153,28 +1089,21 @@ def scatter( args ):
                             new_ybranch = '(Et-ESim)/ESim'
                             y = (Et - datum.ESim)/datum.ESim
 
-                        if ybranch in ['(E0-ESim)/sqrt(ESim)', '(E1-ESim)/sqrt(ESim)']:
-                            new_ybranch = '(Et-ESim)/sqrt(ESim)'
-                            y = (Et - datum.ESim)/sqrt(datum.ESim)
-                            
-                        if ybranch in ['(sqrt(xVar0)-sigmaSim)/sigmaSim', '(sqrt(xVar1)-sigmaSim)/sigmaSim']:
-                            new_ybranch = '(xSigma-sigmaSim)/sigmaSim'
-                            y = (xsigma - datum.sigmaSim)/datum.sigmaSim
+                        for axis in ['x','y']:
+                            if ybranch in ['(sqrt({}Var{})-sigmaSim)/sigmaSim'.format(axis,n) for n in [0,1,2,3]]:
+                                new_ybranch = '({}sigma-sigmaSim)/sigmaSim'.format(axis)
+                                exec 'y = ({}sigma - datum.sigmaSim)/datum.sigmaSim'.format(axis)
 
-                        if ybranch in ['(sqrt(xVar0)-sigmaSim)/sqrt(sigmaSim)', '(sqrt(xVar1)-sigmaSim)/sqrt(sigmaSim)']:
-                            new_ybranch = '(xSigma-sigmaSim)/sqrt(sigmaSim)'
-                            y = (xsigma - datum.sigmaSim)/sqrt(datum.sigmaSim)
-                        
                         ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
                         
                         bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
-                        x = .5*(bin_edges[1:] + bin_edges[:-1])
+                        _x = .5*(bin_edges[1:] + bin_edges[:-1])
                         dx = bin_edges[1] - bin_edges[0]
                         yerr = [0]*len(bin_means)
                         if 'errorbar' in args:
                             bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
                             yerr = bin_std
-                        ax.errorbar( x+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
+                        ax.errorbar( _x+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
                         
         ax.legend()
         ax.grid()
@@ -1194,11 +1123,15 @@ def scatter( args ):
         args.output = args.root_file
             
     if 'pdf' in args:
-        fname = args.output+'.scatter.{}.vs.{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'))
+        extra = ''
+        fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
         fig.savefig( fname )
         print( 'saved', fname )
     elif 'png' in args:
-        fname = args.output+'.scatter.{}.vs.{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'))
+        extra = ''
+        if 'fit' in args:
+            extra += '_fit{}'.format(args.fit[0])
+        fname = args.output+'.scatter.{}.vs.{}{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
         fig.savefig( fname )
         print( 'saved', fname )
     else:

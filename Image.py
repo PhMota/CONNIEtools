@@ -1386,7 +1386,7 @@ def display( args ):
             y, x, dx = stats.make_histogram( data.flatten(), bins )
             ax.step( x, y, where='mid', label = '' )
             
-        elif args.plot[0] == 'image':
+        elif args.plot[0] == 'image' or args.plot[0] == 'matrix':
             cmap = matplotlib.cm.seismic
             cmap.set_bad(color='black')
             if 'log' in args.plot[1:]:
@@ -1400,7 +1400,11 @@ def display( args ):
                 vmax = np.max(np.abs(im - vmean))
                 if 'vmax' in args:
                     vmax = args.vmax
-                obj = ax.imshow( im, cmap=cmap, origin='lower', vmin=vmean-vmax, vmax=vmean+vmax )
+                if args.plot[0] == 'image':
+                    func = ax.imshow
+                elif args.plot[0] == 'matrix':
+                    func = ax.matshow
+                obj = func( im, cmap=cmap, origin='lower', vmin=vmean-vmax, vmax=vmean+vmax, interpolation='none' )
                 divider = make_axes_locatable(ax)
                 cax = divider.append_axes("right", size="5%", pad=0.1)
                 fig.colorbar( obj, cax )
