@@ -429,7 +429,7 @@ class norm2d_norm:
             return p
         else:
             raise Exception( 'mode not recognized', mode )
-        mins = (xmu-2, ymu-2, 0.01, 0.01, 1 )
+        mins = (xmu-2, ymu-2, 0.01, 0.01, 1e-3 )
         maxs = (xmu+2, ymu+2, 2, 2, inf )
         if isnan(xsigma):
             xsigma = .5
