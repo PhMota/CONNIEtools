@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 from __future__ import print_function
-import os, sys, argparse, re, glob
+import os, sys, argparse, re, glob, shutil
 from argparse import Namespace
 
 from Timer import Timer
@@ -183,6 +183,12 @@ class HitSummary:
         
     def add_fit_fields( self ):
         arrays = self.__apply_to_entries( self.__fit_vars ).T
+        try:
+            self.t.__exit__()
+            del self.t
+        except:
+            print( 'no timer' )
+        
         print( 'fit fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
         self.add_fields( ['Efit', 'xMufit', 'yMufit', 'xSigmafit', 'ySigmafit'],
                         types=(float,float,float,float,float),
@@ -190,6 +196,12 @@ class HitSummary:
                         )
     
     def __fit_vars( self, entry ):
+        try:
+            self.t.check(30, self.size)
+        except AttributeError:
+            self.t = Timer('done')
+            self.t.__enter__()
+        
         rawNoise = 10
         #if 'rawNoise' in self.names:
             #rawNoise = self.rawNoise
@@ -767,6 +779,8 @@ class HitSummary:
         mode = 'recreate'
         if os.path.exists( fname ):
             mode = 'update'
+            
+        print( 'code', code )
         
         varnames = ['fname', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
         weave.inline( code, varnames,
@@ -792,6 +806,13 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
         stop = amax(argwhere(runIDs==runID_range[1]))+1        
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
 
+def update_catalog( fname, output, hitSummary ):
+    existing_branches = root_numpy.list_branches( fname, treename='hitSumm' )
+    a = list( set(hitSummary.names) - set(existing_branches) )
+    print( 'adding branches', a, 'to catalog', output )
+    #print( hitSummary.__recarray__[a] )
+    shutil.copyfile(fname, output)
+    root_numpy.array2root( hitSummary.__recarray__[a], output, treename='hitSumm', mode='update' )
 
 #def list_branches( file, treename = 'hitSumm' ):
     #return root_numpy.list_branches( file, treename = treename )
@@ -933,7 +954,7 @@ def addbranches( **args ):
         if len(branches_set) > 0:
             print( 'branches not recognized', list(branches_set) )
 
-        hitSummary.save_catalog( fout )
+        update_catalog( fname, fout, hitSummary )
     return
 
 def add_addbranches_options(p):
