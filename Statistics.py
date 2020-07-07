@@ -3,7 +3,8 @@
 from __future__ import print_function
 from numpy import *
 import scipy.stats
-from scipy.special import erf
+from scipy.misc import factorial, logsumexp
+from scipy.special import erf, gammaln, loggamma, ndtr, xlogy, xlog1py
 from Timer import Timer
 
 def stdCovMed( x, y ):
@@ -101,6 +102,11 @@ def mean_outliers( data, axis=None, n=2 ):
 
 norm = scipy.stats.norm
 
+__norm_rvs = scipy.stats.norm.rvs
+def norm_rvs( mu=0, sigma=1, size=1 ):
+    return __norm_rvs(mu, sigma, size)
+norm.rvs = norm_rvs
+
 def _norm_fit_( X, mu=0, sigma=1., fix_mu=False, fix_sigma=False, weights=1 ):
     if fix_mu:
         pdf = lambda X, sigma: norm.pdf(X, mu, sigma)
@@ -197,7 +203,11 @@ class binom_norm:
         __b = binom.pmf( Q, Qt, p[None,:] )
         __n = norm.pdf( q[None,:] - Q, scale = sigma_q )
         return sum( __b*__n, axis = 0 )
-    
+
+binom_logpmf = binom.logpmf
+q = arange(1000)
+minimize = scipy.optimize.minimize
+
 class norm2d_binom_norm:
     @classmethod
     def pdf( cls, x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e, g ):
@@ -205,33 +215,83 @@ class norm2d_binom_norm:
         q = arange(Qt+1)[:, None]
         e = e[None,:]
         return sum( cls.__binom(q, x, y, Qt, mux, muy, sigmax, sigmay) * norm.pdf( e/g, q, sigma_e/g ), axis=0 )
+
+    @classmethod
+    def pdf_log( cls, x, y, u, mux, muy, sigmax, sigmay, Ut, sigma_u ):
+        Qt = int(Ut)
+        q = arange(Qt+1)[:, None]
+        #lognorm = -.5*log(2*pi) - log(sigma_e/g) - .5*(e/g-q)**2/(sigma_e/g)**2
+        return sum( cls.__binom(q, x, y, Qt, mux, muy, sigmax, sigmay )*norm.pdf( u, q, sigma_u ), axis=0 )
+
+    @classmethod
+    def log_pdf_log( cls, x, y, u, mux, muy, sigmax, sigmay, Ut, sigma_u ):
+        Qt = int(ceil(Ut)+1)
+        q = arange(Qt+1)[:,None]
+        
+        px = normcdf_p1diff(x, mux, sigmax) 
+        py = normcdf_p1diff(y, muy, sigmay)
+        p = px*py
+        lognorm = -.5*(u-q)**2/sigma_u**2
+        logbinom = binom_logpmf(q, Qt, px*py)
+        return logsumexp( logbinom + lognorm, axis=0 )
+    
+    @classmethod
+    def __pdf_log_mle( cls, x, y, u, mux, muy, sigmax, sigmay, Ut, sigma_u ):
+        Qt = int(Ut)+1
+        q = arange(Qt+1)[:, None]
+        lognorm = -.5*(u-q)**2/sigma_u**2
+        #lognorm = -.5*(u**2 - 2*u*q + q**2)/sigma_u**2
+        return sum( exp( cls.__log_binom(q, x, y, Qt, mux, muy, sigmax, sigmay) + lognorm ), axis=0 )
     
     @classmethod
     def __binom( cls, q, x, y, Qt, mux, muy, sigmax, sigmay ):
-        p = cls.__p(x, mux, sigmax) * cls.__p(y, muy, sigmay)
+        p = cls.__p_cdf(x, mux, sigmax) * cls.__p_cdf(y, muy, sigmay)
         return binom.pmf( q, Qt, p )
     
     @classmethod
     def __p( cls, x, mu, sigma ):
         f=1./(sqrt(2)*sigma)
         return .5*( erf( f*( x+1-mu) ) - erf( f*( x - mu ) ) )
+
+    @classmethod
+    def __p_cdf( cls, x, mu, sigma ):
+        return norm.cdf(x+1, mu, sigma) - norm.cdf(x, mu, sigma)
     
     @classmethod
-    def mle( cls, x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e, g ):
+    def mle_opt( cls, x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e=10, g=7.25, lamb=0. ):
+        u = (e/g)[None,:]
+        Ut = Et/g
+        sigma_u = sigma_e/g
+        
+        def func_log( p ):
+            mux, muy, sigmax, sigmay, Ut = p
+            log_pdf = cls.log_pdf_log( x, y, u, mux, muy, sigmax, sigmay, Ut, sigma_u )
+            return -sum( log_pdf )
+
+        p0 = (mux, muy, sigmax, sigmay, Ut)
+        if isnan(Ut):
+            return [-1]*5
+        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, None), (0.01, None), (1., None))
+        mux, muy, sigmax, sigmay, Ut = minimize( func_log, p0, bounds=bounds )['x']
+        return mux, muy, sigmax, sigmay, Ut*g - g*lamb*len(u)
+
+    @classmethod
+    def mle( cls, x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e=10, g=7.25, lamb=0. ):
         def func( p ):
             mux, muy, sigmax, sigmay, Et = p
             pdf = cls.pdf( x, y, e, mux, muy, sigmax, sigmay, Et, sigma_e, g )
             pdf = pdf[pdf>0]
             return -sum( log( pdf ) )
-        
+
         p0 = (mux, muy, sigmax, sigmay, Et)
-        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, sigmax+.5), (0.01, sigmay+.5), (sum(e), None))
-        mux, muy, sigmax, sigmay, Et = scipy.optimize.minimize( func, p0, bounds=bounds )['x']
+        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, None), (0.01, None), (1., None))
+        mux, muy, sigmax, sigmay, Ut = scipy.optimize.minimize( func, p0, bounds=bounds )['x']
         return mux, muy, sigmax, sigmay, Et
 
-def integral_norm_pixel( x, mu, sigma ):
-    f = 1./( sqrt(2)*sigma )
-    #return -.5*( erf( -f*( x+1 - mu) ) - erf( -f*( x - mu ) ) )
+sqrt2 = sqrt(2)
+invsqrt2 = 1./sqrt(2)
+def normcdf_p1diff( x, mu, sigma ):
+    f = invsqrt2/sigma
     return .5*( erf( f*( x+1 - mu) ) - erf( f*( x - mu ) ) )
 
 def integral_x_norm_pixel( x, mu, sigma ):
@@ -252,8 +312,8 @@ class norm2d_norm:
     sigma_bounds = ( 0., None)
     @classmethod
     def pdf( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma, E ):
-        x_p = integral_norm_pixel( x, x_mu, x_sigma )
-        y_p = integral_norm_pixel( y, y_mu, y_sigma )
+        x_p = normcdf_p1diff( x, x_mu, x_sigma )
+        y_p = normcdf_p1diff( y, y_mu, y_sigma )
         P = sum( x_p*y_p )
         E = sum( e )
         if e_sigma == 0:
@@ -263,17 +323,17 @@ class norm2d_norm:
 
     @classmethod
     def E( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma ):
-        x_p = integral_norm_pixel( x, x_mu, x_sigma )
-        y_p = integral_norm_pixel( y, y_mu, y_sigma )
+        x_p = normcdf_p1diff( x, x_mu, x_sigma )
+        y_p = normcdf_p1diff( y, y_mu, y_sigma )
         return sum( e )/sum( x_p*y_p )
         
     @classmethod
     def mle( cls, x, y, e, x_mu, y_mu, x_sigma, y_sigma, e_sigma, E, fix_e_sigma=False, fix_mu=False, fix_sigma=False, fix_E=False ):
 
         if fix_e_sigma:
-            func = lambda p: \
-                -sum( log( cls.pdf( x, y, e, p[0], p[1], p[2], p[3], p[4], e_sigma ) ) )
-            bounds = ( (x_mu-1, x_mu+1), (y_mu-1, y_mu+1), (x_sigma-.2, x_sigma+.2), (y_sigma-.2, y_sigma+.2), (E, None) )
+            func = lambda p: -sum( log( cls.pdf( x, y, e, p[0], p[1], p[2], p[3], p[4], e_sigma ) ) )
+            #bounds = ( (x_mu-1, x_mu+1), (y_mu-1, y_mu+1), (x_sigma-.2, x_sigma+.2), (y_sigma-.2, y_sigma+.2), (E, None) )
+            bounds = ( (x_mu-2, x_mu+2), (y_mu-2, y_mu+2), (1e-2, 1.5), (1e-2, 1.5), (E/2, None) )
             p0 = ( x_mu, y_mu, x_sigma, y_sigma, E )
 
         if fix_e_sigma and fix_mu:
@@ -302,19 +362,22 @@ class norm2d_norm:
         return ret['x']
 
     @classmethod
-    def __fit_func( cls, xy, xmu, ymu, xsigma, ysigma, E ):
-        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
-        return E*p
+    def __fit_func( cls, exylamb, xmu, ymu, xsigma, ysigma, E ):
+        e, x, y, lamb = exylamb
+        px = normcdf_p1diff( x, xmu, xsigma )
+        py = normcdf_p1diff( y, ymu, ysigma )
+        return (E + lamb*len(px))*px*py
 
     @classmethod
-    def __fit_func_E( cls, xy, xmu, ymu, xsigma, ysigma, E ):
-        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
-        return E*sum(p)*p
+    def __mle_func_E( cls, x, y, e, lamb, sigma_e, xmu, ymu, xsigma, ysigma, E ):
+        p = normcdf_p1diff( x, xmu, xsigma )*normcdf_p1diff( y, ymu, ysigma )
+        #return -sum( -lamb -.5*( e - E*p )**2/sigma_e**2 - lamb - log(lamb) -.5*( e - E*p - 7.25 )**2/sigma_e**2 )
+        return -sum( log(poisson_norm.pdf(e - E*p, sigma=sigma_e, gain=7.25, lamb=lamb )) )
 
     @classmethod
     def __fit_func_E_sigma( cls, xy, xmu, ymu, xsigma, ysigma, E ):
-        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
-        p = integral_norm_pixel( xy[0], xmu, xsigma*sum(p) )*integral_norm_pixel( xy[1], ymu, ysigma*sum(p) )
+        p = normcdf_p1diff( xy[0], xmu, xsigma )*normcdf_p1diff( xy[1], ymu, ysigma )
+        p = normcdf_p1diff( xy[0], xmu, xsigma*sum(p) )*normcdf_p1diff( xy[1], ymu, ysigma*sum(p) )
         return E*sum(p)*p
 
     @classmethod
@@ -328,12 +391,12 @@ class norm2d_norm:
         deltaxsigma = 0 #_xsigma_ - sqrt(_pxsigma_)
         deltaysigma = 0 #_ysigma_ - sqrt(_pysigma_)
         #a = _xsigma_*( 1 - _xsigma_
-        p = integral_norm_pixel( xy[0], xmu, xsigma )*integral_norm_pixel( xy[1], ymu, ysigma )
-        p = integral_norm_pixel( xy[0], xmu, xsigma*sum(p) )*integral_norm_pixel( xy[1], ymu, ysigma_*sum(p) )
+        p = normcdf_p1diff( xy[0], xmu, xsigma )*normcdf_p1diff( xy[1], ymu, ysigma )
+        p = normcdf_p1diff( xy[0], xmu, xsigma*sum(p) )*normcdf_p1diff( xy[1], ymu, ysigma_*sum(p) )
         return E*sum(p)*p
 
     @classmethod
-    def fit( cls, x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, ftol=1e-8, mode=None, loss='linear' ):
+    def fit( cls, x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e=10, g=7.25, lamb=0, ftol=1e-8, mode=None, loss='linear' ):
         if xsigma < 0.01:
             xsigma = 0.01
         if ysigma < 0.01:
@@ -341,39 +404,59 @@ class norm2d_norm:
         if mode == None or mode == 'fit':
             func = cls.__fit_func
         elif mode == 'fitE':
-            func = cls.__fit_func_E
+            def func(p):
+                xmu, ymu, xsigma, ysigma, E = p
+                return cls.__mle_func_E( x, y, e, lamb, sigma_e, xmu, ymu, xsigma, ysigma, E )
+            p0 = (xmu, ymu, xsigma, ysigma, E)
+            bounds = ((xmu-2, xmu+2), (ymu-2, ymu+2), (0.01, None), (0.01, None), (sum(e)/2., None))
+            p = scipy.optimize.minimize( func, p0, bounds=bounds )['x']
+            #p = p.tolist()+[True]
+            return p
+        elif mode == 'bayes':
+            xmu, ymu, xsigma, ysigma = multinorm.mape2d(e, [x,y], [xmu, ymu], [xsigma,ysigma])
+            return xmu, ymu, xsigma, ysigma, E, True
+        
         elif mode == 'fitEsigma':
             func = cls.__fit_func_E_sigma
         elif mode == 'mle':
             try:
-                p = norm2d_binom_norm.mle( x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, g=7.25 )
+                p = norm2d_binom_norm.mle_opt( x, y, e, xmu, ymu, xsigma, ysigma, E, sigma_e, g=g, lamb=lamb )
                 p = list(p) + [True]
             except RuntimeError:
                 p = [xmu, ymu, xsigma, ysigma, E, False]
             except ValueError: 
                 p = [xmu, ymu, xsigma, ysigma, E, False]
             return p
-        mins = (xmu-2, ymu-2, 0.01, 0.01, E*.75 )
-        maxs = (xmu+2, ymu+2, xsigma+.5, ysigma+.5, 1.5*E )
+        else:
+            raise Exception( 'mode not recognized', mode )
+        mins = (xmu-2, ymu-2, 0.01, 0.01, 1 )
+        maxs = (xmu+2, ymu+2, 2, 2, inf )
+        if isnan(xsigma):
+            xsigma = .5
+        if isnan(ysigma):
+            ysigma = .5 
+        if E <= 0 or xsigma > 2 or ysigma > 2:
+            return [-1]*5
         p0 = ( xmu, ymu, xsigma, ysigma, E )
-        sigma_e = ones_like(e)*sigma_e
+
+        #sigma_e = ones_like(e)*sigma_e
         try:
-            p, pcov = scipy.optimize.curve_fit( func, [x, y], e, p0=p0, bounds=( mins, maxs ), sigma=sigma_e, ftol=ftol, loss=loss )
-            p = p.tolist() + [True]
+            p, pcov = scipy.optimize.curve_fit( func, [e, x, y, g*lamb], e, p0=p0, bounds=( mins, maxs ), ftol=ftol, loss=loss )
         except RuntimeError:
-            p = [xmu, ymu, xsigma, ysigma, E, False]
-            print('RuntimeError in fit', p )
-        except ValueError:
-            p = [xmu, ymu, xsigma, ysigma, E, False]
-            print( 'ValueError in fit', p )
+            p = [-1]*5
+            #print('RuntimeError in fit', p )
+        except ValueError as e:
+            p = [-1]*5
+            print( 'ValueError in fit', p0 )
+            raise e
         return p
 
 
 def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_sigma = False ):
-    integral_norm_pixel_x = -.5*( erf( -( xPix+1 - mu[0])/( sqrt2*sigma[0] )) - erf( -( xPix - mu[0] )/( sqrt2*sigma[0] ) ) )
-    integral_norm_pixel_y = -.5*( erf( -( yPix+1 - mu[1])/( sqrt2*sigma[1] )) - erf( -( yPix - mu[1] )/( sqrt2*sigma[1] ) ) )
+    normcdf_p1diff_x = -.5*( erf( -( xPix+1 - mu[0])/( sqrt2*sigma[0] )) - erf( -( xPix - mu[0] )/( sqrt2*sigma[0] ) ) )
+    normcdf_p1diff_y = -.5*( erf( -( yPix+1 - mu[1])/( sqrt2*sigma[1] )) - erf( -( yPix - mu[1] )/( sqrt2*sigma[1] ) ) )
     
-    prob = integral_norm_pixel_x * integral_norm_pixel_y
+    prob = normcdf_p1diff_x * normcdf_p1diff_y
     prob_i = prob[:,None]
     ePix_i = ePix[:,None]
     q_j = np.arange(E).astype(int)[None,:]
@@ -382,15 +465,118 @@ def negloglikelihood_fast( ePix, xPix, yPix, E, mu, sigma, sigma_noise, single_s
     val = val[ val > 0 ]
     return -np.nansum( np.log( val ) )
 
+LOG2 = log(2)
+LOGPI = log(pi)
+LOG2PI = LOG2 + LOGPI
+
+SQRT2 = sqrt(2)
+SQRTPI = sqrt(pi)
+
+iSQRT2 = 1./SQRT2
+iSQRTPI = 1./SQRTPI
+
+def _erf( x, s ):
+    return erf(x/s)
+
+def _delta_erf(x, s, a=1):
+    i_s = 1./s
+    x_s = i_s*x
+    if a == 1:
+        return erf( x_s + i_s ) - erf( x_s )
+    return erf( x_s + a*i_s ) - erf( x_s )
+
+def _diff1_erf( x, s=1 ):
+    if s==1:
+        return 2*iSQRTPI * exp( -x**2 )
+    return 2*iSQRTPI * exp( -x**2 )/s
+
+def _diff2_erf( x, s=1 ):
+    '''
+    d/ds(erf(x/s)) = -(2 x e^(-x^2/s^2))/(sqrt(π) s^2)
+    '''
+    isSqr = 1./s**2
+    return -2 * iSQRTPI * isSqr * x * exp(- isSqr*x**2)
+
+def _sSqr_diff2_erf( x, s=1 ):
+    '''
+    d/ds(erf(x/s)) = -(2 x e^(-x^2/s^2))/(sqrt(π) s^2)
+    '''
+    isSqr = 1./s**2
+    return -2 * iSQRTPI * x * exp(- isSqr*x**2)
+
+class multinorm:
+    @classmethod
+    def __log_p_test(cls, x, mu, sigma ):
+        return -log2 - log(sigma) + log( erf( (x+1-mu)/(sqrt(2)*sigma) ) - erf( (x+1-mu)/(sqrt(2)*sigma) ) )
+
+    @classmethod
+    def __log_p(cls, x, mu, sigma ):
+        return -log2 + log( _delta_erf( x-mu, sqrt2*sigma ) )
+
+    @classmethod
+    def __p(cls, x, mu, sigma ):
+        return .5*_delta_erf( x-mu, sqrt2*sigma )
+    
+    @classmethod
+    def __log_pdf(cls, q, x, mu, sigma ):
+        Q = sum(q)
+        return gammaln(Q+1) - sum(gammaln(q+1)) + sum(q*cls.__log_p(x, mu, sigma) )
+    
+    @classmethod
+    def __mu_est(cls, q, x, mu, sigma ):
+        xi_ = x-mu
+
+        #p = .5*__delta_erf(xi_, SQRT2*sigma )
+        #diff_p_mu = .5*(__diff_erf( xi_+1, SQRT2*sigma ) - __diff_erf( xi_, SQRT2*sigma ))*iSQRT2/sigma
+        #return sum( q*diff_mu_p/p )
+
+        p = _delta_erf(xi_, SQRT2*sigma )
+        diff_p_mu = _diff1_erf( xi_+1, SQRT2*sigma ) - _diff1_erf( xi_, SQRT2*sigma )
+        return sum( q*diff_p_mu/p )
+
+    @classmethod
+    def __sigma_est(cls, q, x, mu, sigma ):
+        xi_ = x-mu
+
+        #p = .5*__delta_erf(xi_, SQRT2*sigma )
+        #diff_p_sigma = -.5*((x_i+1)*__diff_erf( xi_+1, SQRT2*sigma ) - xi_*__diff_erf( xi_, SQRT2*sigma ))*iSQRT2/sigma**2
+        #return sum( q*diff_p_sigma/p ) - 1./sigma
+
+        p = _delta_erf(xi_, SQRT2*sigma )
+        diff_p_sigma = _sSqr_diff2_erf( xi_+1, SQRT2*sigma ) - _diff2_erf( xi_, SQRT2*sigma )
+        return sum( q*diff_p_sigma/p ) - abs(sigma)
+
+    @classmethod
+    def mape( cls, q, x, mu, sigma ):
+        def _(p):
+            return [ cls.__mu_est( q, x, p[0], p[1] ), cls.__sigma_est( q, x, p[0], p[1] ) ]
+        return scipy.optimize.fsolve(_, [mu,sigma])
+
+    @classmethod
+    def mape2d( cls, q, xy, mu, sigma ):
+        def _(p):
+            #print( p )
+            xmu = cls.__mu_est( q, xy[0], p[0], p[2] )
+            ymu = cls.__mu_est( q, xy[1], p[1], p[3] )
+            xsigma = cls.__sigma_est( q, xy[0], p[0], p[2] )
+            ysigma = cls.__sigma_est( q, xy[1], p[1], p[3] )
+            eqs = [ xmu, ymu, xsigma, ysigma ]
+            #print( eqs )
+            return eqs
+        solve = scipy.optimize.fsolve(_, [ mu, sigma ])
+        #print( 'solve', solve )
+        #print( 'p0', mu, sigma )
+        return solve
+
 class poisson_norm:
     verbose = False
     mu_bounds = (None,None)
     sigma_bounds = (0,None)
-    lamb_bounds = (1e-4,1)
+    lamb_bounds = (1e-4,.9)
     gain_bounds = (1,None)
     
     @classmethod
-    def pdf3(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-8, debug=False ):
+    def pdf3(cls, x, mu=0, sigma=1, gain=1, lamb=.1, tol=1e-8, debug=False ):
         result = zeros_like(x).astype(float)
         
         k = 0
@@ -421,30 +607,34 @@ class poisson_norm:
 
 
     @classmethod
-    def pdf(cls, x, mu=0, sigma=1, gain=1, lamb=1, tol=1e-6):
-        kmax = int( (log(tol)+lamb)/log(lamb) ) + 1
-        ks = arange(0, kmax, 1).astype(int)
+    def pdf(cls, x, mu=0, sigma=1, gain=1, lamb=.1, tol=1e-6):
+        try:
+            kmax = int( (log(tol)+lamb)/log(lamb) ) + 1
+        except ValueError:
+            print( tol, lamb )
+            raise ValueError
+        ks = arange(0, kmax+1, 1).astype(int)
         poisson_weights = poisson.pmf( ks, mu=lamb )
         
-        return sum( [ poisson_weights[k] * norm.pdf( x, mu+gain*k, sigma )[None,:] for k in ks ], axis=0 )
+        #return sum( [ poisson_weights[k] * norm.pdf( x, mu+gain*k, sigma )[None,:] for k in ks ], axis=0 )
+        try:
+            return sum( poisson_weights[:,None] * norm.pdf( x[None,:], mu+gain*ks[:,None], sigma ), axis=0 )
+        except TypeError:
+            return sum( poisson_weights[:,None] * norm.pdf( x, mu+gain*ks[:,None], sigma ), axis=0 )
 
     @classmethod
-    def rvs( cls, loc=0, scale=1, g=1, mu=1, size=1 ):
+    def _log_pdf( cls, x, loc, scale, ):
+        return
+    
+    @classmethod
+    def rvs2( cls, loc=0, scale=1, g=1, mu=.1, size=1 ):
         a = loc - 4*scale + g*mu**2
         b = loc + 4*scale + g*mu**2
         return monteCarlo_rvs( lambda x: cls.pdf(x, loc, scale, g, mu), a, b, size, normed=False, verbose=cls.verbose )
 
     @classmethod
-    def rvs2( cls, loc=0, scale=1, g=1, mu=1, size=1, tol=1 ):
-        k = 0
-        #poisson_sum = 0
-        res = []
-        while True:
-            n = size*poisson.pmf( k, mu=mu )
-            if n < tol: return res
-            N = poisson.rvs( n )
-            res.extend( norm.rvs( loc=k*g*mu, scale=scale, size=N ) )
-            k += 1
+    def rvs( cls, mu=0, sigma=1, g=1, lamb=.1, size=1 ):
+        return g*poisson.rvs( mu=lamb, size=size ) + norm.rvs( loc=mu, scale=sigma, size=size )
 
     @classmethod
     def fit_binned( cls, X, mu=0, sigma=1., gain=1, lamb=1e-3, fix_mu=False, fix_sigma=False, fix_g=False, fix_lamb=False, binsize=1 ):
@@ -466,23 +656,27 @@ class poisson_norm:
             pdf = lambda X, mu, gain, lamb: func(X, mu+gain*lamb, sigma, gain, lamb)
             p0 = (mu, gain, lamb)
             bounds = (cls.mu_bounds, cls.gain_bounds, cls.lamb_bounds)
+        elif fix_g:
+            pdf = lambda X, mu, sigma, lamb: func(X, mu+gain*lamb, sigma, gain, lamb)
+            p0 = (mu, sigma, lamb)
+            bounds = (cls.mu_bounds, cls.sigma_bounds, cls.lamb_bounds)
         elif not fix_mu and not fix_sigma and not fix_g and not fix_lamb:
-            pdf = lambda X, mu, sigma, gain, lamb: func(X, mu+g*lamb, sigma, gain, lamb)
+            pdf = lambda X, mu, sigma, gain, lamb: func(X, mu+gain*lamb, sigma, gain, lamb)
             p0 = (mu, sigma, gain, lamb)
             bounds = (cls.mu_bounds, cls.sigma_bounds, cls.gain_bounds, cls.lamb_bounds)
         if pdf is None:
             raise Exception('fix combination not implemented')
-        ret = maxloglikelihood( pdf, X, p0=p0, bounds=bounds )['x']
+        ret = maxloglikelihood( pdf, X, p0=p0, bounds=bounds )
         return ret
 
 sqrt2 = sqrt(2.)
 class binom_norm2d:
-    def integral_norm_pixel( pix_edge, mu, sigma ):
+    def normcdf_p1diff( pix_edge, mu, sigma ):
         return -.5*( scipy.special.erf( -( pix_edge+1 - mu)/( sqrt2*sigma )) - scipy.special.erf( -( pix_edge - mu )/( sqrt2*sigma ) ) )
 
     def probability_pixel( xPix, yPix, mu, sigma, single_sigma = False ):
         if single_sigma: sigma[1] = sigma[0]
-        return integral_norm_pixel( xPix, mu = mu[0], sigma = sigma[0] ) * integral_norm_pixel( yPix, mu = mu[1], sigma = sigma[1] )
+        return normcdf_p1diff( xPix, mu = mu[0], sigma = sigma[0] ) * normcdf_p1diff( yPix, mu = mu[1], sigma = sigma[1] )
 
     def pdf( ePix, xPix, yPix, E, mu_xy, sigma_xy, sigma_E, single_sigma = False):
         prob = probability_pixel( xPix, yPix, mu_xy, sigma_xy, single_sigma )

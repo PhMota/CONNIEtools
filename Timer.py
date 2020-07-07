@@ -36,19 +36,36 @@ class Timer:
             else: s = '%ss%sms' % (int(t), int(t*1e3)%1000 )
         return s
         
-    def check(self, wait_secs, total_loop_number):
+    def check(self, wait_secs=None, total_loop_number=None):
+        if wait_secs: self.wait_secs = wait_secs
+        if total_loop_number: self.total_loop_number = total_loop_number
         try:
             self.loop_number +=1
-            if self.seconds()/wait_secs > self.count:
-                secs_per_loop = self.seconds()/self.loop_number
-                remaining_loops = total_loop_number - self.loop_number
-                eta_secs = secs_per_loop * remaining_loops
-                print('eta', colored( self.make_str( eta_secs ), 'yellow') )
-                self.count += 1
-        except:
+        except AttributeError:
+            print('start loop timer', self.wait_secs, self.total_loop_number )
             self.loop_number = 0
             self.count = 1
+            return
+        if self.seconds()/wait_secs > self.count:
+            secs_per_loop = self.seconds()/self.loop_number
+            remaining_loops = total_loop_number - self.loop_number
+            eta_secs = secs_per_loop * remaining_loops
+            print('eta', colored( self.make_str( eta_secs ), 'yellow') )
+            self.count += 1
         return
+    
+    def _wait_secs(self, wait_secs):
+        self.wait_secs = wait_secs
+        
+    def _total_loop_number(self, tln):
+        self.total_loop_number = tln
+    
+    def __next__(self):
+        return self.check()
+    next = __next__
+    
+    def __iter__(self):
+        return self
 
 class timer:
     def __init__(self, name = ''):

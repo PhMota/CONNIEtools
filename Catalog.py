@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 import os, sys, argparse, re, glob
+from argparse import Namespace
 
 from Timer import Timer
 import warnings
@@ -87,6 +88,8 @@ class HitSummary:
         for name in self.__recarray__.dtype.names:
             setattr(self, name, getattr(self.__recarray__, name) )
         self.shape = recarray.shape
+        self.size = recarray.size
+        self.names = recarray.dtype.names
     
     def __getitem__(self, *args):
         if type(args[0]) == str:
@@ -179,15 +182,75 @@ class HitSummary:
                         )
         
     def add_fit_fields( self ):
-        self.add_fields( ['pfit','Efit','xMufit','yMufit','xSigmafit','ySigmafit'],
-                        types=(float,float,float,float,float,float),
-                        arrays=self.__apply_to_entries( self.__fit_vars ).T
+        arrays = self.__apply_to_entries( self.__fit_vars ).T
+        print( 'fit fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
+        self.add_fields( ['Efit', 'xMufit', 'yMufit', 'xSigmafit', 'ySigmafit'],
+                        types=(float,float,float,float,float),
+                        arrays=arrays
                         )
     
-    def __fit_vars( self, entry, noise ):
-        xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit( entry.xPix, entry.yPix, entry.ePix, entry.xBary1, entry.yBary1, sqrt(entry.xVar1), sqrt(entry.yVar1), sum(entry.ePix), sigma_e = [noise]*len(dat.ePix), ftol=1e-6, mode=mode, loss='soft_l1' )
-        return pfit, Efit, xMufit, yMufit, xSigmafit, ySigmafit
+    def __fit_vars( self, entry ):
+        rawNoise = 10
+        #if 'rawNoise' in self.names:
+            #rawNoise = self.rawNoise
 
+        #with Timer('likevars'):
+        xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit( 
+            entry.xPix, 
+            entry.yPix, 
+            entry.ePix, 
+            entry.xBary1, 
+            entry.yBary1, 
+            sqrt(entry.xVar1), 
+            sqrt(entry.yVar1), 
+            sum(entry.ePix),
+            ftol=1e-8, 
+            mode='fit',
+            sigma_e=rawNoise,
+            g=7.25,
+            lamb=0
+        )
+        #print( 'fit', Efit, xMufit, yMufit, xSigmafit, ySigmafit )
+        return Efit, xMufit, yMufit, xSigmafit, ySigmafit
+
+    def add_like_fields( self ):
+        arrays = self.__apply_to_entries( self.__like_vars ).T
+        try:
+            self.t.__exit__()
+            del self.t
+        except:
+            print( 'no timer' )
+        print( 'like fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
+        
+        self.add_fields( ['ELike', 'xMuLike', 'yMuLike', 'xSigmaLike', 'ySigmaLike'],
+                        types=(float,float,float,float,float),
+                        arrays=arrays
+                        )
+        
+    def __like_vars( self, entry ):
+        try:
+            self.t.check(30, self.size)
+        except AttributeError:
+            self.t = Timer('done')
+            self.t.__enter__()
+        rawNoise = 10
+        #if 'rawNoise' in self.names:
+            #rawNoise = self.rawNoise
+        xMu, yMu, xSigma, ySigma, E = stats.norm2d_binom_norm.mle( 
+            entry.xPix, 
+            entry.yPix, 
+            entry.ePix, 
+            entry.xBary1, 
+            entry.yBary1, 
+            sqrt(entry.xVar1), 
+            sqrt(entry.yVar1), 
+            sum(entry.ePix),
+            sigma_e = rawNoise,
+            g=7.25,
+            lamb=0
+        )
+        return E, xMu, yMu, xSigma, ySigma
+    
     
     def match_bruteforce( self, events, verbose, basename ):
         
@@ -623,7 +686,13 @@ class HitSummary:
         assignmentsArray = ''
         branch = ''
         setbranch = ''
-        for name in self.__recarray__.dtype.names[::-1]:
+        
+        names = list(self.__recarray__.dtype.names)
+        names.remove('nSavedPix')
+        names = ['nSavedPix'] + names
+        print( names )
+        
+        for name in names:
             type_ = getattr( self.__recarray__, name ).dtype
             if name.startswith('n') and name != 'nSavedPix' and name != 'nSat':
                 var = '&c_{}'.format(name)
@@ -687,14 +756,14 @@ class HitSummary:
         '''.format(declarations=declarations, branch=branch, setbranch=setbranch, assignments=assignments, assignmentsArray=assignmentsArray)
         
         for name in self.__recarray__.dtype.names:
-            exec '{} = array(self.__recarray__.{})'.format(name, name)
+            exec( '{} = array(self.__recarray__.{})'.format(name, name) )
 
         ePix = [ array(e_) for e_ in self.__recarray__.ePix ]
         xPix = [ array(x_) for x_ in self.__recarray__.xPix ]
         yPix = [ array(y_) for y_ in self.__recarray__.yPix ]
         level = [ array(l_).astype(int) for l_ in self.__recarray__.level ]
         
-        fname = basename+'.root'
+        fname = basename
         mode = 'recreate'
         if os.path.exists( fname ):
             mode = 'update'
@@ -707,7 +776,7 @@ class HitSummary:
                             library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
                             extra_compile_args=['-O3', '-Wunused-variable'],
                             compiler='gcc',
-                            #verbose=1,
+                            verbose=0,
                             )
         number_of_entries = len(root_numpy.root2array( fname, treename='hitSumm', branches=['E0'] ))
         if mode == 'recreate':
@@ -831,6 +900,49 @@ def build_new_catalog_from_recarray__( input, output ):
     #output_file.Close()
     #input_file.Close()
 
+def addbranches( **args ):
+    with Timer('add branches'):
+        args = Namespace(**args)
+        
+        fname = glob.glob(args.basename)[0]
+        fout = args.output
+        if not os.path.exists(fname):
+            raise FileNotFoundError
+        
+        if os.path.exists(fout):
+            print( 'output already exists', fout )
+            raise FileExistsError
+        
+        hitSummary = open_HitSummary(fname)
+        print( hitSummary.names )
+        branches_set = set(args.branches) - set(hitSummary.names)
+        
+        fit_set = set(['Efit', 'xSigmafit', 'xMufit', 'ySigmafit', 'yMufit', 'fit'])
+        like_set = set( ['ELike', 'xSigmaLike', 'xMuLike', 'ySigmaLike', 'yMuLike', 'like'] )
+        
+        if not branches_set.isdisjoint(fit_set):
+            branches_set -= fit_set
+            print( 'found fit' )
+            hitSummary.add_fit_fields()
+        
+        if not branches_set.isdisjoint(like_set):
+            branches_set -= like_set
+            print( 'found like' )
+            hitSummary.add_like_fields()
+            
+        if len(branches_set) > 0:
+            print( 'branches not recognized', list(branches_set) )
+
+        hitSummary.save_catalog( fout )
+    return
+
+def add_addbranches_options(p):
+    p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
+    p.add_argument('branches', nargs='+', type=str, default=None, help = 'branches to be added' )
+    p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
+    p.add_argument('-o', '--output', type=str, default='added', help = 'output name' )
+    p.set_defaults( _func=addbranches )
+
 def simulate( args ):
     if os.path.exists(args.basename):
         print( 'folder already exists', args.basename )
@@ -874,7 +986,7 @@ def simulate( args ):
                     with Timer('match'):
                         hitSummary.match( simulation, args )
                     with Timer('save catalog'):
-                        hitSummary.save_catalog( args.basename )
+                        hitSummary.save_catalog( args.basename + '.root' )
                     t2.check( 60, len(thresholds)*len(images)*len(args.image_modes) )
     
 
@@ -925,7 +1037,7 @@ def image_extract( image, args ):
     for lvl in range( args.border ):
         hitSummary.add_level_fields(lvl)
     if not 'no_catalog' in args:
-        hitSummary.save_catalog( args.basename )
+        hitSummary.save_catalog( args.basename + '.root' )
     return hitSummary
 
 def extract( args ):
@@ -1306,7 +1418,8 @@ if __name__ == '__main__':
     add_extract_options( subparsers.add_parser('extract', help='extract events from image', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_match_options( subparsers.add_parser('match', help='match catalog with simulation', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_simulate_options( subparsers.add_parser('simulation', help='simulate, extract and match', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-
+    add_addbranches_options( subparsers.add_parser('addbranches', help='add branches to catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    
     args = parser.parse_args()
     
     _func = args._func
@@ -1315,5 +1428,8 @@ if __name__ == '__main__':
     print_var( vars(args).keys(), vars(args), line_char='\t' )
     
     with Timer('finished'):
-        _func(args)
+        try:
+            _func(args)
+        except TypeError:
+            _func(**vars(args))
     
