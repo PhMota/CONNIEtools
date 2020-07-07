@@ -271,7 +271,7 @@ class norm2d_binom_norm:
         p0 = (mux, muy, sigmax, sigmay, Ut)
         if isnan(Ut):
             return [-1]*5
-        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, None), (0.01, None), (1., None))
+        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, None), (0.01, None), (1e-3, None))
         mux, muy, sigmax, sigmay, Ut = minimize( func_log, p0, bounds=bounds )['x']
         return mux, muy, sigmax, sigmay, Ut*g - g*lamb*len(u)
 
@@ -284,7 +284,9 @@ class norm2d_binom_norm:
             return -sum( log( pdf ) )
 
         p0 = (mux, muy, sigmax, sigmay, Et)
-        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, None), (0.01, None), (1., None))
+        bounds = ((mux-2, mux+2), (muy-2, muy+2), (0.01, None), (0.01, None), (1e-3, None))
+        if isnan(Et) or Et<=0:
+            return [-1]*5
         mux, muy, sigmax, sigmay, Ut = scipy.optimize.minimize( func, p0, bounds=bounds )['x']
         return mux, muy, sigmax, sigmay, Et
 
