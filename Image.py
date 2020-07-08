@@ -30,7 +30,6 @@ from Timer import Timer
 from termcolor import colored
 
 from PrintVar import print_var
-from matplotlib import pylab as plt
 np.warnings.filterwarnings("ignore")
 import argparse
 from collections import OrderedDict
@@ -96,6 +95,7 @@ def norm_mean_1d( x, step = 1, abs_err = .25 ):
     return mean, y
 
 def norm_mean_1d2( x, step = 1, abs_err = 0 ):
+    from matplotlib import pylab as plt
     mean = [ np.nanmean(x) ]
     median = [ np.nanmedian(x) ]
     diff = [ mean[-1] - median[-1] ]
@@ -609,6 +609,8 @@ class Image:
                 getattr( self, sec+'R' ).save_pdf( '{}_{}'.format(output, sec+'R'), title = sec+'R' )
     
     def histograms( self ):
+        from matplotlib import pylab as plt
+        
         bias = self.bias.get_binned_distribution()
         vbias = self.vbias.get_binned_distribution()
         data = self.data.get_binned_distribution()
@@ -856,7 +858,8 @@ class Section( np.ndarray ):
         return ret
 
     def spectrum( self, output, gain, lambda_, sigma, binsize = 2 ):
-        
+        from matplotlib import pylab as plt
+
         median = np.nanmedian( self )
         mean = self.mean()
         std = self.std()
@@ -881,6 +884,8 @@ class Section( np.ndarray ):
         fig.savefig( output, bbox_extra_artists = (legend,), bbox_inches='tight')
 
     def save_pdf( self, output, title=None ):
+        from matplotlib import pylab as plt
+
         if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
@@ -902,6 +907,8 @@ class Section( np.ndarray ):
         return
 
     def save_projection( self, output, title, axis, no_max=False, no_mean=False, no_min=False, do_regress=False ):
+        from matplotlib import pylab as plt
+
         if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
@@ -941,6 +948,8 @@ class Section( np.ndarray ):
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
 
     def save_spectrum( self, output, title, binsize=1 ):
+        from matplotlib import pylab as plt
+
         if not output.endswith('.pdf'): output += '.pdf'
         with Timer( 'saved ' + output ):
             fig = plt.figure()
@@ -1233,6 +1242,8 @@ def add_display_options( p ):
     p.set_defaults( func=display )
 
 def display( args ):
+    from matplotlib import pylab as plt
+
     with Timer('plot'):
         path = glob( args.input_file )
         if len(path) > 1:

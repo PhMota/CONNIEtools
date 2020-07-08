@@ -11,6 +11,11 @@ class Timer:
         self.start = datetime.datetime.now()
         return self
     
+    def __del__(self):
+        s = [ self.msg ]
+        s += [ colored(self.time(),'green') ]
+        print( ' '.join(s) )
+    
     def __exit__(self, type, value, traceback):
         s = [ self.msg ]
         if value:
@@ -26,32 +31,46 @@ class Timer:
     
     def time(self, N=1):
         t = self.seconds(N)
-        return self.make_str(t)
+        return self.make_str_ms(t)
 
-    def make_str(self, t):
+    def make_str_ms(self, t):
         if t > 60*60:
             s = '%sh%sm%ss%sms' %( int(t)/60/60, int(t/60)%60, int(t)%60, int(t*1e3)%1000 )
         else: 
             if t > 60: s = '%sm%ss%sms' %( int(t)/60, int(t)%60, int(t*1e3)%1000 )
             else: s = '%ss%sms' % (int(t), int(t*1e3)%1000 )
         return s
+
+    def make_str_s(self, t):
+        if t > 60*60:
+            s = '%sh%sm%ss' %( int(t)/60/60, int(t/60)%60, int(t)%60 )
+        else: 
+            if t > 60: s = '%sm%ss' %( int(t)/60, int(t)%60 )
+            else: s = '%ss' % (int(t) )
+        return s
         
     def check(self, wait_secs=None, total_loop_number=None):
-        if wait_secs: self.wait_secs = wait_secs
-        if total_loop_number: self.total_loop_number = total_loop_number
+        if not hasattr(self,'wait_secs'): self.wait_secs = wait_secs
+        if not hasattr(self, 'total_loop_number'): self.total_loop_number = total_loop_number
         try:
             self.loop_number +=1
         except AttributeError:
-            print('start loop timer', self.wait_secs, self.total_loop_number )
+            print('start loop timer:', 'next report in {}'.format( self.make_str_s(self.wait_secs) ), 'total', self.total_loop_number )
             self.loop_number = 0
             self.count = 1
             return
-        if self.seconds()/wait_secs > self.count:
+        if self.seconds()/self.wait_secs > self.count:
             secs_per_loop = self.seconds()/self.loop_number
-            remaining_loops = total_loop_number - self.loop_number
+            remaining_loops = self.total_loop_number - self.loop_number
             eta_secs = secs_per_loop * remaining_loops
-            print('eta', colored( self.make_str( eta_secs ), 'yellow') )
+            if eta_secs < self.wait_secs and eta_secs > 30:
+                self.wait_secs /= 2
+                self.count *= 2
+            print('eta', colored( self.make_str_s( eta_secs ), 'yellow'), 'done', self.loop_number, '[{:.2g}]'.format(float(self.loop_number)/self.total_loop_number), 'next report in {}'.format( self.make_str_s(self.wait_secs) ) )
             self.count += 1
+            if eta_secs > 3*self.wait_secs: 
+                self.wait_secs *= 2
+                self.count /= 2
         return
     
     def _wait_secs(self, wait_secs):

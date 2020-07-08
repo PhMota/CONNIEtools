@@ -239,16 +239,70 @@ class Beamer:
         
 def openBeamer( fname, title ): return Beamer( fname, title )
 
-def math( expr ):
-    return '\n'.join( ['$$', expr, '$$'] )
+#def math( expr ):
+    #return '\n'.join( ['$$', expr, '$$'] )
 
 #def __invert__(a):
     #return 'test'
 
-class MyString(str):
-    def __or__( self, a ):
-        return MyString(self + a)
+class MathGen:
+    def __or__(self, a):
+        return '\n'.join( ['$$', str(a), '$$'] )
 
-m = MyString('')
-print( m, type(m) )
-print( m|'a', type(m|'a') )
+Math = MathGen()
+
+class Expr:
+    def __init__(self, s):
+        self.s = s
+    def __str__(self):
+        return self.s
+    
+    def __repr__(self):
+        return self.s
+    
+    def __add__(self, a):
+        return ExprAdd(r'{}+{}'.format(self.s, a))
+    
+    def __div__( self, a ):
+        return frac(self.s, a)
+    
+    def __mul__( self, a ):
+        return ExprMul(r'{}{}'.format(self.s, a))
+    
+    def __or__( self, a ):
+        return Expr(r'{}|{}'.format(self.s, a))
+    
+    def __call__( self, *a ):
+        return Expr(r'{}({})'.format( self.s, ', '.join( map(str,a) ) ) )
+    
+    def __eq__( self, a ):
+        return Expr(r'{} = {}'.format( self.s, a ) )
+    
+class ExprGen:
+    def __or__( self, a ):
+        return Expr(a)
+
+class ExprAdd(Expr):
+    def __init__(self, s):
+        self. s = s
+
+class ExprMul(Expr):
+    def __init__(self, s):
+        self. s = s
+    
+
+mu = Expr('\mu')
+sigma = Expr('\sigma')
+E = ExprGen()
+
+def frac(a, b):
+    return Expr( r'\frac{{ {a} }}{{ {b} }}'.format(**locals()) )
+
+def bf(a):
+    return Expr( r'{{\mathbf {} }}'.format(a) )
+
+#def 
+
+print( E, type(E) )
+print( E|'a', type(E|'a') )
+print( (E|'a')(mu) )

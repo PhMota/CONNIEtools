@@ -22,7 +22,6 @@ with Timer('presentation'):
         sigmay = r'\sigma_y'
         X = r'{\mathbf X}'
         Y = r'{\mathbf Y}'
-        E = r'{\mathbf E}'
         Q = r'{\mathbf Q}'
         xbar = r'{\bar x}'
         ybar = r'{\bar y}'
@@ -55,27 +54,28 @@ with Timer('presentation'):
             #$$
             #'''.format(**locals())
         #)
- 
+        f = E|'f'
+        X = E|'X'
+        print( f(mu,sigma|bf(sigma)), type(f) )
+        print( Math| f(mu,sigma|bf(X)) == frac( f(bf(X)|mu,sigma)*f(mu)(sigma), f(bf(X)) ) )
         doc.frame(
             'prior',
-            r'''
-            the posterior distribution is given by the Bayes rule
-            $$
-            f(\mu,\sigma|{X})
-            = \frac{{ f( {X}|\mu,\sigma ) f(\mu,\sigma) }}{{ f({X}) }}
-            \\
-            = D_n f({X}|\mu,\sigma) f(\mu,\sigma)
-            $$
-            where $D_n$ is the normalization to keep the integral of the joint pdf to 1.\\
-            the prior needs to transform as
-            $$
-            f(\mu,\sigma) = a f( \mu + b, a \sigma )
-            $$
-            so the prior needs to have the form
-            $$
-            f( \mu, \sigma ) =  \frac{{ \rm constant }}{{ \sigma }}
-            $$
-            '''.format(**locals())
+            r'the posterior distribution is given by the Bayes rule',
+            Math|( f(mu,sigma|bf(X)) == frac( f(bf(X)|mu,sigma)*f(mu,sigma), f(bf(X)) ) ), 
+            #= \frac{{ f( {X}|\mu,\sigma ) f(\mu,\sigma) }}{{ f({X}) }}
+            #\\
+            #= D_n f({X}|\mu,\sigma) f(\mu,\sigma)
+            #$$
+            #where $D_n$ is the normalization to keep the integral of the joint pdf to 1.\\
+            #the prior needs to transform as
+            #$$
+            #f(\mu,\sigma) = a f( \mu + b, a \sigma )
+            #$$
+            #so the prior needs to have the form
+            #$$
+            #f( \mu, \sigma ) =  \frac{{ \rm constant }}{{ \sigma }}
+            #$$
+            #'''.format(**locals())
         )
         doc.frame('a posteriori PDF',
             r'''

@@ -16,12 +16,11 @@ except ImportError:
     exit(0)
 
 import weave
-#from array import array
 from numpy.lib import recfunctions as rfn
 import matplotlib
 matplotlib.use('gtk3agg')
 
-import matplotlib.pylab as plt
+
 
 from numpy.lib.recfunctions import append_fields, stack_arrays
 from numpy import *
@@ -182,12 +181,12 @@ class HitSummary:
                         )
         
     def add_fit_fields( self ):
+        self.t_fit = Timer('done')
+        self.t_fit.wait_secs = 30
+        self.t_fit.total_loop_number = self.size
+        self.t_fit.__enter__()
         arrays = self.__apply_to_entries( self.__fit_vars ).T
-        try:
-            self.t_fit.__exit__()
-            del self.t_fit
-        except:
-            print( 'no timer' )
+        del self.t_fit
         
         print( 'fit fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
         self.add_fields( ['Efit', 'xMufit', 'yMufit', 'xSigmafit', 'ySigmafit'],
@@ -197,10 +196,9 @@ class HitSummary:
     
     def __fit_vars( self, entry ):
         try:
-            self.t_fit.check( 30, self.size )
+            self.t_fit.check()
         except AttributeError:
-            self.t_fit = Timer('done')
-            self.t_fit.__enter__()
+            pass
         
         rawNoise = 10
         #if 'rawNoise' in self.names:
@@ -226,12 +224,12 @@ class HitSummary:
         return Efit, xMufit, yMufit, xSigmafit, ySigmafit
 
     def add_like_fields( self ):
+        self.t_like = Timer('done')
+        self.t_like.wait_secs = 30
+        self.t_like.total_loop_number = self.size            
+        self.t_like.__enter__()
         arrays = self.__apply_to_entries( self.__like_vars ).T
-        try:
-            self.t_like.__exit__()
-            del self.t_like
-        except:
-            print( 'no timer' )
+        del self.t_like
         
         print( 'like fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
         
@@ -242,23 +240,25 @@ class HitSummary:
         
     def __like_vars( self, entry ):
         try:
-            self.t_like.check( 30, self.size )
+            self.t_like.check()
         except AttributeError:
-            self.t_like = Timer('done')
-            self.t_like.__enter__()
+            pass
         
         rawNoise = 10
         #if 'rawNoise' in self.names:
             #rawNoise = self.rawNoise
+        mask = entry.level <= 2
+        #mask = entry.ePix >= 20
+        
         xMu, yMu, xSigma, ySigma, E = stats.norm2d_binom_norm.mle( 
-            entry.xPix, 
-            entry.yPix, 
-            entry.ePix, 
+            entry.xPix[mask], 
+            entry.yPix[mask], 
+            entry.ePix[mask], 
             entry.xBary1, 
             entry.yBary1, 
             sqrt(entry.xVar1), 
             sqrt(entry.yVar1), 
-            sum(entry.ePix),
+            sum(entry.ePix[mask]),
             sigma_e = rawNoise,
             g=7.25,
             lamb=0
@@ -1130,6 +1130,7 @@ def test_std_correction():
     return
 
 def scatter( args ):
+    import matplotlib.pylab as plt    
     with Timer('scatter'):
         file = glob.glob(args.root_file)
         
@@ -1325,6 +1326,7 @@ def pdf( x, E, n, sigma ):
     return sum( [stats.norm.pdf(x, iE, sqrt(in_)*sigma) for iE, in_ in zip(E,n)], axis=0 )
 
 def histogram( args ):
+    import matplotlib.pylab as plt
     with Timer('histogram'):
         file = glob.glob(args.root_file)
         #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
