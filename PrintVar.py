@@ -2,7 +2,11 @@ from __future__ import print_function
 import os
 from termcolor import colored
 
-rows, columns = os.popen('stty size', 'r').read().split()
+try:
+    _, columns = os.popen('stty size', 'r').read().split()
+except:
+    columns = 100
+
 def print_var( var, vars_, end = '\n', line_char='', start_pos=0 ):
     if not type(var) is str:
         start_pos = 0
