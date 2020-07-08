@@ -36,52 +36,57 @@ with Timer('presentation'):
         
         doc.par(r'\def\vr{\tt\color{gray}}')
         doc.frame('intro',
-            'following the computation performed at "A Bayesian perspective on estimating mean, variance, and standard-deviation from data"\\ by Travis E. Oliphant', 
-            r'''https://scholarsarchive.byu.edu/cgi/\\
+            'following the computation performed at "A Bayesian perspective on estimating mean, variance, and standard-deviation from data"\\ by Travis E. Oliphant',
+            r'''\\https://scholarsarchive.byu.edu/cgi/\\
                 viewcontent.cgi?article=1277\&context=facpub'''
         )
         
-        doc.frame(
-            'joint PDF',
-            r'''
-            Given data $\{{x_1, x_2, \dots, x_n \}}$ and $\{{y_1, y_2, \dots, y_n \}}$, the task is to find the means ${mux}$ and ${muy}$, variances $v_x={sigmax}^2$ and standard-deviations ${sigmax}$ and ${sigmay}$ of these data. First, assume that data has a common mean and a common variance. The principle of maximum entropy can then be applied under these constraints (using a flat "ignorance" prior) to choose the distribution
-            $$
-            f({X},{Y}|{mux},{muy},{sigmax},{sigmay})
-            = \prod_i^n \frac{{1}}{{ \sqrt{{2\pi}} {sigmax}{sigmay} }}{exp}[ -\frac{{x_i-{mux}}}{{2{sigmax}}} - \frac{{y_i-{muy} }}{{2{sigmay}}} ]
-            \\
-            = \frac{{1}}{{ (\sqrt{{2\pi}} {sigmax}{sigmay})^n }}{exp}[ -\frac{{1}}{{2{sigmax}^2}} \sum_i x_i-{mux} -\frac{{1}}{{2{sigmay}^2}} \sum_i y_i-{muy} ]
-            $$
-            '''.format(**locals())
-        )
+        ################################################################## normal distribution
+        #doc.frame(
+            #'joint PDF',
+            #r'''
+            #Given data $\{{x_1, x_2, \dots, x_n \}}$, the task is to find the mean $\mu$ and standard-deviations $\sigma$ of these data. First, assume that data has a common mean and a common variance. The principle of maximum entropy can then be applied under these constraints (using a flat "ignorance" prior) to choose the distribution
+            #$$
+            #f({X}|\mu,\sigma)
+            #= \prod_i^n \frac{{1}}{{ \sqrt{{2\pi}}\sigma }}{exp}[ -\frac{{(x_i-\mu)^2 }}{{2\sigma^2}} ]
+            #\\
+            #= \frac{{1}}{{ (\sqrt{{2\pi}} \sigma )^n }}
+            #{exp}[ -\frac{{1}}{{2\sigma^2}} \sum_i( x_i^2-2x_i+\mu^2 ) ]
+            #$$
+            #'''.format(**locals())
+        #)
  
         doc.frame(
             'prior',
             r'''
             the posterior distribution is given by the Bayes rule
             $$
-            f({mux},{muy},{sigmax},{sigmay}|{X},{Y})
-            = \frac{{ f({X},{Y}|{mux},{muy},{sigmax},{sigmay}) f({mux},{muy},{sigmax},{sigmay}) }}{{ f({X},{Y}) }}
+            f(\mu,\sigma|{X})
+            = \frac{{ f( {X}|\mu,\sigma ) f(\mu,\sigma) }}{{ f({X}) }}
             \\
-            = D_n f({X},{Y}|{mux},{muy},{sigmax},{sigmay}) f({mux},{muy},{sigmax},{sigmay})
+            = D_n f({X}|\mu,\sigma) f(\mu,\sigma)
             $$
+            where $D_n$ is the normalization to keep the integral of the joint pdf to 1.\\
             the prior needs to transform as
             $$
-            f({mux},{muy},{sigmax},{sigmay}) = a_xa_y f({mux}+b_x,{muy}+b_y,a_x{sigmax},a_y{sigmay})
+            f(\mu,\sigma) = a f( \mu + b, a \sigma )
             $$
             so the prior needs to have the form
             $$
-            f({mux},{muy},{sigmax},{sigmay}) =  \frac{{ \rm constant }}{{ {sigmax}{sigmay} }}
+            f( \mu, \sigma ) =  \frac{{ \rm constant }}{{ \sigma }}
             $$
             '''.format(**locals())
         )
         doc.frame('a posteriori PDF',
             r'''
+            the probability of the parameters given the data
             $$
-            f({mux},{muy},{sigmax},{sigmay}|{X},{Y}) 
-            = \frac{{ D_n }}{{ ({sigmax}{sigmay})^{{n+1}} }}
-            \\ \quad\times {exp}[ -\frac{{1}}{{2{sigmax}^2}} \sum_i (x_i-{mux})^2 -\frac{{1}}{{2{sigmay}^2}} \sum_i( y_i-{muy})^2 ]
+            f(\mu,\sigma|{Y}) 
+            = \frac{{ D_n }}{{ \sigma ^{{n+1}} }}
+            {exp}[ -\frac{{1}}{{2\sigma^2}} \sum_i ( x_i - \mu )^2 ]
             \\
-            = \frac{{ D_n }}{{ ({sigmax}{sigmay})^{{n+1}} }}{exp}[ -\frac{{ ({mux} - {xbar})^2 + C_x }}{{2{sigmax}^2/n}} -\frac{{ ({muy} - {ybar})^2 + C_y }}{{2{sigmay}^2/n}} ]
+            = \frac{{ D_n }}{{ \sigma^{{n+1}} }}
+            {exp}[ -\frac{{ (\mu - {xbar})^2 + C }}{{2 \sigma^2/n}} ]
             $$
             where
             $$
@@ -91,30 +96,16 @@ with Timer('presentation'):
             $$
             '''.format(**locals())
         )
+
         doc.frame('normalization',
             r'''
+            The normalization is needed to ensure the probability denstity interpretation
             $$
             D_n
-            = [ \int d\alpha_x d\sigma_x d\alpha_y d\sigma_y \frac{{1}}{{({sigmax}{sigmay})^{{n+1}} }}
-               {exp}( -\frac{{ \alpha_x^2 + C_x }}{{2{sigmax}^2/n}} -\frac{{ \alpha_y^2 + C_y }}{{2{sigmay}^2/n}} ) ]^{{-1}}
-            \\
-            = [ \int d\alpha_x d\sigma_x \frac{{1}}{{ {sigmax}^{{n+1}} }}
-                {exp}( -\frac{{ \alpha_x^2 + C_x }}{{2{sigmax}^2/n}} ) ]^{{-1}} [x y]^{{-1}}
+            = [ \int d\alpha d\sigma \frac{{1}}{{ \sigma^{{n+1}} }}
+               {exp}( -\frac{{ \alpha^2 + C }}{{2 \sigma^2/n}} ) ]^{{-1}}
             \\
             = \frac{{ n^n \sqrt{{ C_x^{{n-1}}C_y^{{n-1}} }} }}{{ \pi 2^{{n-2}} }} \Gamma(\frac{{n-1}}{{2}})^{{-2}}
-            $$
-            '''.format(**locals())
-        )
-        doc.frame('joint maximum a posteriori estimator',
-            r'''
-            $$
-            \hat{{\mu}}_x, \hat{{\mu}}_y, \hat{{\sigma}}_x, \hat{{\sigma}}_y 
-            = {{\rm arg\ max}} f({mux},{muy},{sigmax},{sigmay}|{X},{Y})
-            \\
-            = {{\rm arg\ min}}[ -{{\rm log}} f({mux},{muy},{sigmax},{sigmay}|{X},{Y}) ]
-            \\
-            = {{\rm arg\ min}}[ (n+1){{\rm log}}\sigma_x + (n+1){{\rm log}}\sigma_x 
-                \\ \quad+ \frac{{ (\mu_x - \bar{{x}})^2 + C_x }}{{2{sigmax}^2/n}} + \frac{{ (\mu_y - \bar{{y}})^2 + C_y }}{{2{sigmay}^2/n}} ]
             $$
             '''.format(**locals())
         )
@@ -122,19 +113,128 @@ with Timer('presentation'):
         doc.frame('joint maximum a posteriori estimator',
             r'''
             $$
-            \frac{{ (\hat{{\mu}}_x - \bar{{x}})}}{{\hat{{\sigma}}_x^2/n}} = 0
+            \hat{{\mu}}_x, \hat{{\sigma}}
+            = {{\rm arg\ max}} f( \mu, \sigma|{X} )
             \\
-            \frac{{n+1}}{{\hat{{\sigma}}_x }} + \frac{{ (\hat{{\mu}}_x - \bar{{x}})^2 + C_x }}{{2\hat{{\sigma}}_x^3/n}} = 0
+            = {{\rm arg\ min}}[ -{{\rm log}} f( \mu, \sigma|{X} ) ]
+            \\
+            = {{\rm arg\ min}}[ (n+1){{\rm log}}\sigma
+                + \frac{{ (\mu - \bar{{x}})^2 + C }}{{2 \sigma^2/n}} ]
+            $$
+            '''.format(**locals())
+        )
+
+        doc.frame('joint maximum a posteriori estimator',
+            r'''
+            $$
+            \frac{{ \hat{{\mu}} - \bar{{x}} }}{{ \hat{{\sigma}}^2/n }} = 0
+            \\
+            \frac{{n+1}}{{ \hat{{\sigma}} }} + \frac{{ (\hat{{\mu}} - \bar{{x}} )^2 + C }}{{ 2\hat{{\sigma}}^3/n }} = 0
             $$
             solving simulataneously
             $$
-            \hat{{\mu}}_x = \bar{{x}}
+            \hat{{\mu}} = \bar{{x}}
             \\
-            \hat{{\sigma}}_x^2 = \frac{{n}}{{n+1}}C_x
+            \hat{{\sigma}}^2 = \frac{{n}}{{n+1}} C
             $$
             '''.format(**locals())
         )
         
+        
+        ################################################################## normal distribution 2d
+        #doc.frame(
+            #'joint PDF',
+            #r'''
+            #Given data $\{{x_1, x_2, \dots, x_n \}}$ and $\{{y_1, y_2, \dots, y_n \}}$, the task is to find the means ${mux}$ and ${muy}$, variances $v_x={sigmax}^2$ and standard-deviations ${sigmax}$ and ${sigmay}$ of these data. First, assume that data has a common mean and a common variance. The principle of maximum entropy can then be applied under these constraints (using a flat "ignorance" prior) to choose the distribution
+            #$$
+            #f({X},{Y}|{mux},{muy},{sigmax},{sigmay})
+            #= \prod_i^n \frac{{1}}{{ \sqrt{{2\pi}} {sigmax}{sigmay} }}{exp}[ -\frac{{x_i-{mux}}}{{2{sigmax}}} - \frac{{y_i-{muy} }}{{2{sigmay}}} ]
+            #\\
+            #= \frac{{1}}{{ (\sqrt{{2\pi}} {sigmax}{sigmay})^n }}{exp}[ -\frac{{1}}{{2{sigmax}^2}} \sum_i x_i-{mux} -\frac{{1}}{{2{sigmay}^2}} \sum_i y_i-{muy} ]
+            #$$
+            #'''.format(**locals())
+        #)
+ 
+        #doc.frame(
+            #'prior',
+            #r'''
+            #the posterior distribution is given by the Bayes rule
+            #$$
+            #f({mux},{muy},{sigmax},{sigmay}|{X},{Y})
+            #= \frac{{ f({X},{Y}|{mux},{muy},{sigmax},{sigmay}) f({mux},{muy},{sigmax},{sigmay}) }}{{ f({X},{Y}) }}
+            #\\
+            #= D_n f({X},{Y}|{mux},{muy},{sigmax},{sigmay}) f({mux},{muy},{sigmax},{sigmay})
+            #$$
+            #the prior needs to transform as
+            #$$
+            #f({mux},{muy},{sigmax},{sigmay}) = a_xa_y f({mux}+b_x,{muy}+b_y,a_x{sigmax},a_y{sigmay})
+            #$$
+            #so the prior needs to have the form
+            #$$
+            #f({mux},{muy},{sigmax},{sigmay}) =  \frac{{ \rm constant }}{{ {sigmax}{sigmay} }}
+            #$$
+            #'''.format(**locals())
+        #)
+        #doc.frame('a posteriori PDF',
+            #r'''
+            #$$
+            #f({mux},{muy},{sigmax},{sigmay}|{X},{Y}) 
+            #= \frac{{ D_n }}{{ ({sigmax}{sigmay})^{{n+1}} }}
+            #\\ \quad\times {exp}[ -\frac{{1}}{{2{sigmax}^2}} \sum_i (x_i-{mux})^2 -\frac{{1}}{{2{sigmay}^2}} \sum_i( y_i-{muy})^2 ]
+            #\\
+            #= \frac{{ D_n }}{{ ({sigmax}{sigmay})^{{n+1}} }}{exp}[ -\frac{{ ({mux} - {xbar})^2 + C_x }}{{2{sigmax}^2/n}} -\frac{{ ({muy} - {ybar})^2 + C_y }}{{2{sigmay}^2/n}} ]
+            #$$
+            #where
+            #$$
+            #{xbar} = \frac{{1}}{{n}}\sum_i x_i
+            #\\
+            #C_x = \frac{{1}}{{n}}\sum_i (x_i - {xbar})^2
+            #$$
+            #'''.format(**locals())
+        #)
+        #doc.frame('normalization',
+            #r'''
+            #$$
+            #D_n
+            #= [ \int d\alpha_x d\sigma_x d\alpha_y d\sigma_y \frac{{1}}{{({sigmax}{sigmay})^{{n+1}} }}
+               #{exp}( -\frac{{ \alpha_x^2 + C_x }}{{2{sigmax}^2/n}} -\frac{{ \alpha_y^2 + C_y }}{{2{sigmay}^2/n}} ) ]^{{-1}}
+            #\\
+            #= [ \int d\alpha_x d\sigma_x \frac{{1}}{{ {sigmax}^{{n+1}} }}
+                #{exp}( -\frac{{ \alpha_x^2 + C_x }}{{2{sigmax}^2/n}} ) ]^{{-1}} [x y]^{{-1}}
+            #\\
+            #= \frac{{ n^n \sqrt{{ C_x^{{n-1}}C_y^{{n-1}} }} }}{{ \pi 2^{{n-2}} }} \Gamma(\frac{{n-1}}{{2}})^{{-2}}
+            #$$
+            #'''.format(**locals())
+        #)
+        #doc.frame('joint maximum a posteriori estimator',
+            #r'''
+            #$$
+            #\hat{{\mu}}_x, \hat{{\mu}}_y, \hat{{\sigma}}_x, \hat{{\sigma}}_y 
+            #= {{\rm arg\ max}} f({mux},{muy},{sigmax},{sigmay}|{X},{Y})
+            #\\
+            #= {{\rm arg\ min}}[ -{{\rm log}} f({mux},{muy},{sigmax},{sigmay}|{X},{Y}) ]
+            #\\
+            #= {{\rm arg\ min}}[ (n+1){{\rm log}}\sigma_x + (n+1){{\rm log}}\sigma_x 
+                #\\ \quad+ \frac{{ (\mu_x - \bar{{x}})^2 + C_x }}{{2{sigmax}^2/n}} + \frac{{ (\mu_y - \bar{{y}})^2 + C_y }}{{2{sigmay}^2/n}} ]
+            #$$
+            #'''.format(**locals())
+        #)
+
+        #doc.frame('joint maximum a posteriori estimator',
+            #r'''
+            #$$
+            #\frac{{ (\hat{{\mu}}_x - \bar{{x}})}}{{\hat{{\sigma}}_x^2/n}} = 0
+            #\\
+            #\frac{{n+1}}{{\hat{{\sigma}}_x }} + \frac{{ (\hat{{\mu}}_x - \bar{{x}})^2 + C_x }}{{2\hat{{\sigma}}_x^3/n}} = 0
+            #$$
+            #solving simulataneously
+            #$$
+            #\hat{{\mu}}_x = \bar{{x}}
+            #\\
+            #\hat{{\sigma}}_x^2 = \frac{{n}}{{n+1}}C_x
+            #$$
+            #'''.format(**locals())
+        #)
         
         ################################################################# multinomial
         doc.frame('pixel integrated PDF',

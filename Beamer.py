@@ -238,3 +238,17 @@ class Beamer:
         return s
         
 def openBeamer( fname, title ): return Beamer( fname, title )
+
+def math( expr ):
+    return '\n'.join( ['$$', expr, '$$'] )
+
+#def __invert__(a):
+    #return 'test'
+
+class MyString(str):
+    def __or__( self, a ):
+        return MyString(self + a)
+
+m = MyString('')
+print( m, type(m) )
+print( m|'a', type(m|'a') )

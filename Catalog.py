@@ -184,8 +184,8 @@ class HitSummary:
     def add_fit_fields( self ):
         arrays = self.__apply_to_entries( self.__fit_vars ).T
         try:
-            self.t.__exit__()
-            del self.t
+            self.t_fit.__exit__()
+            del self.t_fit
         except:
             print( 'no timer' )
         
@@ -197,10 +197,10 @@ class HitSummary:
     
     def __fit_vars( self, entry ):
         try:
-            self.t.check(30, self.size)
+            self.t_fit.check( 30, self.size )
         except AttributeError:
-            self.t = Timer('done')
-            self.t.__enter__()
+            self.t_fit = Timer('done')
+            self.t_fit.__enter__()
         
         rawNoise = 10
         #if 'rawNoise' in self.names:
@@ -228,10 +228,11 @@ class HitSummary:
     def add_like_fields( self ):
         arrays = self.__apply_to_entries( self.__like_vars ).T
         try:
-            self.t.__exit__()
-            del self.t
+            self.t_like.__exit__()
+            del self.t_like
         except:
             print( 'no timer' )
+        
         print( 'like fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
         
         self.add_fields( ['ELike', 'xMuLike', 'yMuLike', 'xSigmaLike', 'ySigmaLike'],
@@ -241,10 +242,11 @@ class HitSummary:
         
     def __like_vars( self, entry ):
         try:
-            self.t.check(30, self.size)
+            self.t_like.check( 30, self.size )
         except AttributeError:
-            self.t = Timer('done')
-            self.t.__enter__()
+            self.t_like = Timer('done')
+            self.t_like.__enter__()
+        
         rawNoise = 10
         #if 'rawNoise' in self.names:
             #rawNoise = self.rawNoise
@@ -1154,7 +1156,7 @@ def scatter( args ):
                                               args.selections, 
                                               args.global_selection, 
                                               runID_range=args.runID_range, 
-                                              extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'xVar2', 'yVar1', 'yVar2', 'E0', 'E1', 'n0', 'n1', 'level', 'ESim' ] 
+                                              #extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'xVar2', 'yVar1', 'yVar2', 'E0', 'E1', 'n0', 'n1', 'level', 'ESim' ] 
                                               )
         
         fig = plt.figure()
