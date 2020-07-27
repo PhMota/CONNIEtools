@@ -1183,12 +1183,19 @@ def apply_to_files( args ):
             for j, listHDU in enumerate(partlistHDU):
                 part_index = j+1
                 for i, HDU in enumerate(listHDU):
-                    ohdu = HDU.header['OHDU']
-                    if 'verbose' in args:
-                        print( 'opening ohdu', ohdu )
-                    if HDU.data is None: continue
-                    if 'exclude' in args and args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
-                    if 'ohdu' in args and args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
+                    try:
+                        ohdu = HDU.header['OHDU']
+                        if 'verbose' in args:
+                            print( 'opening ohdu', ohdu )
+                        if HDU.data is None: continue
+                        if 'exclude' in args and args.exclude is not None and HDU.header['OHDU'] in args.exclude: continue
+                        if 'ohdu' in args and args.ohdu is not None and HDU.header['OHDU'] not in args.ohdu: continue
+                    except:
+                        ohdu = i
+                        if 'verbose' in args:
+                            print( 'opening hdu', hdu )
+                        if HDU.data is None: continue
+                        if 'hdu' in args and args.hdu is not None and i not in args.hdu: continue
                     part = Part(HDU)
                     try: parts_ohdu[ohdu].append(part)
                     except KeyError: parts_ohdu[ohdu] = [part]
@@ -1196,7 +1203,10 @@ def apply_to_files( args ):
             for i, parts in parts_ohdu.items():
                 image = Image( parts )
                 image.path = path_group
-                image.ohdu = image.header['OHDU']
+                try:
+                    image.ohdu = image.header['OHDU']
+                except:
+                    image.ohdu = i
                 returnDict[image.path][image.ohdu] = args.func( image, args )
                 if 'verbose' in args:
                     print( 'applied function to ohdu', image.ohdu )
