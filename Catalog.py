@@ -42,6 +42,7 @@ from termcolor import colored
 from PrintVar import print_var
 from scipy.sparse import csr_matrix
 from scipy.stats import binned_statistic
+from scipy.special import erf, erfinv
 
 
 def binned_statistic_fast(x, values, func, nbins, range):
@@ -264,7 +265,38 @@ class HitSummary:
             lamb=0
         )
         return E, xMu, yMu, xSigma, ySigma
+
+    def add_noise_fields( self ):
+        self.t_noise = Timer('done')
+        self.t_noise.wait_secs = 30
+        self.t_noise.total_loop_number = self.size            
+        self.t_noise.__enter__()
+        arrays = self.__apply_to_entries( self.__noise_vars ).T
+        del self.t_noise
+        
+        print( 'like fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
+        
+        self.add_fields( ['noise', 'noise2'],
+                        types=(float, float),
+                        arrays=arrays
+                        )
     
+    def __noise_vars( self, entry ):
+        try:
+            self.t_noise.check()
+        except AttributeError:
+            pass
+        
+        e = entry.ePix
+        x = entry.xPix
+        y = entry.yPix
+        E = e[:,None]*e[None,:]
+        d = (x[:,None] - x[None,:])**2 + (y[:,None] - y[None,:])**2
+        #v = sum(E[d>0]/d[d>0])/sum(e**2)
+        v = E[d>0]/d[d>0]
+        #v = sum(E[d>0]/d[d>0])/sum(abs(E[d>0])/d[d>0])
+        return sum(v), sum(v)/sum(abs(v))
+
     
     def match_bruteforce( self, events, verbose, basename ):
         
@@ -805,7 +837,9 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
     if runID_range:
         runIDs = open_HitSummary( file, branches=['runID'] ).runID
         start = amin(argwhere(runIDs==runID_range[0]))
-        stop = amax(argwhere(runIDs==runID_range[1]))+1        
+        stop = amax(argwhere(runIDs==runID_range[1]))+1
+    if not branches is None:
+        branches = list( set(branches) & set(root_numpy.list_branches( file, treename='hitSumm' )) )
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
 
 def update_catalog( fname, output, hitSummary ):
@@ -942,16 +976,22 @@ def addbranches( **args ):
         
         fit_set = set(['Efit', 'xSigmafit', 'xMufit', 'ySigmafit', 'yMufit', 'fit'])
         like_set = set( ['ELike', 'xSigmaLike', 'xMuLike', 'ySigmaLike', 'yMuLike', 'like'] )
+        noise_set = set( ['noise', 'noise2'] )
         
         if not branches_set.isdisjoint(fit_set):
             branches_set -= fit_set
-            print( 'found fit' )
+            print( 'adding fit fields' )
             hitSummary.add_fit_fields()
         
         if not branches_set.isdisjoint(like_set):
             branches_set -= like_set
-            print( 'found like' )
+            print( 'adding like fields' )
             hitSummary.add_like_fields()
+
+        if not branches_set.isdisjoint(noise_set):
+            branches_set -= noise_set
+            print( 'adding noise fields' )
+            hitSummary.add_noise_fields()
             
         if len(branches_set) > 0:
             print( 'branches not recognized', list(branches_set) )
@@ -1054,7 +1094,10 @@ def image_extract( image, args ):
     for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
         if field.upper() in image.header:
             hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )
-    print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
+    try:
+        print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
+    excpet:
+        print( 'extracted hits {}'.format( len(hitSummary) ) )
     hitSummary.add_fields( 'thr', float32, [args.threshold]*len(hitSummary) )
     hitSummary.add_basic_fields()
     for lvl in range( args.border ):
@@ -1080,21 +1123,19 @@ def add_extract_options(p):
     #p.add_argument('branches', nargs=2, type=str, default= ['E0','xVar0'], help = 'branches used for x- and y-axis' )
     p.add_argument('--ohdu', nargs='+', type=int, default=range(2,16), help = 'ohdus to be extracted' )
     p.add_argument('--exclude', nargs='+', type=int, default=[11,12,14], help = 'ohdus NOT to be extracted' )
+    p.add_argument('--hdu', nargs='+', type=int, default=range(1,15), help = 'hdus (indices) to be extracted' )
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.set_defaults(_func=extract)
 
 def get_selections( file, branches, selections, global_selection=None, runID_range=None, extra_branches = [] ):
     data_selection = {}
-    lims = None
     for selection in selections:
         selection_full = selection
         if global_selection:
             selection_full = global_selection + ' and ' + selection
         selection_string = selection_full.replace('and', '&&')
         data_selection[selection] = open_HitSummary( file, branches=list(set(branches+extra_branches)), selection='flag==0 && '+selection_string, runID_range=runID_range )
-        if lims is None:
-            lims = [ ( min(data_selection[selection][branch]), max(data_selection[selection][branch]) ) for branch in branches ]
-    return data_selection, lims
+    return data_selection
 
 
 def test_std_correction():
@@ -1129,7 +1170,8 @@ def test_std_correction():
     print( stats.norm.fit_curve( y, x, A=sum(y), mu=mu, sigma=std ), dx )
     return
 
-def scatter( args ):
+def scatter( **args ):
+    args = Namespace(**args)
     import matplotlib.pylab as plt    
     with Timer('scatter'):
         file = glob.glob(args.root_file)
@@ -1152,13 +1194,13 @@ def scatter( args ):
         
         if not 'runID_range' in args:
             args.runID_range = None
-        data_selection, lims = get_selections( file[0], 
-                                              args.xbranches + args.ybranches + args.cbranches,
-                                              args.selections, 
-                                              args.global_selection, 
-                                              runID_range=args.runID_range, 
-                                              #extra_branches=[ 'xSim', 'ySim', 'ePix', 'xPix', 'yPix', 'xBary0', 'xBary1', 'yBary0', 'yBary1', 'xVar1', 'xVar2', 'yVar1', 'yVar2', 'E0', 'E1', 'n0', 'n1', 'level', 'ESim' ] 
-                                              )
+        data_selection = get_selections( file[0], 
+                                        args.xbranches + args.ybranches + args.cbranches,
+                                        args.selections, 
+                                        args.global_selection, 
+                                        runID_range=args.runID_range, 
+                                        extra_branches=[ 'ePix', 'xPix', 'yPix', 'level' ] 
+                                        )
         
         fig = plt.figure()
         ax = fig.add_subplot(111)
@@ -1177,89 +1219,145 @@ def scatter( args ):
                 else:
                     colors = None
                     cmap = None
-                    alpha = .1
+                    alpha = (len(datum))**(-.1) if len(datum) > 0 else 1
                 
-                scatter_obj.append( ax.scatter( datum[xbranch], datum[ybranch], label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
-                
-                bin_means, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='mean', bins=20 )
-                x = .5*(bin_edges[1:] + bin_edges[:-1])
-                dx = bin_edges[1] - bin_edges[0]
-                yerr = [0]*len(bin_means)
-                if 'errorbar' in args:
-                    bin_std, bin_edges, binnumber = binned_statistic( datum[xbranch], datum[ybranch], statistic='std', bins=bin_edges )
-                    yerr = bin_std    
-                ax.errorbar( x, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
-                
-                if 'fit' in args:
-                    for mode in args.fit:
-                        with Timer('computing new fields'):
-                            lvl = 2
-                            mask = lambda entry, lvl=lvl: entry.level <= lvl
-                            print( 'level', datum[0].level[ mask(datum[0]) ] )
-                            xmu, ymu, xsigma, ysigma, Et, success = zip(*[ stats.norm2d_norm.fit( 
-                                dat.xPix[mask(dat)], 
-                                dat.yPix[mask(dat)], 
-                                dat.ePix[mask(dat)], 
-                                dat.xBary1, 
-                                dat.yBary1, 
-                                sqrt(dat.xVar1), 
-                                sqrt(dat.yVar1),
-                                sum(dat.ePix[mask(dat)]), 
-                                sigma_e = 12., ftol=1e-8, mode=mode, loss='linear' ) for dat in datum ])
-                        
-                        print( 'falses', sum( array(success) == False ) )
-                        x = datum[xbranch]
-                        y = datum[ybranch]
-                        
-                        new_xbranch = xbranch
-                        new_ybranch = ybranch
-                        if xbranch == 'xBary0' or xbranch == 'xBary1':
-                            new_xbranch = 'xMufit'
-                            x = xmu
-
-                        if ybranch == 'xBary0' or ybranch == 'xBary1':
-                            new_ybranch = 'xMufit'
-                            y = xmu
-
-                        if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
-                            new_xbranch = 'xSigmafit'
-                            x = xsigma
-
-                        if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
-                            new_ybranch = 'xSigmafit'
-                            y = xsigma
-                            
-                        if ybranch in ['E0','E1']:
-                            new_ybranch = 'Efit'
-                            y = Et
-                            
-                        if xbranch in ['E0','E1']:
-                            new_xbranch = 'Efit'
-                            x = Et
-                                
-                        if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
-                            new_ybranch = '(Efit-ESim)/ESim'
-                            y = (Et - datum.ESim)/datum.ESim
-
-                        for axis in ['x','y']:
-                            if ybranch in ['(sqrt({}Var{})-sigmaSim)/sigmaSim'.format(axis,n) for n in [0,1,2,3]]:
-                                new_ybranch = '({}Sigmafit-sigmaSim)/sigmaSim'.format(axis)
-                                print( colored( 'axis', 'green' ), axis )
-                                if axis == 'x':
-                                    y = (xsigma - datum.sigmaSim)/datum.sigmaSim
-                                elif axis == 'y':
-                                    y = (ysigma - datum.sigmaSim)/datum.sigmaSim
-
-                        ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
-                        
-                        bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
-                        _x = .5*(bin_edges[1:] + bin_edges[:-1])
+                if xbranch in datum.names and ybranch in datum.names:
+                    
+                    x = datum[xbranch]
+                    y = datum[ybranch]
+                    #x = x[ logical_and(args.x_range[0] < x, x < args.x_range[1], axis=0) ]
+                    #y = y[ logical_and(args.y_range[0] < x, x < args.y_range[1], axis=0) ]
+                    
+                    scatter_obj.append( ax.scatter( x, y, label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
+                    
+                    if 'errorbar' in args:
+                        bins = arange( args.x_range[0], args.x_range[1], 20 )
+                        bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=bins )
+                        xbins = .5*(bin_edges[1:] + bin_edges[:-1])
                         dx = bin_edges[1] - bin_edges[0]
                         yerr = [0]*len(bin_means)
-                        if 'errorbar' in args:
-                            bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
-                            yerr = bin_std
-                        ax.errorbar( _x+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
+                        bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
+                        yerr = bin_std    
+                        ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
+                
+                #if 'noise' == xbranch or 'noise' == ybranch:
+                    
+                    #sigma = 12
+                    #factor = sqrt(2.)*sigma
+                    #def func( entry ):
+                        #e = entry.ePix
+                        #x = entry.xPix
+                        #y = entry.yPix
+                        #E = e[:,None]*e[None,:]
+                        #d = (x[:,None] - x[None,:])**2 + (y[:,None] - y[None,:])**2
+                        ##v = sum(E[d>0]/d[d>0])/sum(e**2)
+                        #v = sum(E[d>0]/d[d>0])/sum(abs(E[d>0])/d[d>0])
+                        #return v
+
+                    ##p_value = array([ 1./len(entry.ePix[entry.level<=4]) * sum( log( 1 - erf(entry.ePix[entry.level<=4]/factor)) ) for entry in datum ])
+                    ##print( sqrt(2)*erfi(1. - exp(p_value) ) )
+                    ##z_value = sqrt(2)*erfi(1. - exp(p_value))
+                    #z_value = array([ func(entry) for entry in datum ])
+                    #print( 'z-value', z_value )
+                    #print( 'max', min(z_value) )
+
+                    #new_xbranch = xbranch
+                    #new_ybranch = ybranch
+                    #if 'noise' == xbranch:
+                        #x = z_value
+                        #new_xbranch = 'noise'
+                        #y = datum[ybranch]
+                        ##y = y[ args.y_range[0] < y < args.y_range[1] ]
+                    #else:
+                        #y = z_value
+                        #new_ybranch = 'noise'
+                        #x = datum[xbranch]
+                        ##x = x[ args.x_range[0] < x < args.x_range[1] ]
+                    
+                    #mode = 'noise'
+                    #ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
+                    
+                    #bins = arange( args.x_range[0], args.x_range[1], 20 )
+                    #bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=bins )
+                    #xbins = .5*(bin_edges[1:] + bin_edges[:-1])
+                    #dx = bin_edges[1] - bin_edges[0]
+                    #yerr = [0]*len(bin_means)
+                    #if 'errorbar' in args:
+                        #bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
+                        #yerr = bin_std
+                    #ax.errorbar( xbins+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
+                    
+                
+                #if 'fit' in args:
+                    #for mode in args.fit:
+                        #with Timer('computing new fields'):
+                            #lvl = 2
+                            #mask = lambda entry, lvl=lvl: entry.level <= lvl
+                            #print( 'level', datum[0].level[ mask(datum[0]) ] )
+                            #xmu, ymu, xsigma, ysigma, Et, success = zip(*[ stats.norm2d_norm.fit( 
+                                #dat.xPix[mask(dat)], 
+                                #dat.yPix[mask(dat)], 
+                                #dat.ePix[mask(dat)], 
+                                #dat.xBary1, 
+                                #dat.yBary1, 
+                                #sqrt(dat.xVar1), 
+                                #sqrt(dat.yVar1),
+                                #sum(dat.ePix[mask(dat)]), 
+                                #sigma_e = 12., ftol=1e-8, mode=mode, loss='linear' ) for dat in datum ])
+                        
+                        #print( 'falses', sum( array(success) == False ) )
+                        #x = datum[xbranch]
+                        #y = datum[ybranch]
+                        
+                        #new_xbranch = xbranch
+                        #new_ybranch = ybranch
+                        #if xbranch == 'xBary0' or xbranch == 'xBary1':
+                            #new_xbranch = 'xMufit'
+                            #x = xmu
+
+                        #if ybranch == 'xBary0' or ybranch == 'xBary1':
+                            #new_ybranch = 'xMufit'
+                            #y = xmu
+
+                        #if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
+                            #new_xbranch = 'xSigmafit'
+                            #x = xsigma
+
+                        #if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
+                            #new_ybranch = 'xSigmafit'
+                            #y = xsigma
+                            
+                        #if ybranch in ['E0','E1']:
+                            #new_ybranch = 'Efit'
+                            #y = Et
+                            
+                        #if xbranch in ['E0','E1']:
+                            #new_xbranch = 'Efit'
+                            #x = Et
+                                
+                        #if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
+                            #new_ybranch = '(Efit-ESim)/ESim'
+                            #y = (Et - datum.ESim)/datum.ESim
+
+                        #for axis in ['x','y']:
+                            #if ybranch in ['(sqrt({}Var{})-sigmaSim)/sigmaSim'.format(axis,n) for n in [0,1,2,3]]:
+                                #new_ybranch = '({}Sigmafit-sigmaSim)/sigmaSim'.format(axis)
+                                #print( colored( 'axis', 'green' ), axis )
+                                #if axis == 'x':
+                                    #y = (xsigma - datum.sigmaSim)/datum.sigmaSim
+                                #elif axis == 'y':
+                                    #y = (ysigma - datum.sigmaSim)/datum.sigmaSim
+
+                        #ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
+                        
+                        #bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
+                        #_x = .5*(bin_edges[1:] + bin_edges[:-1])
+                        #dx = bin_edges[1] - bin_edges[0]
+                        #yerr = [0]*len(bin_means)
+                        #if 'errorbar' in args:
+                            #bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
+                            #yerr = bin_std
+                        #ax.errorbar( _x+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
                         
         ax.legend()
         ax.grid()
@@ -1308,6 +1406,7 @@ def add_scatter_options(p):
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
     p.add_argument('--fit', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
+    p.add_argument('--noise', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
     p.add_argument('--errorbar', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
     p.set_defaults(_func=scatter)
 
@@ -1340,9 +1439,9 @@ def histogram( args ):
         
         if not 'runID_range' in args:
             args.runID_range = None
-        data_selection, lims = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
+        data_selection = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
                                               #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-        print( 'lims', lims )
+
         if 'x_range' in args:
             bins = arange( args.x_range[0], args.x_range[1], args.binsize )
         else:

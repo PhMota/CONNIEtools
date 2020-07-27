@@ -5,7 +5,7 @@ import subprocess
 from Timer import Timer
 import sys
 from termcolor import colored
-from numpy import *
+#from numpy import *
 
 folder = 'bayesian_article'
 
@@ -22,13 +22,9 @@ with Timer('presentation'):
         sigmay = r'\sigma_y'
         X = r'{\mathbf X}'
         Y = r'{\mathbf Y}'
-        Q = r'{\mathbf Q}'
         xbar = r'{\bar x}'
         ybar = r'{\bar y}'
         sqrt2 = r'\sqrt{2}'
-        log = r'{\rm log}'
-        exp = r'{\rm exp}'
-        erf = r'{\rm erf}'
         I = r'{\mathcal I}'
         fN = r'f_{\mathcal N}'
         CN = r'F_{\mathcal N}'
@@ -41,87 +37,80 @@ with Timer('presentation'):
         )
         
         ################################################################## normal distribution
-        #doc.frame(
-            #'joint PDF',
-            #r'''
-            #Given data $\{{x_1, x_2, \dots, x_n \}}$, the task is to find the mean $\mu$ and standard-deviations $\sigma$ of these data. First, assume that data has a common mean and a common variance. The principle of maximum entropy can then be applied under these constraints (using a flat "ignorance" prior) to choose the distribution
-            #$$
-            #f({X}|\mu,\sigma)
-            #= \prod_i^n \frac{{1}}{{ \sqrt{{2\pi}}\sigma }}{exp}[ -\frac{{(x_i-\mu)^2 }}{{2\sigma^2}} ]
-            #\\
-            #= \frac{{1}}{{ (\sqrt{{2\pi}} \sigma )^n }}
-            #{exp}[ -\frac{{1}}{{2\sigma^2}} \sum_i( x_i^2-2x_i+\mu^2 ) ]
-            #$$
-            #'''.format(**locals())
-        #)
         f = E|'f'
         X = E|'X'
-        print( f(mu,sigma|bf(sigma)), type(f) )
-        print( Math| f(mu,sigma|bf(X)) == frac( f(bf(X)|mu,sigma)*f(mu)(sigma), f(bf(X)) ) )
+        x = E|'x'
+        Y = E|'Y'
+        y = E|'y'
+        i = E|'i'
+        n = E|'n'
+        C = E|'C'
+        doc.frame(
+            'joint PDF',
+            r'''
+            Given data $\{{x_1, x_2, \dots, x_n \}}$, the task is to find the mean $\mu$ and standard-deviations $\sigma$ of these data. First, assume that data has a common mean and a common variance. The principle of maximum entropy can then be applied under these constraints (using a flat "ignorance" prior) to choose the distribution''',
+            Math(
+                f( bf(X)|mu, sigma ) == (
+                    Prod[i] * frac(1, sqrt(2*pi)*sigma ) * exp( -frac( (x[i] - mu)**2, 2*sigma**2) ),
+                    frac(1, (2*pi)**(n/2) * sigma**(n) ) * exp( -frac( 1, 2*sigma**2) * Sum[i]*(x[i] - mu)**2 ),
+                    frac(1, (2*pi)**(n/2) * sigma**(n) ) * exp( -n*frac( (mu-bar(x))**2 + C, 2*sigma**2) ),
+                    )
+            ),
+            'where',
+            Math(
+                ( bar(x) == 1/n* Sum[i]*x[i], C == 1/n* Sum[i] * (x[i] - bar(x))**2 )
+            ),
+        )
+        print( (x[i]**2 - bar(x)**2), (x[i]**2 - bar(x)**2).__class__ )
+        print( Sum[i] * (x[i]**2 - bar(x)**2), (Sum[i] * (x[i]**2 - bar(x)**2) ).__class__ )
+        a = E|'a'
+        b = E|'b'
+        D = E|'D'
         doc.frame(
             'prior',
             r'the posterior distribution is given by the Bayes rule',
-            Math|( f(mu,sigma|bf(X)) == frac( f(bf(X)|mu,sigma)*f(mu,sigma), f(bf(X)) ) ), 
-            #= \frac{{ f( {X}|\mu,\sigma ) f(\mu,\sigma) }}{{ f({X}) }}
-            #\\
-            #= D_n f({X}|\mu,\sigma) f(\mu,\sigma)
-            #$$
-            #where $D_n$ is the normalization to keep the integral of the joint pdf to 1.\\
-            #the prior needs to transform as
-            #$$
-            #f(\mu,\sigma) = a f( \mu + b, a \sigma )
-            #$$
-            #so the prior needs to have the form
-            #$$
-            #f( \mu, \sigma ) =  \frac{{ \rm constant }}{{ \sigma }}
-            #$$
-            #'''.format(**locals())
+            Math( 
+                f(mu,sigma|bf(X)) == (
+                    frac( f(bf(X)|mu,sigma)*f(mu,sigma), f(bf(X)) ),
+                    D[n] * f(bf(X)|mu,sigma) * f(mu, sigma),
+                    )
+            ), 
+            'where $D_n$ is the normalization to keep the integral of the joint pdf to 1.',
+            'the prior needs to transform as',
+            Math(
+                f(mu,sigma) == a*f( mu + b, a *sigma )
+            ),
+            'so the prior needs to have the form',
+            Math(
+                f( mu, sigma ) == frac( r'{\rm constant}', sigma )
+            )
         )
         doc.frame('a posteriori PDF',
-            r'''
-            the probability of the parameters given the data
-            $$
-            f(\mu,\sigma|{Y}) 
-            = \frac{{ D_n }}{{ \sigma ^{{n+1}} }}
-            {exp}[ -\frac{{1}}{{2\sigma^2}} \sum_i ( x_i - \mu )^2 ]
-            \\
-            = \frac{{ D_n }}{{ \sigma^{{n+1}} }}
-            {exp}[ -\frac{{ (\mu - {xbar})^2 + C }}{{2 \sigma^2/n}} ]
-            $$
-            where
-            $$
-            {xbar} = \frac{{1}}{{n}}\sum_i x_i
-            \\
-            C_x = \frac{{1}}{{n}}\sum_i (x_i - {xbar})^2
-            $$
-            '''.format(**locals())
+            'the probability of the parameters given the data',
+            Math(
+                f(mu,sigma|bf(X)) == frac( D[n], sigma**(n+1) ) * exp( -n*frac( (mu-bar(x))**2 + C, 2*sigma**2) )
+            )
         )
 
         doc.frame('normalization',
-            r'''
-            The normalization is needed to ensure the probability denstity interpretation
-            $$
-            D_n
-            = [ \int d\alpha d\sigma \frac{{1}}{{ \sigma^{{n+1}} }}
-               {exp}( -\frac{{ \alpha^2 + C }}{{2 \sigma^2/n}} ) ]^{{-1}}
-            \\
-            = \frac{{ n^n \sqrt{{ C_x^{{n-1}}C_y^{{n-1}} }} }}{{ \pi 2^{{n-2}} }} \Gamma(\frac{{n-1}}{{2}})^{{-2}}
-            $$
-            '''.format(**locals())
+            'The normalization is needed to ensure the probability denstity interpretation',
+            Math(
+                D[n] == ( ( Int[0,oo] * d(sigma) * frac( 1, sigma**(n+1) ) * Int[-oo,oo] * d(alpha)
+                    * exp( -n*frac( alpha**2 + C, 2 *sigma**2 ) ) )**(-1),
+                    sqrt( frac( n**n * C**(n-1), pi * 2**(n-2) ) ) * Gamma(frac(n-1,2))**(-1)
+                    )
+            )
         )
 
         doc.frame('joint maximum a posteriori estimator',
-            r'''
-            $$
-            \hat{{\mu}}_x, \hat{{\sigma}}
-            = {{\rm arg\ max}} f( \mu, \sigma|{X} )
-            \\
-            = {{\rm arg\ min}}[ -{{\rm log}} f( \mu, \sigma|{X} ) ]
-            \\
-            = {{\rm arg\ min}}[ (n+1){{\rm log}}\sigma
-                + \frac{{ (\mu - \bar{{x}})^2 + C }}{{2 \sigma^2/n}} ]
-            $$
-            '''.format(**locals())
+            'The parameter estimators given the data are found by maximizing the posteriori distribution',
+            Math( 
+                hat(mu) *','* hat(sigma) == (
+                    (E|r'{\rm arg\ max}')* f(mu,sigma|bf(X)),
+                    (E|r'{\rm arg\ min}')( -log( f(mu,sigma|bf(X)) ) ),
+                    (E|r'{\rm arg\ min}')( (n+1)*log(sigma) + n*frac( (mu - bar(x))**2 + C**2, 2*sigma**2 ) ),
+                    )
+            )
         )
 
         doc.frame('joint maximum a posteriori estimator',
@@ -142,419 +131,280 @@ with Timer('presentation'):
         
         
         ################################################################## normal distribution 2d
-        #doc.frame(
-            #'joint PDF',
-            #r'''
-            #Given data $\{{x_1, x_2, \dots, x_n \}}$ and $\{{y_1, y_2, \dots, y_n \}}$, the task is to find the means ${mux}$ and ${muy}$, variances $v_x={sigmax}^2$ and standard-deviations ${sigmax}$ and ${sigmay}$ of these data. First, assume that data has a common mean and a common variance. The principle of maximum entropy can then be applied under these constraints (using a flat "ignorance" prior) to choose the distribution
-            #$$
-            #f({X},{Y}|{mux},{muy},{sigmax},{sigmay})
-            #= \prod_i^n \frac{{1}}{{ \sqrt{{2\pi}} {sigmax}{sigmay} }}{exp}[ -\frac{{x_i-{mux}}}{{2{sigmax}}} - \frac{{y_i-{muy} }}{{2{sigmay}}} ]
-            #\\
-            #= \frac{{1}}{{ (\sqrt{{2\pi}} {sigmax}{sigmay})^n }}{exp}[ -\frac{{1}}{{2{sigmax}^2}} \sum_i x_i-{mux} -\frac{{1}}{{2{sigmay}^2}} \sum_i y_i-{muy} ]
-            #$$
-            #'''.format(**locals())
-        #)
- 
-        #doc.frame(
-            #'prior',
-            #r'''
-            #the posterior distribution is given by the Bayes rule
-            #$$
-            #f({mux},{muy},{sigmax},{sigmay}|{X},{Y})
-            #= \frac{{ f({X},{Y}|{mux},{muy},{sigmax},{sigmay}) f({mux},{muy},{sigmax},{sigmay}) }}{{ f({X},{Y}) }}
-            #\\
-            #= D_n f({X},{Y}|{mux},{muy},{sigmax},{sigmay}) f({mux},{muy},{sigmax},{sigmay})
-            #$$
-            #the prior needs to transform as
-            #$$
-            #f({mux},{muy},{sigmax},{sigmay}) = a_xa_y f({mux}+b_x,{muy}+b_y,a_x{sigmax},a_y{sigmay})
-            #$$
-            #so the prior needs to have the form
-            #$$
-            #f({mux},{muy},{sigmax},{sigmay}) =  \frac{{ \rm constant }}{{ {sigmax}{sigmay} }}
-            #$$
-            #'''.format(**locals())
-        #)
-        #doc.frame('a posteriori PDF',
-            #r'''
-            #$$
-            #f({mux},{muy},{sigmax},{sigmay}|{X},{Y}) 
-            #= \frac{{ D_n }}{{ ({sigmax}{sigmay})^{{n+1}} }}
-            #\\ \quad\times {exp}[ -\frac{{1}}{{2{sigmax}^2}} \sum_i (x_i-{mux})^2 -\frac{{1}}{{2{sigmay}^2}} \sum_i( y_i-{muy})^2 ]
-            #\\
-            #= \frac{{ D_n }}{{ ({sigmax}{sigmay})^{{n+1}} }}{exp}[ -\frac{{ ({mux} - {xbar})^2 + C_x }}{{2{sigmax}^2/n}} -\frac{{ ({muy} - {ybar})^2 + C_y }}{{2{sigmay}^2/n}} ]
-            #$$
-            #where
-            #$$
-            #{xbar} = \frac{{1}}{{n}}\sum_i x_i
-            #\\
-            #C_x = \frac{{1}}{{n}}\sum_i (x_i - {xbar})^2
-            #$$
-            #'''.format(**locals())
-        #)
-        #doc.frame('normalization',
-            #r'''
-            #$$
-            #D_n
-            #= [ \int d\alpha_x d\sigma_x d\alpha_y d\sigma_y \frac{{1}}{{({sigmax}{sigmay})^{{n+1}} }}
-               #{exp}( -\frac{{ \alpha_x^2 + C_x }}{{2{sigmax}^2/n}} -\frac{{ \alpha_y^2 + C_y }}{{2{sigmay}^2/n}} ) ]^{{-1}}
-            #\\
-            #= [ \int d\alpha_x d\sigma_x \frac{{1}}{{ {sigmax}^{{n+1}} }}
-                #{exp}( -\frac{{ \alpha_x^2 + C_x }}{{2{sigmax}^2/n}} ) ]^{{-1}} [x y]^{{-1}}
-            #\\
-            #= \frac{{ n^n \sqrt{{ C_x^{{n-1}}C_y^{{n-1}} }} }}{{ \pi 2^{{n-2}} }} \Gamma(\frac{{n-1}}{{2}})^{{-2}}
-            #$$
-            #'''.format(**locals())
-        #)
-        #doc.frame('joint maximum a posteriori estimator',
-            #r'''
-            #$$
-            #\hat{{\mu}}_x, \hat{{\mu}}_y, \hat{{\sigma}}_x, \hat{{\sigma}}_y 
-            #= {{\rm arg\ max}} f({mux},{muy},{sigmax},{sigmay}|{X},{Y})
-            #\\
-            #= {{\rm arg\ min}}[ -{{\rm log}} f({mux},{muy},{sigmax},{sigmay}|{X},{Y}) ]
-            #\\
-            #= {{\rm arg\ min}}[ (n+1){{\rm log}}\sigma_x + (n+1){{\rm log}}\sigma_x 
-                #\\ \quad+ \frac{{ (\mu_x - \bar{{x}})^2 + C_x }}{{2{sigmax}^2/n}} + \frac{{ (\mu_y - \bar{{y}})^2 + C_y }}{{2{sigmay}^2/n}} ]
-            #$$
-            #'''.format(**locals())
-        #)
-
-        #doc.frame('joint maximum a posteriori estimator',
-            #r'''
-            #$$
-            #\frac{{ (\hat{{\mu}}_x - \bar{{x}})}}{{\hat{{\sigma}}_x^2/n}} = 0
-            #\\
-            #\frac{{n+1}}{{\hat{{\sigma}}_x }} + \frac{{ (\hat{{\mu}}_x - \bar{{x}})^2 + C_x }}{{2\hat{{\sigma}}_x^3/n}} = 0
-            #$$
-            #solving simulataneously
-            #$$
-            #\hat{{\mu}}_x = \bar{{x}}
-            #\\
-            #\hat{{\sigma}}_x^2 = \frac{{n}}{{n+1}}C_x
-            #$$
-            #'''.format(**locals())
-        #)
+        doc.frame('two dimensions',
+            'this result can be straightforwardly extended to two dimensions since the probability is the product for each dimension',
+            Math(
+                f(bf(X), bf(Y)|mu[x], mu[y], sigma[x], sigma[y]) == f(bf(X)|mu[x], sigma[x]) * f(bf(Y)|mu[y], sigma[y])
+            )
+        )
+                    
+        ################################################################# normal
+        p = E|'p'
+        q = E|'q'
+        Q = E|'Q'
+        _E = E|'E'
+        j = E|'j'
+        m = E|'m'
+        doc.frame('pixel integrated PDF',
+            'In the case of pixelated dimensions, one can group repeated results as',
+            Math(
+                f(bf(X)|mu,sigma) == (
+                    Prod[i,n] * p[i],
+                    Prod[j,m] * p[j]**q[j]
+                    )
+            ),
+            'where $j$ is the number of pixels and $q_j$ is the count of that specific value in the sample',
+            Math(
+                f(bf(Q),bf(X)|mu,sigma) == Prod[j]*p[j]**q[i]
+            )
+        )
+            
+        doc.frame('pixel integrated PDF',
+            'The normalization comes from',
+            Math(
+                f(bf(Q), bf(X)) ==  Int[-oo,oo]*d(sigma) * Int[0,oo]*d(mu) * Prod[j,m] * p[j]**q[j]
+            ),
+            'if the probability is a normal distribution',
+            Math(
+                f(bf(Q), bf(X)|mu,sigma) == (
+                    frac(1, (sqrt(2*pi) * sigma)**Q ) * exp( -frac( 1, 2*sigma**2 ) * Sum[j]* q[j] *( x[j]-mu )**2 ),
+                    frac(1, (sqrt(2*pi) * sigma)**Q ) * exp( -Q*frac( ( mu-ave(x)[q] )**2 + C[q], 2*sigma**2 ) )
+                    )
+            ),
+            Math(
+                ( Q == Sum[j]*q[j], 
+                ave(x)[q] == frac( 1, Q )* Sum[j]*( q[j]*x[j] ),
+                C[q] == frac( 1, Q )* Sum[j]*( q[j]*x[j]**2 ) - ave(x)[q]**2
+                )
+            ),    
+        )
+        doc.frame('pixel integrated PDF',
+            Math(
+                f(q[j], x[j]) == (
+                    frac(1, (2*pi)**(q[j]/2) ) * Int[0,oo] * d(sigma) * frac(1, sigma**q[j]) * Int[-oo,oo]*d(mu) * exp( -q[j]*frac( (x[j] - mu)**2, 2*sigma**2 ) ),
+                    frac(1, (2*pi)**(q[j]/2) ) * Int[0,oo] * d(sigma) * frac(1, sigma**q[j]) 
+                        * Int[-oo,oo]*d(mu) * exp( -q[j]*frac( x[j]**2 - 2*mu*x[i] + mu**2, 2*sigma**2 ) ),
+                    frac(1, (2*pi)**(q[j]/2) ) * Int[0,oo] * d(sigma) * frac(1, sigma**q[j]) 
+                        * e**( -q[j]*frac( x[j]**2, 2*sigma**2 ) ) * Int[-oo,oo]*d(mu) * exp( -q[j]*frac( mu**2 - 2*mu*x[i], 2*sigma**2 ) ),
+                    frac(sqrt(2*pi*q[j]), (2*pi)**(q[j]/2) ) * Int[0,oo] * d(sigma) * frac(1, sigma**(q[j]-1)) 
+                        * e**( -q[j]*frac( x[j]**2, 2*sigma**2 ) ) * exp( q[j]*frac( x[j]**2, 2*sigma**2 ) ),
+                    )
+            ),
+            'the integral does not converge, which means we cannot normalize the single pdf'
+        )
+        doc.frame('pixel integrated PDF',
+            "the joint pdf's normalization",
+            Math(
+                f(bf(Q), bf(X)) == (
+                    frac(1, (2*pi)**(Q/2) ) * Int[0,oo] * d(sigma) * frac(1, sigma**Q) * Int[-oo,oo]*d(mu) * exp( -Q*frac( ( mu-ave(x)[q] )**2 + C[q], 2*sigma**2 ) ),
+                    frac(1, (2*pi)**(Q/2) ) * Int[0,oo] * d(sigma) * frac( exp( -Q*frac( C[q], 2*sigma**2 ) ), sigma**Q) * Int[-oo,oo]*d(mu) * exp( -Q*frac( mu**2, 2*sigma**2 ) ),
+                    frac( 1, (2*pi)**(Q/2) * sqrt(Q) ) * Int[0,oo] * d(sigma) * frac( exp( -Q*frac( C[q], 2*sigma**2 ) ), sigma**(Q-1) ),
+                    frac( 1, (2*pi)**(Q/2) * sqrt(Q) ) * Int[0,oo] * frac(1, xi**2)*d(xi) * xi**(m-1) * exp( -frac( Q*C[q], 2 )* xi**2 ),
+                    -frac( 1, (2*pi)**(Q/2) * sqrt(Q*pi) ) * (Q*C[q])**(-(Q-3)/2) * 2**((Q-3)/2) * Gamma((Q-2)/2),
+                    )
+            )
+        )
         
-        ################################################################# multinomial
         doc.frame('pixel integrated PDF',
-            r'''
-            The joint distribution function from the histogram is given by the multinomial distribution
-            $$
-            f(q_i,x_i|\mu,\sigma) = \frac{{ p_i^{{q_i}} }}{{q_i!}}
-            $$
-            $$
-            f({Q},{X}|\mu,\sigma) = \frac{{ \Gamma(1+\sum_i q_i) }}{{ \prod_i \Gamma(q_i+1) }} \prod_i p_i^{{q_i}}
-            $$
-            where
-            $$
-            p_i = \frac{{1 }}{{ \sqrt{{2\pi}}\sigma }}{exp}[ - \frac{{ (x_i - \mu)^2 }}{{ 2\sigma^2 }}]
-            $$
-            '''.format(**locals())
-        )
-        doc.frame('pixel integrated PDF',
-            r'''
-            The maximization of the log probability
-            $$
-            {log} f({Q},{X}|\mu,\sigma) = {log}\Gamma(1+\sum_i q_i) - \sum_i {log} \Gamma(q_i+1) + \sum_i q_i {log} p_i
-            $$
-            where
-            $$
-            {log} p_i = - \frac{{1}}{{2}}{log}(2\pi) - {log}\sigma - \frac{{ (x_i - \mu)^2 }}{{ 2\sigma^2 }}
-            $$
-            the a posteriori
-            $$
-            {log} f(\mu,\sigma|{Q},{X}) = {log}D_n + {log} f({Q},{X}|\mu,\sigma) - {log}\sigma
-            $$
-            where the last term comes from the a priori distribution
-            '''.format(**locals())
+            r'The maximization of the log probability',
+            #Math(
+                #log*f( bf(Q), bf(X) | mu, sigma ) == log * Gamma( 1 + Sum[i]*q[i] ) - Sum[i]*log*Gamma(q[i]+1) - Sum[i]*q[i]*log*p[i]
+            #),
+            'where',
+            Math( 
+                log*p[i] == - frac(1,2)*log(2*pi) - log*sigma - frac( (x[i]-mu)**2, 2*sigma**2 )
+            ),
+            'the log of a posteriori distribution',
+            Math(
+                log( f( mu,sigma|bf(Q),bf(X) ) ) == log(D[n]) + log( f(bf(Q),bf(X)|mu,sigma) ) - log( f(mu,sigma) )
+            )
         )
 
         doc.frame('pixel integrated PDF',
-            r'''
-            all variable the terms gathered,
-            $$
-            {log} f(\mu,\sigma|{Q},{X}) = \sum_i q_i (- {log}\sigma - \frac{{ (x_i - \mu)^2 }}{{ 2\sigma^2 }}) - {log}\sigma
-            $$
+            'all variable the terms gathered',
+            Math(
+                log *f(mu,sigma|bf(Q), bf(X) ) == Sum[j] * q[j] * log(p[j]) - log * f(mu,sigma)
+            ),
+            'using the normal distribution',
+            Math(
+                p[j] == frac(1, sqrt(2*pi) * sigma ) * exp( -frac( (x[j] - mu)**2, 2*sigma**2 ) )
+            ),
+            Math(
+                log*p[j] == -frac(1,2)*log(2*pi) - log*sigma - frac( (x[j] - mu)**2, 2*sigma**2 ) 
+            ),
+            'so',
+            Math(
+                log * f == (
+                    - log( f(mu,sigma) ) - frac(Q,2)*log(2*pi) - Q*log*sigma - Sum[j]* q[j]*frac( (x[j] - mu)**2, 2*sigma**2 ),
+                    - log( f(mu,sigma) ) - frac(Q,2)*log(2*pi) - Q*log*sigma - Q*frac( (ave(x)[q] - mu)**2 + C[q], 2*sigma**2 )
+                    )
+            ),
+        )
+
+        doc.frame('joint maximum a posteriori estimators',
+            r'the variation in $\mu$',
+            Math(
+                hat(mu) == ave(x)[q]
+            ),
+            r'the variation in $\sigma$',
+            Math(
+                0 == - frac( Q, hat(sigma) ) + Q*frac( (ave(x)[q] - mu)**2 + C[q], hat(sigma)**3 )
+            ),
+            Math(
+                hat(sigma)**2 == (ave(x)[q] - mu)**2 + C[q]
+            ),
+            r'after using the information of $\hat{{\mu}}$',
+            Math(
+                hat(sigma)**2 == C[q]
+            ),
+            r'which is the weighted average of the pixel distribution'
+        )
+
+        ################################################################# normal
+        doc.frame('pixel integrated PDF',
+            'all variable the terms gathered',
+            Math(
+                log *f(mu,sigma|bf(Q), bf(X) ) == Sum[j] * q[j] * log(p[j]) - log * f(mu,sigma)
+            ),
+            'using the normal distribution',
+            Math(
+                p[j] == (
+                    Int[x[j],x[j]+1] * d(xi) * frac(1, sqrt(2*pi) * sigma ) * exp( -frac( (xi - mu)**2, 2*sigma**2 ) ),
+                    Int[x[j],x[j]+1] * d(xi) * frac(1, sqrt(2*pi) * sigma ) * exp( -frac( (xi - mu)**2, 2*sigma**2 ) ),
+                    )
+            ),
+            Math(
+                log*p[j] == -frac(1,2)*log(2*pi) - log*sigma - frac( (x[j] - mu)**2, 2*sigma**2 ) 
+            ),
+            'so',
+            Math(
+                log * f == (
+                    - log( f(mu,sigma) ) - frac(Q,2)*log(2*pi) - Q*log*sigma - Sum[j]* q[j]*frac( (x[j] - mu)**2, 2*sigma**2 ),
+                    - log( f(mu,sigma) ) - frac(Q,2)*log(2*pi) - Q*log*sigma - Q*frac( (ave(x)[q] - mu)**2 + C[q], 2*sigma**2 )
+                    )
+            ),
+        )
+
+        ################################################################# noise
+        doc.frame('useful identities',
+            'useful identities',
+            Math(
+                Int[-oo, oo]*d(xi) * exp( -frac(xi**2, 2) ) == sqrt(2*pi)
+            ),
+            Math(
+                Int[-oo, oo]*d(xi) * exp( -frac((xi - mu)**2, 2*sigma**2) ) == sqrt(2*pi)*sigma
+            ),
+        )
+        ################################################################# noise
+        Pr = E|r'{\rm Pr}'
+        e = E|'e'
+        z = E|'z'
+        doc.frame('noise probability',
+            'the white noise',
+            Math(
+                f(e[i]|mu, sigma) == frac( 1, sqrt(2*pi)*sigma ) * exp( -frac( e[i]**2, 2*sigma**2 ) )
+            ),
+            r'the probability is for $e_i>\mu$',
+            Math(
+                Pr(e[i]) == (
+                    Int[e[i],oo] * d(xi) * f(xi|mu, sigma),
+                    Int[e[i],oo] * d(xi) * frac( 1, sqrt(2*pi)*sigma ) * exp( -frac( e[i]**2, 2*sigma**2 ) ),
+                    frac(1,2)*(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ),
+                    )
+            ),
+        )
+        doc.frame('noise probability',
+            r'z-score for $e_i>\mu$',
+            Math(
+                Int[z(e[i]),oo]* d(xi) * f(xi|0, 1) == Pr(e[i])
+            ),            
+            Math(
+                frac(1,2)*(1 - erf( frac( z(e[i]), sqrt(2) ) ) ) == Pr(e[i])
+            ),            
+            Math(
+                erf( frac( z(e[i]), sqrt(2) ) ) == 1 - 2*Pr(e[i])
+            ),            
+            Math(
+                z(e[i]) == sqrt(2) * (erf**(-1))( 1 - 2*Pr(e[i]) )
+            ),
+            'applied to the single probability',
+            Math(
+                z(e[i]) == (
+                    #sqrt(2) * frac( e[i] - mu, sqrt(2)*sigma ),
+                    frac( e[i] - mu, sigma ),
+                    )
+            ),
+            'which measures the deviation in units of standard deviation'
+        )
+        
+        doc.frame('noise probability',
+            'the joint probability is obtained by multiplying the single probabilities',
+            Math(
+                Pr(bf(_E)) == (
+                    Prod[i] * frac(1,2)*(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ),
+                    frac(1,2**n) * Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ),
+                    )
+            ),
+            'and cannot be obtained directly from the joint distribution is',
+            Math(
+                f(bf(_E)|mu, sigma) == (
+                    Prod[i] * frac( 1, sqrt(2*pi)*sigma ) * exp( -frac( (e[i]-mu)**2, 2*sigma**2 ) ),
+                    frac( 1, (2*pi)**(n/2)*sigma**n ) * exp( -frac( 1, 2*sigma**2 )* Sum[i]*(e[i]-mu)**2 ),
+                    frac( 1, (2*pi)**(n/2)*sigma**n ) * exp( -frac( (bar(e)-mu)**2 + C[e], 2*sigma**2 ) ),
+                    )
+            ),
+        )
+
+        doc.frame('noise probability',
+            'the joint z-score can be found',
+            Math(
+                frac(1,2**n) * (1 - erf( frac( z(bf(_E)), sqrt(2) ) ) )**n == frac(1,2**n) * Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) )
+            ),
+            Math(
+                z(bf(_E)) == sqrt(2)*(erf**(-1))( 1 - ( Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ) )**(1/n) )
+            ),
+            'for all values equal',
+            Math(
+                z(bf(_E)) == (
+                    sqrt(2)*(erf**(-1))( 1 - (1 - erf( frac( e - mu, sqrt(2)*sigma ) ) ) ),
+                    frac( e - mu, sigma )
+                    )
+            ),            
+        )
             
-            $$
-            {log} f(\mu,\sigma|{Q},{X}) = -\sum_i q_i \frac{{ (x_i - \mu)^2 }}{{ 2\sigma^2 }} - (Q+1){log}\sigma
-            $$
-            the $\mu$ variation
-            $$
-            \sum_i q_i \frac{{ (x_i - \mu) }}{{ \sigma^2 }} = 0
-            $$
-            so 
-            $$
-            \mu =  \frac{{ \sum_i q_i x_i }}{{ \sum_i q_i }}
-            $$
-            '''.format(**locals())
+        
+        doc.frame('noise probability',
+            'on the other hand, the z-score can come directly from the joint distribution',
+            Math(
+                Pr( z, n | 0, 1 ) == (
+                    Int[z, oo] * d(xi) * frac( 1, (2*pi)**(n/2) ) * exp( -n*frac( xi**2, 2 ) ),
+                    frac( 1, 2**((n+1)/2)*pi**((n-1)/2) )*(1 - erf( frac( sqrt(n)*z, sqrt(2) ) ) )
+                    )
+            ),
+            'therefore, we can calculate the joint z-score',
+            Math(
+                frac( 1, 2**((n+1)/2)*pi**((n-1)/2) )*(1 - erf( frac( sqrt(n)*z, sqrt(2) ) ) ) == frac(1,2**n) * Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) )
+            ),
+            Math(
+                z == sqrt(frac(2,n)) * (erf**(-1))( 1 - frac(2**((n+1)/2)*pi**((n-1)/2),2**n) * Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ) )
+            ),
         )
-
-        doc.frame('pixel integrated PDF',
-            r'''
-            the $\sigma$ variation
-            $$
-            \sum_i q_i \frac{{ (x_i - \mu)^2 }}{{ \sigma^3 }} - (Q+1)\frac{{1 }}{{\sigma }} = 0
-            $$
-            so 
-            $$
-            \sum_i q_i(x_i - \mu)^2 = (n+1) \sigma^2
-            $$
-            $$
-            \sigma^2 = \frac{{\sum_i q_i x_i^2 - \mu^2\sum_i q_i }}{{1 + \sum_i q_i}}
-            $$
-            '''.format(**locals())
+                
+        doc.frame('noise probability',
+            'for $n=1$ this results reduces to the previous single z-score',
+            Math(
+                z == ( 
+                    sqrt(frac(2,n)) * (erf**(-1))( 1 - frac(2**((n+1)/2)*pi**((n-1)/2),2**n) * Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ) ),
+                    sqrt(2) * (erf**(-1))( 1 - (1 - erf( frac( e - mu, sqrt(2)*sigma ) ) ) ),
+                    frac( e - mu, sigma ),
+                 )
+            ),
+            'for $n$ equal values',
+            Math(
+                z == ( 
+                    sqrt(frac(2,n)) * (erf**(-1))( 1 - frac(2**((n+1)/2)*pi**((n-1)/2),2**n) * Prod[i] *(1 - erf( frac( e[i] - mu, sqrt(2)*sigma ) ) ) ),
+                    sqrt(frac(2,n)) * (erf**(-1))( 1 - frac(2**((n+1)/2)*pi**((n-1)/2),2**n) * (1 - erf( frac( e - mu, sqrt(2)*sigma ) ) )**n ),
+                 )
+            ),
         )
-
-        ################################################################# multinomial normal
-        doc.frame('pixel integrated PDF',
-            r'''
-            The joint distribution function from the histogram is given by the multinomial distribution
-            $$
-            f(q_i,x_i|\mu,\sigma) = \frac{{ p_i^{{q_j}} }}{{q_j!}}
-            $$
-            $$
-            f({Q},{X}|\mu,\sigma) = \Gamma(1+\sum_i q_i) \prod_i \frac{{ p_i^{{q_i}} }}{{ \Gamma(q_i+1) }}
-            $$
-            where
-            $$
-            p_i = \frac{{1 }}{{ \sqrt{{2\pi}}\sigma }}\int_0^1d\xi {exp}[ - \frac{{ (x_i + \xi - \mu)^2 }}{{ 2\sigma^2 }}]
-            $$
-            '''.format(**locals())
-        )
-        doc.frame('pixel integrated PDF',
-            r'''
-            The maximization of the log probability
-            $$
-            {log} f({Q},{X}|\mu,\sigma) = {log}\Gamma(1+\sum_i q_i) - \sum_i {log} \Gamma(q_i+1) + \sum_i q_i {log} p_i
-            $$
-            where
-            $$
-            {log} p_i = - \frac{{1}}{{2}}{log}(2\pi) - {log}\sigma + {log} \int_0^1d\xi {exp}[ - \frac{{ (x_i + \xi - \mu)^2 }}{{ 2\sigma^2 }}]
-            $$
-            the a posteriori
-            $$
-            {log} f(\mu,\sigma|{Q},{X}) = {log}D_n + {log} f({Q},{X}|\mu,\sigma) - {log}\sigma
-            $$
-            where the last term comes from the a priori distribution
-            '''.format(**locals())
-        )
-
-        doc.frame('pixel integrated PDF',
-            r'''
-            the $\mu$ variation
-            $$
-            \sum_i q_i \frac{{\delta  p_i}}{{p_i}} = 0
-            $$
-            and
-            $$
-            \sum_i\frac{{ q_i }}{{ \sqrt{{2\pi}}\sigma^3p_i }}\int_0^1d\xi (x_i + \xi - \mu) {exp}[ - \frac{{ (x_i + \xi - \mu)^2 }}{{ 2\sigma^2 }}] = 0
-            $$
-
-            $$
-            \sum_i\frac{{ q_i }}{{ p_i }}\{{ (x_i - \mu)p_i + \int_0^1d\xi \xi {exp}[ - \frac{{ (x_i + \xi - \mu)^2 }}{{ 2\sigma^2 }}] \}}= 0
-            $$
-            
-            $$
-            \sum_i q_i(x_i - \mu) = - \sum_i\frac{{ q_i }}{{ p_i }} m_1(x_i-\mu)
-            $$
-            '''.format(**locals())
-        )
-
-        doc.frame('pixel integrated PDF',
-            r'''
-            the $\sigma$ variation
-            $$
-            -\frac{{1}}{{\sigma}} + \sum_i q_i \frac{{\delta  p_i}}{{p_i}} = 0
-            $$
-            and
-            $$
-            \delta p_i = -\frac{{p_i}}{{\sigma}} + \frac{{1}}{{\sigma}}\int_0^1d\xi \frac{{ (x_i + \xi - \mu)^2 }}{{ \sigma^3 }} {exp}[ - \frac{{ (x_i + \xi - \mu)^2 }}{{ 2\sigma^2 }}]
-            $$
-
-            $$
-            \delta p_i = -\frac{{p_i}}{{\sigma}} + \frac{{1}}{{\sigma^4}}\int_0^1d\xi ((x_i-\mu)^2 + \xi^2 - 2(x_i-\mu)\xi) {exp}[ - \frac{{ (x_i + \xi - \mu)^2 }}{{ 2\sigma^2 }}]
-            $$
-
-            $$
-            \delta p_i = -\frac{{p_i}}{{\sigma}} + \frac{{1}}{{\sigma^4}}[(x_i-\mu)^2\sigma p_i - 2(x_i-\mu) m_1(x_i-\mu) + m_2(x_i-\mu) ]
-            $$
-            
-            '''.format(**locals())
-        )
-        doc.frame('pixel integrated PDF',
-            r'''
-            the $\sigma$ variation
-            $$
-            0 = -\frac{{1}}{{\sigma}} -\frac{{1}}{{\sigma}} \sum_i q_i + \sum_i \frac{{q_i}}{{\sigma^4p_i}}[(x_i-\mu)^2\sigma p_i 
-            \\ \quad - 2(x_i-\mu) m_1(x_i-\mu) + m_2(x_i-\mu) ]
-            $$
-
-            $$
-            (1+Q)\sigma^2 = \sum_i q_i(x_i-\mu)^2 - \sum_i \frac{{q_i}}{{\sigma p_i}}2(x_i-\mu) m_1(x_i-\mu) 
-            \\ \quad+ \sum_i \frac{{q_i}}{{\sigma p_i}}m_2(x_i-\mu)
-            $$
-            
-            '''.format(**locals())
-        )
-        ################################################################# multinomial normal
-        doc.frame('pixel integrated PDF',
-            r'''
-            $$
-            f({X}|\mu,\sigma)
-            \\= \prod_i^n \int_{{0}}^{{1}}d\xi \frac{{ 1 }}{{ \sqrt{{2\pi}} \sigma }}
-            {exp}[ -\frac{{(x_i+\xi-\mu)^2}}{{2\sigma^2}} ]
-            \\
-            = \frac{{ 1 }}{{ (2\pi)^{{n/2}} \sigma^n }}
-            \int_{{0}}^{{1}}d\xi {exp}[ -\frac{{1}}{{2\sigma^2}}\sum_i^n (x_i+\xi-\mu)^2 ]
-            \\
-            = \frac{{ 1 }}{{ (2\pi)^{{n/2}} \sigma^n }}
-            \int_{{0}}^{{1}}d\xi {exp}[ -\frac{{(\bar{{x}}+\xi-\mu)^2 + C}}{{2\sigma^2/n}} ]
-            $$
-            '''.format(**locals())
-        )
-
-
-        doc.frame('a posteriori PDF',
-            r'''
-            $$
-            \sigma^2 - 2\frac{{n}}{{ n+1 }}{exp}[ -\frac{{C}}{{2\sigma^2/n}} ]\int_{{ 0 }}^{{ \frac{{1}}{{2}} }}d\xi [\xi^2+C] {exp}[ -\frac{{\xi^2}}{{2\sigma^2/n}} ] = 0
-            $$
-            $$
-            \sigma^2 - 2\sqrt{{2}}\frac{{n \sigma}}{{ n+1\sqrt{{n}} }} {exp}[ -\frac{{C}}{{2\sigma^2/n}} ]\\ \quad
-            \times \int_0^{{ \frac{{ \sqrt{{n/2}} }}{{ 2\sigma }} }}d\phi [ 2\sigma^2\phi^2/n + C] {exp}( -\phi^2 ) = 0
-            $$
-            the continuos limit show be recovered $\sigma^2/n \rightarrow 0$ the integral extends to infinity,
-            $$
-            \sigma^2 - 2\sqrt{{2}}\frac{{n \sigma}}{{ n+1\sqrt{{n}} }} {exp}[ -\frac{{C}}{{2\sigma^2/n}} ]\\ \quad
-            \int_0^\infty d\phi [ 2\sigma^2\phi^2/n + C] {exp}( -\phi^2 ) = 0
-            $$            
-            '''.format(**locals())
-        )
-
-        doc.frame('the variation for $\sigma$',
-            r'''
-            $$
-            \sigma^2 - \frac{{n}}{{ n+1 }} {exp}[ -\frac{{C}}{{2\sigma^2/n}} ] [\frac{{\sigma^2}}{{n}}g_2( \frac{{\sigma^2}}{{n}} ) + Cg_0(\frac{{\sigma^2}}{{n}})] = 0
-            $$
-            $$
-            g_0(x^2) = \int_{{ -\frac{{1}}{{2}} }}^{{ \frac{{1}}{{2}} }}d\xi{exp}[ -\frac{{\xi^2}}{{2x^2}} ] < 1
-            $$
-            $$
-            x g_2(x) = \int_{{ -\frac{{1}}{{2}} }}^{{ \frac{{1}}{{2}} }}d\xi \xi^2 {exp}[ -\frac{{\xi^2}}{{2x}} ], \quad g_2(x) < 1
-            $$
-            '''.format(**locals())
-        )
-
-        doc.frame('joint maximum a posteriori estimator',
-            r'''
-            wich provides the two sets of equations to be solve simultaneously
-            $$
-            \sum_i\frac{{ {fN}(x_i - \mu, \sigma) - {fN}(x_i+1 - \mu, \sigma) }}{{ [{CN}(\xi - \mu, \sigma) ]_{{x_i}}^{{x_i+1}} }} = 0
-            $$
-            and
-            $$
-            + \sum_i\frac{{ x_i{fN}(x_i - \mu,\sigma) }}{{ [{CN}(\xi - \mu, \sigma) ]_{{x_i}}^{{x_i+1}} }} 
-            \\ \quad - \sum_i\frac{{ x_i{fN}(x_i+1 - \mu, \sigma) }}{{ [{CN}(\xi - \mu, \sigma) ]_{{x_i}}^{{x_i+1}} }} 
-            \\ \quad - \sum_i\frac{{ {fN}(x_i+1 - \mu, \sigma) }}{{ [{CN}(\xi - \mu, \sigma) ]_{{x_i}}^{{x_i+1}} }} = \frac{{1}}{{ 2 }} 
-            $$
-            '''.format(**locals())
-        )
-
-        ##############################################################
-        doc.frame('2d pixel integrated PDF',
-            r'''
-            $$
-            f({X},{Y},{E}|{mux},{muy},{sigmax},{sigmay})
-            \\= \prod_i^n \int_{{x_i}}^{{x_i+1}}dx \int_{{y_i}}^{{y_i+1}}dy e_i {fN}(x-{mux}, {sigmax}) {fN}(y-{muy}, {sigmay})
-            %\\= \prod_i^n \int_{{x_i}}^{{x_i+1}}dx \int_{{y_i}}^{{y_i+1}}dy \frac{{ e_i }}{{ \sqrt{{2\pi}} {sigmax}{sigmay} }}
-            %{exp}[ -\frac{{x-{mux}}}{{2{sigmax}^2}} - \frac{{y-{muy} }}{{2{sigmay}^2}} ]
-            %\\
-            %= \prod_i^n \frac{{e_i}}{{ 4 }} 
-            %[ {erf}(\frac{{ x_i+1-{mux} }}{{ {sigmax} {sqrt2} }}) - {erf}(\frac{{ x_i-{mux} }}{{ {sigmax} {sqrt2} }}) ]
-            %[ x \rightarrow y ]
-            \\
-            = \prod_i^n e_i [{CN}(\xi - {mux}, {sigmax})]_{{x_i}}^{{x_i+1}} [{CN}(\xi - {muy}, {sigmay})]_{{y_i}}^{{y_i+1}}
-            $$
-            '''.format(**locals())
-        )
-        doc.frame('a posteriori PDF',
-            r'''
-            following the same steps as done for the joint distribution
-            $$
-            f({mux},{muy},{sigmax},{sigmay}|{X},{Y},{E}) 
-            = \frac{{ D_n }}{{ {sigmax}{sigmay} }} \prod_i^n e_i 
-            [{CN}(\xi - {mux}, {sigmax})]_{{x_i}}^{{x_i+1}}
-            [{CN}(\xi - {muy}, {sigmay})]_{{y_i}}^{{y_i+1}}
-            $$
-            where
-            $$
-            D_n = [\int d\alpha_xd\sigma_xd\alpha_yd\sigma_y \frac{{ 1 }}{{ {sigmax}{sigmay} }} \prod_i^n e_i {I}(\alpha_x, {sigmax}) {I}(\alpha_y, {sigmay})]^{{-1}}
-            \\
-            = [\prod_i^n e_i \int d\alpha_xd\sigma_xd\alpha_yd\sigma_y \frac{{ 1 }}{{ {sigmax}{sigmay} }} {I}(\alpha_x, {sigmax}) {I}(\alpha_y, {sigmay})]^{{-1}}
-            $$
-            '''.format(**locals())
-        )
-
-        doc.frame('a posteriori PDF',
-            r'''
-            following the same steps as done for the joint distribution
-            $$
-            {log} f({mux},{muy},{sigmax},{sigmay}|{X},{Y},{E}) 
-            = {log} D_n - {log}{sigmax} - {log}{sigmay} 
-            \\ \quad + \sum_i^n {log} e_i + \sum_i^n {log}[{CN}(\xi - {mux}, {sigmax})]_{{x_i}}^{{x_i+1}} 
-            + \sum_i^n {log} [{CN}(\xi - {muy}, {sigmay})]_{{y_i}}^{{y_i+1}}
-            $$
-            '''.format(**locals())
-        )
-        doc.frame('joint maximum a posteriori estimator',
-            r'''
-            wich provides the two sets of equations to be solve simultaneously
-            $$
-            \sum_i\frac{{ {fN}(x_i - {mux}, {sigmax}) - {fN}(x_i+1 - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }} = 0
-            $$
-            and
-            $$
-            -\frac{{1}}{{{sigmax}}} 
-            + \frac{{ 2 }}{{ {sigmax} }} \sum_i\frac{{ (x_i-{mux}){fN}(x_i - {mux},{sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }} 
-            \\ \quad - \frac{{ 2 }}{{ {sigmax} }} \sum_i\frac{{ (x_i+1-{mux}){fN}(x_i+1 - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }} = 0
-            $$
-            '''.format(**locals())
-        )
-
-        doc.frame('joint maximum a posteriori estimator',
-            r'''
-            the constraint of ${mux}$ applied to ${sigmax}$ yields
-            $$
-            \sum_i\frac{{ {fN}(x_i+1 - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }}
-            = \sum_i\frac{{ {fN}(x_i - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }} 
-            $$
-            and
-            $$
-            \sum_i\frac{{ x_i {fN}(x_i - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }} 
-            \\ \quad - \sum_i\frac{{ x_i{fN}(x_i+1 - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }}
-            \\ - \sum_i\frac{{ {fN}(x_i - {mux}, {sigmax}) }}{{ [{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}} }} 
-            = \frac{{1}}{{2}}
-            $$
-            '''.format(**locals())
-        )
-
-        doc.frame('joint maximum a posteriori estimator',
-            r'''
-            if each term is equal
-            $$
-            {fN}(x_i+1 - {mux}, {sigmax})
-            = {fN}(x_i - {mux}, {sigmax})
-            $$
-            and
-            $$
-            x_i {fN}(x_i - {mux}, {sigmax}) - x_i{fN}(x_i+1 - {mux}, {sigmax}) - {fN}(x_i - {mux}, {sigmax})
-            \\ \quad = \frac{{[{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}}}}{{2N}}
-            $$
-            
-            $$
-            {fN}(x_i - {mux}, {sigmax}) = - \frac{{[{CN}(\xi - {mux}, {sigmax}) ]_{{x_i}}^{{x_i+1}}}}{{2N}}
-            $$
-            '''.format(**locals())
-        )
+        

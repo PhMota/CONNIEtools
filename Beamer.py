@@ -1,3 +1,4 @@
+from __future__ import print_function
 import subprocess
 import os
 
@@ -249,7 +250,18 @@ class MathGen:
     def __or__(self, a):
         return '\n'.join( ['$$', str(a), '$$'] )
 
-Math = MathGen()
+#Math = MathGen()
+def Math( a ):
+    if type(a) is tuple or type(a) is list:
+        return '\n'.join( ['\n$$', ',\quad '.join(map(str,a)), '.$$\n'] )
+    return '\n'.join( ['\n$$', str(a), '.$$\n'] )
+
+def delim( a ):
+    if '(' in str(a):
+        if '[' in str(a):
+            return r'\{{ {} \}}'.format( str(a) )
+        return r'[{}]'.format( str(a) )
+    return r'({})'.format( str(a) )
 
 class Expr:
     def __init__(self, s):
@@ -260,23 +272,66 @@ class Expr:
     def __repr__(self):
         return self.s
     
+    def __neg__(self):
+        return Expr(r'-{}'.format(self.s))
+
     def __add__(self, a):
-        return ExprAdd(r'{}+{}'.format(self.s, a))
+        return ExprAdd(r'{}+{}'.format(self.s, str(a)))
+
+    def __radd__(self, a):
+        return ExprAdd(r'{}+{}'.format( str(a), self.s ))
+
+    def __sub__(self, a):
+        if isinstance(a, ExprAdd):
+            a = delim(a)
+        return ExprAdd(r'{}-{}'.format(self.s, str(a)))
+
+    def __rsub__(self, a):
+        return ExprAdd(r'{}-{}'.format( str(a), self.s ))
     
     def __div__( self, a ):
         return frac(self.s, a)
+
+    def __rdiv__( self, a ):
+        return frac(a, self.s )
     
     def __mul__( self, a ):
-        return ExprMul(r'{}{}'.format(self.s, a))
+        if isinstance( a, ExprAdd ):
+            return a.__rmul__(self.s)
+        return ExprMul(r'{}{}'.format(self.s, str(a) ))
+
+    def __rmul__( self, a ):
+        return ExprMul(r'{}{}'.format( str(a), self.s ))
     
     def __or__( self, a ):
-        return Expr(r'{}|{}'.format(self.s, a))
+        return Expr(r'{}|{}'.format(self.s, str(a) ))
     
     def __call__( self, *a ):
-        return Expr(r'{}({})'.format( self.s, ', '.join( map(str,a) ) ) )
-    
+        p = ', '.join( map(str,a) )
+        p = delim(p)
+        return Expr(r'{}{}'.format( self.s, p ) )
+        
     def __eq__( self, a ):
-        return Expr(r'{} = {}'.format( self.s, a ) )
+        if type(a) is tuple or type(a) is list:
+            return Expr(r'{} \wall = {} \return'.format( self.s, r' \\ ='.join(map(str,a)) ) )
+        return Expr(r'{} = {}'.format( self.s, str(a) ) )
+
+    def __req__( self, a ):
+        return Expr(r'{} = {}'.format( str(a), self.s ) )
+    
+    def __getitem__( self, a ):
+        if type(a) is tuple:
+            return Expr(r'{}_{{{}}}^{{{}}}'.format( self.s, str(a[0]), str(a[1]) ) )
+        return Expr(r'{}_{{{}}}'.format( self.s, str(a) ) )
+    
+    def __pow__( self, a ):
+        return Expr(r'{}^{{ {} }}'.format( self.s, str(a) ) )
+
+    def __rpow__( self, a ):
+        return Expr(r'{}^{{ {} }}'.format( str(a), self.s ) )
+
+    def __sqrt__(self):
+        return Expr(r'\sqrt{{ {} }}'.format( self.s ) )
     
 class ExprGen:
     def __or__( self, a ):
@@ -286,23 +341,71 @@ class ExprAdd(Expr):
     def __init__(self, s):
         self. s = s
 
+    def __pow__( self, a ):
+        return Expr(r'{}^{}'.format( delim(self.s), str(a) ) )
+    
+    def __mul__( self, a ):
+        return ExprMul(r'{}{}'.format( delim(self.s), str(a) ) )
+
+    def __rmul__( self, a ):
+        return ExprMul(r'{}{}'.format( str(a), delim(self.s) ) )
+    
+    def __neg__(self):
+        return Expr(r'-{}'.format(delim(self.s)))
+    
+    def __rsub__(self, a):
+        return Expr(r'{}-{}'.format(str(a),delim(self.s)) )
+    
+    
 class ExprMul(Expr):
     def __init__(self, s):
         self. s = s
-    
+    def __pow__( self, a ):
+        return Expr(r'{}^{{ {} }}'.format( delim(self.s), str(a) ) )
 
-mu = Expr('\mu')
-sigma = Expr('\sigma')
+
+mu = Expr(r'\mu ')
+sigma = Expr(r'\sigma ')
+alpha = Expr(r'\alpha ')
+pi = Expr(r'\pi ')
+xi = Expr(r'\xi ')
+
+Gamma = Expr(r'\Gamma ')
+Prod = Expr(r'\prod ')
+Sum = Expr(r'\sum ')
+exp = Expr(r'{\rm exp}')
+e = Expr(r'{\rm e}')
+log = Expr(r'{\rm log}')
+erf = Expr(r'{\rm erf}')
+
+Int = Expr(r'\int')
+inf = Expr(r'\infty')
+oo = Expr(r'\infty')
+
 E = ExprGen()
 
 def frac(a, b):
-    return Expr( r'\frac{{ {a} }}{{ {b} }}'.format(**locals()) )
+    return Expr( r'\frac{{ {} }}{{ {} }}'.format( str(a), str(b)) )
 
 def bf(a):
-    return Expr( r'{{\mathbf {} }}'.format(a) )
+    return Expr( r'{{\mathbf {} }}'.format(str(a)) )
 
-#def 
+def ave(a):
+    return Expr( r'\langle {} \rangle '.format(str(a)) )
 
-print( E, type(E) )
-print( E|'a', type(E|'a') )
-print( (E|'a')(mu) )
+def bar(a):
+    return Expr( r'\bar{{ {} }}'.format(str(a)) )
+
+def hat(a):
+    return Expr( r'\hat{{ {} }}'.format(str(a)) )
+
+def sqrt(a):
+    return Expr(r'\sqrt{{ {} }}'.format( str(a) ) )
+
+def d(a):
+    return Expr(r'{{\rm d}} {}\, '.format( str(a) ) )
+
+def factorial(a):
+    if isinstance(a, ExprAdd) or isinstance(a, ExprMul):
+        Expr(r'({})!'.format( str(a) ) )
+    return Expr(r'{}!'.format( str(a) ) )

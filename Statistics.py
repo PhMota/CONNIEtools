@@ -439,6 +439,8 @@ class norm2d_norm:
             ysigma = .5 
         if E <= 0 or xsigma > 2 or ysigma > 2:
             return [-1]*5
+        if E <= 1e-3:
+            E = 1e-3
         p0 = ( xmu, ymu, xsigma, ysigma, E )
 
         #sigma_e = ones_like(e)*sigma_e
@@ -450,7 +452,7 @@ class norm2d_norm:
         except ValueError as e:
             p = [-1]*5
             print( 'ValueError in fit', p0 )
-            raise e
+            #raise e
         return p
 
 
