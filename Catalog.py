@@ -814,7 +814,7 @@ class HitSummary:
         if os.path.exists( fname ):
             mode = 'update'
             
-        print( 'code', code )
+        #print( 'code', code )
         
         varnames = ['fname', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
         weave.inline( code, varnames,
@@ -1090,17 +1090,17 @@ def image_extract( image, args ):
     verbose = 0
     if 'verbose' in args:
         verbose = 1
-    hitSummary = HitSummary( image.data.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
+    hitSummary = HitSummary( image.all.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
     for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
         if field.upper() in image.header:
             hitSummary.add_fields(field, dtype, [image.header[field.upper()]]*len(hitSummary) )
     try:
         print( 'runID {} ohdu {} extracted hits {}'.format( int(image.header['RUNID']), image.header['OHDU'], len(hitSummary) ) )
-    excpet:
+    except:
         print( 'extracted hits {}'.format( len(hitSummary) ) )
     hitSummary.add_fields( 'thr', float32, [args.threshold]*len(hitSummary) )
     hitSummary.add_basic_fields()
-    for lvl in range( args.border ):
+    for lvl in range( args.border+1 ):
         hitSummary.add_level_fields(lvl)
     if not 'no_catalog' in args:
         hitSummary.save_catalog( args.basename + '.root' )

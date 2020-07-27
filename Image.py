@@ -352,23 +352,28 @@ class Part:
     
     def __init__( self, imageHDU ):
         self.header = dict( imageHDU.header )
-
-        if 'BIASW' in self.header:
-            self.width = imageHDU.data.shape[1]
-            self.bias_width = imageHDU.header['BIASW']
-            self.bias_height = imageHDU.header['BIASH']
-            self.rebin = imageHDU.header['REBIN']
-            self.has_right = False
-        else:
-            self.parse_shape( imageHDU.data.shape )
+        print( 'image.shape', imageHDU.data.shape )
+        self.all = Section( imageHDU.data )
         
-        # important to remove the first line, but not doing it now
-        self.data = Section( imageHDU.data[ None:None, None:(self.width-self.bias_width) ] )
-        self.bias = Section( imageHDU.data[ None:None, (self.width-self.bias_width): self.width ] )
-        
-        if self.has_right:
-            self.dataR = Section( imageHDU.data[:,::-1][ None:None, None:(self.width-self.bias_width) ] )
-            self.biasR = Section( imageHDU.data[:,::-1][ None:None, (self.width-self.bias_width):self.width ] )
+        try:
+            if 'BIASW' in self.header:
+                self.width = imageHDU.data.shape[1]
+                self.bias_width = imageHDU.header['BIASW']
+                self.bias_height = imageHDU.header['BIASH']
+                self.rebin = imageHDU.header['REBIN']
+                self.has_right = False
+            else:
+                self.parse_shape( imageHDU.data.shape )
+            
+            # important to remove the first line, but not doing it now
+            self.data = Section( imageHDU.data[ None:None, None:(self.width-self.bias_width) ] )
+            self.bias = Section( imageHDU.data[ None:None, (self.width-self.bias_width): self.width ] )
+            
+            if self.has_right:
+                self.dataR = Section( imageHDU.data[:,::-1][ None:None, None:(self.width-self.bias_width) ] )
+                self.biasR = Section( imageHDU.data[:,::-1][ None:None, (self.width-self.bias_width):self.width ] )
+        except:
+            return
         
     def remove_outliers_from_bias( self, pmin = 1e-5 ):
         self.bias = Section(outliers2nanp( self.bias, axis=1, pmin=pmin ))
@@ -468,41 +473,50 @@ class Image:
     def __init__( self, parts ):
         for part in parts:
             try:
-                self.data = np.concatenate( [ self.data, part.data ], axis=0 )
-                self.bias = np.concatenate( [ self.bias, part.bias ], axis=0 )
-                if self.has_right:
-                    self.dataR = np.concatenate( [ self.dataR, part.dataR ], axis=0 )
-                    self.biasR = np.concatenate( [ self.biasR, part.biasR ], axis=0 )
+                self.all = np.concatenate( [ self.all, part.all ], axis=0 )
             except AttributeError:
-                self.has_right = part.has_right
-                self.rebin = part.rebin
+                self.all = part.all
                 self.header = part.header
-                self.bias_height = part.bias_height
-                self.data = part.data
-                self.bias = part.bias
-                if self.has_right:
-                    self.dataR = part.dataR
-                    self.biasR = part.biasR
-                    
-
-        self.vbias = self.data[ None:self.bias_height, : ].view(Section)
-        self.vbias_err = 1
-        
-        self.data = self.data[ self.bias_height:None, : ].view(Section)
-        self.data_err = 1
-        
-        self.dbias = self.bias[ None:self.bias_height, : ].view(Section)
-        self.dbias_err = 1
-        
-        self.bias = self.bias[ self.bias_height:None, : ].view(Section)
-        self.bias_err = 1
-        
-        if self.has_right:
-            self.vbiasR = self.dataR[ None:self.bias_height, : ].view(Section)
-            self.dataR = self.dataR[ self.bias_height:None, : ].view(Section)
-            self.dbiasR = self.biasR[ None:self.bias_height, : ].view(Section)
-            self.biasR = self.biasR[ self.bias_height:None, : ].view(Section)
+            try:
+                try:
+                    self.data = np.concatenate( [ self.data, part.data ], axis=0 )
+                    self.bias = np.concatenate( [ self.bias, part.bias ], axis=0 )
+                    if self.has_right:
+                        self.dataR = np.concatenate( [ self.dataR, part.dataR ], axis=0 )
+                        self.biasR = np.concatenate( [ self.biasR, part.biasR ], axis=0 )
+                except AttributeError:
+                    self.has_right = part.has_right
+                    self.rebin = part.rebin
+                    self.header = part.header
+                    self.bias_height = part.bias_height
+                    self.data = part.data
+                    self.bias = part.bias
+                    if self.has_right:
+                        self.dataR = part.dataR
+                        self.biasR = part.biasR
+            except:
+                pass
+                        
+        try:
+            self.vbias = self.data[ None:self.bias_height, : ].view(Section)
+            self.vbias_err = 1
             
+            self.data = self.data[ self.bias_height:None, : ].view(Section)
+            self.data_err = 1
+            
+            self.dbias = self.bias[ None:self.bias_height, : ].view(Section)
+            self.dbias_err = 1
+            
+            self.bias = self.bias[ self.bias_height:None, : ].view(Section)
+            self.bias_err = 1
+            
+            if self.has_right:
+                self.vbiasR = self.dataR[ None:self.bias_height, : ].view(Section)
+                self.dataR = self.dataR[ self.bias_height:None, : ].view(Section)
+                self.dbiasR = self.biasR[ None:self.bias_height, : ].view(Section)
+                self.biasR = self.biasR[ self.bias_height:None, : ].view(Section)
+        except:
+            pass
     
     def remove_outliers_from_vbias(self, pmin=1e-5):
         self.vbias = Section(outliers2nanp( self.vbias, axis=0, pmin=pmin ))
@@ -825,6 +839,10 @@ class Section( np.ndarray ):
         indices = np.unique(labeled_clusters)[1:]
         if verbose:
             print( 'extracted {}'.format(len(indices)) )
+        if len(indices) == 0:
+            print( 'nothing was extracted' )
+            print( 'max value in image', np.amax(self) )
+            exit(0)
         list_of_clusters = scipy.ndimage.labeled_comprehension(
             self,
             labeled_clusters,
@@ -1193,7 +1211,7 @@ def apply_to_files( args ):
                     except:
                         ohdu = i
                         if 'verbose' in args:
-                            print( 'opening hdu', hdu )
+                            print( 'opening hdu', i )
                         if HDU.data is None: continue
                         if 'hdu' in args and args.hdu is not None and i not in args.hdu: continue
                     part = Part(HDU)
