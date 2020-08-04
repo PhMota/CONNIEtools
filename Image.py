@@ -1234,7 +1234,7 @@ def add_display_options( p ):
     p.add_argument('input_file', help = 'fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
     p.add_argument( '--ohdu', type=int, default = 2, help = 'ohdu to be displayed' )
     p.add_argument( '--E-span', type=int, default = 10, help = 'E' )
-    p.add_argument( '--plot', nargs='+', type=str, default = 'image', help = 'plot type' )
+    p.add_argument( '--plot', nargs='+', type=str, default = ['image'], help = 'plot type' )
     p.add_argument( '--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png file' )
     
     geom = p.add_argument_group('geometry options')
@@ -1301,7 +1301,10 @@ def display( args ):
         print( colored('width', 'green'), width )
         number_of_amplifiers = width // constants.ccd_width
         print( colored('amplifiers', 'green'), number_of_amplifiers )
-        side_width = width//number_of_amplifiers
+        if number_of_amplifiers > 0:
+            side_width = width//number_of_amplifiers
+        else:
+            side_width = width
         print( colored('side width', 'green'), side_width )
         
         bias_width = int( np.ceil( (side_width - constants.ccd_width)/150. ) )*150
@@ -1374,6 +1377,11 @@ def display( args ):
         #if 'E_span' in args:
             #E = np.median(data)
             #data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
+
+        if 'x_range' in args:
+            data = data[:, args.x_range[0]:args.x_range[1]] 
+        if 'y_range' in args:
+            data = data[args.y_range[0]:args.y_range[1], :]
         
         fig = plt.figure()
         ax = fig.add_subplot(111)

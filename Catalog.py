@@ -206,14 +206,25 @@ class HitSummary:
             #rawNoise = self.rawNoise
 
         #with Timer('likevars'):
+        try:
+            xmu = entry.xBary1
+            ymu = entry.yBary1
+            xsigma = sqrt(entry.xVar1)
+            ysigma = sqrt(entry.yVar1)
+        except:
+            xmu = entry.xBary
+            ymu = entry.yBary
+            xsigma = sqrt(entry.xVar)
+            ysigma = sqrt(entry.yVar)
+            
         xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit( 
             entry.xPix, 
             entry.yPix, 
             entry.ePix, 
-            entry.xBary1, 
-            entry.yBary1, 
-            sqrt(entry.xVar1), 
-            sqrt(entry.yVar1), 
+            xmu,
+            ymu, 
+            xsigma, 
+            ysigma, 
             sum(entry.ePix),
             ftol=1e-8, 
             mode='fit',
@@ -246,20 +257,26 @@ class HitSummary:
             pass
         
         rawNoise = 10
-        #if 'rawNoise' in self.names:
-            #rawNoise = self.rawNoise
-        mask = entry.level <= 2
-        #mask = entry.ePix >= 20
+        try:
+            xmu = entry.xBary1
+            ymu = entry.yBary1
+            xsigma = sqrt(entry.xVar1)
+            ysigma = sqrt(entry.yVar1)
+        except:
+            xmu = entry.xBary
+            ymu = entry.yBary
+            xsigma = sqrt(entry.xVar)
+            ysigma = sqrt(entry.yVar)
         
         xMu, yMu, xSigma, ySigma, E = stats.norm2d_binom_norm.mle( 
-            entry.xPix[mask], 
-            entry.yPix[mask], 
-            entry.ePix[mask], 
-            entry.xBary1, 
-            entry.yBary1, 
-            sqrt(entry.xVar1), 
-            sqrt(entry.yVar1), 
-            sum(entry.ePix[mask]),
+            entry.xPix, 
+            entry.yPix, 
+            entry.ePix, 
+            xmu, 
+            ymu, 
+            xsigma, 
+            ysigma, 
+            sum(entry.ePix),
             sigma_e = rawNoise,
             g=7.25,
             lamb=0
