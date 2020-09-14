@@ -33,7 +33,7 @@ class to_object:
     def __contains__(self, a):
         return a in self.__dict__.keys()
 
-def simulation_from_file( basename ):
+def simulation_from_file( basename, invert=False, shift=0 ):
     fname = basename+'.csv'
     json_str = open( fname ).readline().strip(' #').replace('\'','"')
     args_dict = json.loads( json_str )
@@ -45,7 +45,9 @@ def simulation_from_file( basename ):
     if data.size == 1:
         data = array( [(data.n, data.x, data.y, data.z, data.q, data.id)], dtype = [('n', int), ('x', float), ('y', float), ('z', float), ('q', float), ('id', 'S16')] ).view(recarray)
         print( 'read events', data.size, data.n )
-        
+    data.x += shift
+    if invert:
+        data.x, data.y = data.y, data.x
     return Simulation( data, args )
     
 class Simulation:

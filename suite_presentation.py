@@ -131,11 +131,16 @@ with Timer('presentation'):
         
         doc.frame('compute sigma fits',
             'scatter with the computed fit for the event width',
-            *makefigure('./catalog addbranches presentationCu2.root fit -o presentationCu2_fit.root; ./catalog scatter presentationCu2_fit.root --x-range 0 20000 --y-range 0 2 --branch-selections E0 xSigmafit 1 --branch-selections E1 xSigmafit 1 --png', 'presentationCu2_fit.root.scatter.xSigmafit.vs.E0.png', doc, height=.6 )
+            *makefigure('./catalog addbranches presentationCu2.root fit -o presentationCu2_fit.root; ./catalog scatter presentationCu2_fit.root --x-range 5000 20000 --y-range 0 2 --branch-selections E0 xSigmafit 1 --branch-selections E1 xSigmafit 1 --png', 'presentationCu2_fit.root.scatter.xSigmafit.vs.E0.png', doc, height=.6 )
         )
         
         doc.frame('match with simulation',
-            'scatter with the computed fit for the event width',
-            *makefigure('./catalog match simulationCu2_presentation presentationCu2.root; ./catalog scatter presentationCu2_fit.root --x-range 0 20000 --y-range 0 2 --branch-selections E0 xSigmafit 1 --branch-selections E1 xSigmafit 1 --png', 'presentationCu2_fit.root.scatter.xSigmafit.vs.E0_.png', doc, height=.6 )
+            'comparison between reconstructed and simulated depths',
+            *makefigure('./catalog match simulationCu2_presentation presentationCu2_fit.root -o presentationCu2_fit_matched.root -v --x-shift 150; ./catalog scatter presentationCu2_fit_matched.root --x-range 0 2 --y-range 0 2 --branch-selections sigmaSim sigmaSim 1 --branch-selections xSigmafit sigmaSim 1 --png', 'presentationCu2_fit_matched.root.scatter.sigmaSim.vs.sigmaSim.png', doc, height=.6 )
         )
-                
+        
+        doc.frame('match with simulation',
+            'comparison between reconstructed and simulated depths',
+            *makefigure('./catalog scatter presentationCu2_fit_matched.root --x-range 0 2 --y-range -20000 20000 --branch-selections sigmaSim E0 1 --branch-selections sigmaSim ESim 1  --branch-selections sigmaSim \'E0-ESim\' 1 --png', 'presentationCu2_fit_matched.root.scatter.E0.vs.sigmaSim.png', doc, height=.6 )
+        )
+        

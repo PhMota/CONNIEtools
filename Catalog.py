@@ -580,7 +580,7 @@ class HitSummary:
             xy2hit_ind = { ( xPix, yPix ): i for i, hit in enumerate(self.__recarray__) for xPix, yPix, level in zip(hit.xPix, hit.yPix, hit.level)  }
 
         if 'verbose' in args:
-            print( xy2hit_ind.keys() )
+            print( 'all keys', xy2hit_ind.keys() )
         
         N_hits = len(self.__recarray__)
         xSim = zeros(N_hits)
@@ -595,16 +595,17 @@ class HitSummary:
         
         with Timer('matching'):
             for event_ind, event in enumerate(events):
-                if 'verbose' in args:
-                    print( 'hitSummary.xy', zip(xPix0, yPix0) )
+                #if 'verbose' in args:
+                    #print( 'hitSummary.xy', zip(xPix, yPix) )
                 key = ( int(event.x/events.rebin[0]), int(event.y/events.rebin[1]) )
                 try:
+                    print( 'key', key )
                     hit_ind = xy2hit_ind[key]
                     matched[event_ind] = 1
                     #print( 'matched', key, hit_ind )
                     #print( 'Bary0', self.__recarray__[hit_ind].xBary0, self.__recarray__[hit_ind].yBary0 )
                     #print( 'Bary1', self.__recarray__[hit_ind].xBary1, self.__recarray__[hit_ind].yBary1 )
-                    #print( 'xy', event.x, event.y )
+                    print( 'xy', event.x, event.y )
                     if 'verbose' in args:
                         print( 'match', event.x, event.y )
                     if idSim[hit_ind] == 0:
@@ -624,6 +625,7 @@ class HitSummary:
                         zSim[hit_ind] = -1
                         sigmaSim[hit_ind] = -1
                 except KeyError:
+                    print( 'NO match', event.x, event.y )
                     pass
         
         #print( 'x', xSim[xSim!=0] )
@@ -635,7 +637,7 @@ class HitSummary:
             print( 'not matched events' )
             print( events.xy[matched==0] )
             print( 'not matched hits' )
-            print( zip(self.__recarray__.xBary1[ idSim==0 ], self.__recarray__.yBary1[ idSim==0 ]) )
+            #print( zip(self.__recarray__.xBary1[ idSim==0 ], self.__recarray__.yBary1[ idSim==0 ]) )
 
         fname = args.basename + '.root'
         varnames = ['xSim','ySim','zSim','qSim','sigmaSim','ESim','idSim']
@@ -644,60 +646,61 @@ class HitSummary:
         
         print( 'added columns {}'.format(varnames) )
         
-        if 'no_catalog' in args:
-            return
         
-        code = '''
-        TFile f( fname.c_str(), "update" );
-        TTree *t = (TTree*) f.Get("hitSumm");
-        Long64_t nentries = t->GetEntries();
+        #if 'no_catalog' in args:
+            #return
         
-        Float_t c_xSim;
-        Float_t c_ySim;
-        Float_t c_zSim;
-        Int_t c_qSim;
-        Float_t c_sigmaSim;
-        Float_t c_ESim;
-        Int_t c_idSim;
+        #code = '''
+        #TFile f( fname.c_str(), "update" );
+        #TTree *t = (TTree*) f.Get("hitSumm");
+        #Long64_t nentries = t->GetEntries();
+        
+        #Float_t c_xSim;
+        #Float_t c_ySim;
+        #Float_t c_zSim;
+        #Int_t c_qSim;
+        #Float_t c_sigmaSim;
+        #Float_t c_ESim;
+        #Int_t c_idSim;
 
-        TBranch *x_branch = t->Branch("xSim", &c_xSim, "xSim/F");
-        TBranch *y_branch = t->Branch("ySim", &c_ySim, "ySim/F");
-        TBranch *z_branch = t->Branch("zSim", &c_zSim, "zSim/F");
-        TBranch *q_branch = t->Branch("qSim", &c_qSim, "qSim/I");
-        TBranch *sigma_branch = t->Branch("sigmaSim", &c_sigmaSim, "sigmaSim/F");
-        TBranch *E_branch = t->Branch("ESim", &c_ESim, "ESim/F");
-        TBranch *id_code_branch = t->Branch("idSim", &c_idSim, "idSim/I");
+        #TBranch *x_branch = t->Branch("xSim", &c_xSim, "xSim/F");
+        #TBranch *y_branch = t->Branch("ySim", &c_ySim, "ySim/F");
+        #TBranch *z_branch = t->Branch("zSim", &c_zSim, "zSim/F");
+        #TBranch *q_branch = t->Branch("qSim", &c_qSim, "qSim/I");
+        #TBranch *sigma_branch = t->Branch("sigmaSim", &c_sigmaSim, "sigmaSim/F");
+        #TBranch *E_branch = t->Branch("ESim", &c_ESim, "ESim/F");
+        #TBranch *id_code_branch = t->Branch("idSim", &c_idSim, "idSim/I");
 
-        for( int n=0; n<nentries; ++n ){
-            c_xSim = xSim[n];
-            c_ySim = ySim[n];
-            c_zSim = zSim[n];
-            c_qSim = qSim[n];
-            c_sigmaSim = sigmaSim[n];
-            c_ESim = ESim[n];
-            c_idSim = idSim[n];
+        #for( int n=0; n<nentries; ++n ){
+            #c_xSim = xSim[n];
+            #c_ySim = ySim[n];
+            #c_zSim = zSim[n];
+            #c_qSim = qSim[n];
+            #c_sigmaSim = sigmaSim[n];
+            #c_ESim = ESim[n];
+            #c_idSim = idSim[n];
             
-            x_branch->Fill();
-            y_branch->Fill();
-            z_branch->Fill();
-            q_branch->Fill();
-            sigma_branch->Fill();
-            E_branch->Fill();
-            id_code_branch->Fill();
-        }
-        t->Write("", TObject::kOverwrite);
-        '''
+            #x_branch->Fill();
+            #y_branch->Fill();
+            #z_branch->Fill();
+            #q_branch->Fill();
+            #sigma_branch->Fill();
+            #E_branch->Fill();
+            #id_code_branch->Fill();
+        #}
+        #t->Write("", TObject::kOverwrite);
+        #'''
 
-        varnames += ['fname']
-        weave.inline( code, varnames,
-                            headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
-                            libraries=['Core'],
-                            include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
-                            library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
-                            extra_compile_args=['-O3', '-Wunused-variable'],
-                            compiler='gcc',
-                            #verbose=1,
-                            )
+        #varnames += ['fname']
+        #weave.inline( code, varnames,
+                            #headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
+                            #libraries=['Core'],
+                            #include_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/include/root/'],
+                            #library_dirs=['/opt/versatushpc/softwares/root/5.34-gnu-5.3/lib/'],
+                            #extra_compile_args=['-O3', '-Wunused-variable'],
+                            #compiler='gcc',
+                            ##verbose=1,
+                            #)
 
         return
         
@@ -1091,17 +1094,25 @@ def add_simulate_options(p):
     p.set_defaults( _func=simulate )
 
 def match( args ):
-    simulation = Simulation.simulation_from_file( args.basename )
-    hitSummary = open_HitSummary( args.catalog, branches = ['ePix', 'xPix', 'yPix', 'level', 'xBary1', 'yBary1', 'xVar1', 'yVar1'] )
+    if os.path.exists(args.output):
+        print( 'matched already exists' )
+        exit()
+    simulation = Simulation.simulation_from_file( args.basename, invert=args.invert, shift=args.x_shift )
+    hitSummary = open_HitSummary( args.catalog, branches = ['ePix', 'xPix', 'yPix', 'level'] )
     verbose = 0
     if 'verbose' in args:
         verbose = 1
     hitSummary.match( simulation, args )
+    update_catalog( args.catalog, args.output, hitSummary )
+
 
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
     p.add_argument('catalog', type=str, help = 'basename of the simulation catalog' )
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )    
+    p.add_argument('-o', '--output', type=str, default='matched.root', help = 'output' )
+    p.add_argument('--invert', type=bool, default=False, help = 'invert x and y' )
+    p.add_argument('--x-shift', type=int, default=0, help = 'shift x axis' )
     p.set_defaults( _func=match )
 
 def image_extract( image, args ):
@@ -1226,6 +1237,9 @@ def scatter( **args ):
         if not has_color:
             args.cbranches = args.xbranches
         
+        print( 'xbranches', args.xbranches )
+        print( 'ybranches', args.ybranches )
+        
         if not 'runID_range' in args:
             args.runID_range = None
         data_selection = get_selections( file[0], 
@@ -1233,7 +1247,7 @@ def scatter( **args ):
                                         args.selections, 
                                         args.global_selection, 
                                         runID_range=args.runID_range, 
-                                        extra_branches=[ 'ePix', 'xPix', 'yPix', 'level' ] 
+                                        #extra_branches=[ 'ePix', 'xPix', 'yPix', 'level' ] 
                                         )
         
         fig = plt.figure()
@@ -1244,6 +1258,7 @@ def scatter( **args ):
         if 'selections' in args:
             markers = ['.', '+', 'x', '^']
             for xbranch, ybranch, cbranches, selection, marker in zip(args.xbranches, args.ybranches, args.cbranches, args.selections, markers):
+                print( 'plot', xbranch, ybranch, cbranches )
                 datum = data_selection[selection]
                 
                 if has_color:
@@ -1255,7 +1270,7 @@ def scatter( **args ):
                     cmap = None
                     alpha = (len(datum))**(-.1) if len(datum) > 0 else 1
                 
-                if xbranch in datum.names and ybranch in datum.names:
+                if xbranch in datum.names and ybranch in datum.names or True:
                     
                     x = datum[xbranch]
                     y = datum[ybranch]
