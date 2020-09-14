@@ -1253,6 +1253,8 @@ def add_display_options( p ):
     corr.add_argument( '--correct-side', action='store_true', default=argparse.SUPPRESS, help = 'subtract right side' )
     corr.add_argument( '--smooth-lines', type=int, default=argparse.SUPPRESS, help = 'smooth lines' )
     corr.add_argument( '--sub-half', action='store_true', default=argparse.SUPPRESS, help = 'smooth lines' )
+    corr.add_argument( '--overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'horizontal overscan subtraction' )
+    corr.add_argument( '--vertical-overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'vertical overscan subtraction' )
         
     proj = p.add_argument_group('projection options')
     proj.add_argument( '--axis', type=int, default = 0, help = 'project on axis' )
@@ -1318,6 +1320,18 @@ def display( args ):
         #data.left = data[None:-height_trim, None:side_width]
         #data.right = data[None:-height_trim, side_width:None][:,::-1]
 
+        if 'overscan_subtraction' in args:
+            os_range = args.overscan_subtraction
+            print( 'os_range', os_range, os_range[0] )
+            correction = np.median( data[ None:None, os_range[0]:os_range[1] ], axis=1 )[:,None]
+            data -= correction 
+
+        if 'vertical_overscan_subtraction' in args:
+            os_range = args.vertical_overscan_subtraction
+            print( 'os_range', os_range, os_range[0] )
+            correction = np.median( data[ os_range[0]:os_range[1], None:None ], axis=0 )[None,:]
+            data -= correction 
+            
         if 'side' in args:
             if args.side == 'left' or args.side == '0':
                 print( colored('side', 'green'), 'left' )
@@ -1469,7 +1483,9 @@ def display( args ):
         ax.grid()
         ax.legend()
     if 'png' in args:
-        fig.savefig( args.input_file+'.png', bbox_inches='tight', pad_inches=0 )
+        outfile = args.input_file + '.' + '_'.join(args.plot) + '.png'
+        print( 'outfile', outfile )
+        fig.savefig( outfile, bbox_inches='tight', pad_inches=0 )
     else:
         plt.show()
     return

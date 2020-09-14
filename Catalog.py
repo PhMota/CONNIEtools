@@ -216,6 +216,7 @@ class HitSummary:
             ymu = entry.yBary
             xsigma = sqrt(entry.xVar)
             ysigma = sqrt(entry.yVar)
+            #print( xmu, ymu, xsigma, ysigma )
             
         xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit( 
             entry.xPix, 
@@ -1107,6 +1108,19 @@ def image_extract( image, args ):
     verbose = 0
     if 'verbose' in args:
         verbose = 1
+
+    if 'overscan_subtraction' in args:
+        os_range = args.overscan_subtraction
+        print( 'os_range', os_range, os_range[0] )
+        correction = median( image.all[ None:None, os_range[0]:os_range[1] ], axis=1 )[:,None]
+        image.all -= correction 
+
+    if 'vertical_overscan_subtraction' in args:
+        os_range = args.vertical_overscan_subtraction
+        print( 'os_range', os_range, os_range[0] )
+        correction = median( image.all[ os_range[0]:os_range[1], None:None ], axis=0 )[None,:]
+        image.all -= correction 
+    
     hitSummary = HitSummary( image.all.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
     for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
         if field.upper() in image.header:
@@ -1142,6 +1156,9 @@ def add_extract_options(p):
     p.add_argument('--exclude', nargs='+', type=int, default=[11,12,14], help = 'ohdus NOT to be extracted' )
     p.add_argument('--hdu', nargs='+', type=int, default=range(1,15), help = 'hdus (indices) to be extracted' )
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
+    p.add_argument( '--overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'horizontal overscan subtraction' )
+    p.add_argument( '--vertical-overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'vertical overscan subtraction' )
+    
     p.set_defaults(_func=extract)
 
 def get_selections( file, branches, selections, global_selection=None, runID_range=None, extra_branches = [] ):
@@ -1441,7 +1458,9 @@ def energy_threshold( datum, threshold ):
 def pdf( x, E, n, sigma ):
     return sum( [stats.norm.pdf(x, iE, sqrt(in_)*sigma) for iE, in_ in zip(E,n)], axis=0 )
 
-def histogram( args ):
+def histogram( **args ):
+    args = Namespace(**args)
+
     import matplotlib.pylab as plt
     with Timer('histogram'):
         file = glob.glob(args.root_file)
@@ -1487,7 +1506,8 @@ def histogram( args ):
         ax.legend()
         ax.set_xlabel(args.branches[0])
         ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
-        #ax.set_yscale('log')
+        if 'log' in args:
+            ax.set_yscale('log')
 
     if 'output' in args:
         if args.output == '':
@@ -1517,10 +1537,97 @@ def add_histogram_options(p):
     p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('--log', action='store_true', default=argparse.SUPPRESS, help = 'log' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
     
     p.set_defaults(_func=histogram)
+
+def add_ratio_options(p):
+    p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.add_argument('--branch-selections', action='append', nargs=3, type=str, default=argparse.SUPPRESS, help = 'selections as branch numerator and denominator' )
+    p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
+    p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
+    #p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
+    #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
+    p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
+    p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
+    p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
+    p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
+    p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
+    p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
+    p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
+    
+    p.set_defaults(_func=ratio)
+
+def ratio( **args ):
+    args = Namespace(**args)
+
+    import matplotlib.pylab as plt
+    with Timer('ratio'):
+        file = glob.glob(args.root_file)
+        #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
+        
+        args.branches = []
+        args.numselections = []
+        args.denselections = []
+        print( args.branch_selections )
+        for branch_selection in args.branch_selections:
+            args.branches.append( branch_selection[0] )
+            args.numselections.append( branch_selection[1] )
+            args.denselections.append( branch_selection[2] )
+        
+        if not 'runID_range' in args:
+            args.runID_range = None
+        data_numselection = get_selections( file[0], args.branches, args.numselections, args.global_selection, runID_range=args.runID_range )
+        data_denselection = get_selections( file[0], args.branches, args.denselections, args.global_selection, runID_range=args.runID_range )
+                                              #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
+
+        if 'x_range' in args:
+            bins = arange( args.x_range[0], args.x_range[1], args.binsize )
+        else:
+            first_data_selection = data_numselection.values()[0][args.branches[0]]
+            if 'binsize' in args:
+                bins = arange( min(first_data_selection), max(first_data_selection), args.binsize )
+            elif 'nbins' in args:
+                bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
+            else:
+                bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.set_title(', '.join(args.branches))
+        #ax.hist(data, bins=bins, histtype='step', label='all')
+        for branch, numselection, denselection in zip(args.branches, args.numselections, args.denselections):
+            #print( 'selection', data_selection[selection][branch].shape, len(bins) )
+            numerator = data_numselection[numselection]
+            denominator = data_denselection[denselection]
+
+            numhist, x, dx = stats.make_histogram( numerator[branch], bins )
+            denhist, x, dx = stats.make_histogram( denominator[branch], bins )
+            hist = numhist.astype(float)/denhist
+            dy = sqrt( (sqrt(numhist)/denhist)**2 + (numhist*sqrt(denhist)/denhist**2)**2 )
+            ax.errorbar( x, hist, xerr=dx/2, yerr=dy, label='{}:[{}]/[{}]'.format(branch,numselection, denselection), fmt=' ' )
+        ax.legend()
+        ax.set_xlabel(args.branches[0])
+        #ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
+
+    if 'output' in args:
+        if args.output == '':
+            args.output = args.root_file
+    else:
+        args.output = args.root_file
+    
+    if 'pdf' in args:
+        fig.savefig(args.output+'.pdf')
+        print( 'saved', args.output+'.pdf' )
+    elif 'png' in args:
+        fig.savefig(args.output+'.png')
+        print( 'saved', args.output+'.png' )
+    else:
+        plt.show()
+    return
+
 
 def status( args ):
     if not os.path.exists( args.root_file ):
@@ -1560,6 +1667,7 @@ if __name__ == '__main__':
     add_match_options( subparsers.add_parser('match', help='match catalog with simulation', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_simulate_options( subparsers.add_parser('simulation', help='simulate, extract and match', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_addbranches_options( subparsers.add_parser('addbranches', help='add branches to catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    add_ratio_options( subparsers.add_parser('ratio', help='make ratio histograms from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     
     args = parser.parse_args()
     
