@@ -308,7 +308,8 @@ def add_depth_options(p):
 
 def add_charges_options(p):
     g = p.add_argument_group('charge options')
-    g.add_argument('-N', '--number-of-charges', type=int, default = 0, help = 'number of charges to be randomly generated' )
+    g.add_argument('-N', '--number-of-events', type=int, default = 0, help = 'number of events to be randomly generated' )
+    g.add_argument('--number-of-charges', type=int, default = 0, help = 'number of events to be randomly generated' )
     g.add_argument('--charge-range', nargs=2, type=int, default = [5, 200], help = 'range into which to randomly generate charges' )
     g.add_argument('--charge-pdf-table', type=str, default=argparse.SUPPRESS, help = 'file with a table of E[keV] rate[1/kg/day/keV]' )
     g.add_argument('--number-of-Cu-charges',
@@ -347,8 +348,8 @@ def add_output_options(p):
                    action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--verbose', help = 'verbose level', 
                    action='store_true', default=argparse.SUPPRESS )
-    g.add_argument('--csv', help = 'generate csv output',
-                   action='store_true', default=argparse.SUPPRESS )
+    #g.add_argument('--csv', help = 'generate csv output',
+                   #action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--runID', help = 'runID to be written on the header',
                    type=int, default=-1 )
     return
@@ -369,19 +370,42 @@ def image( args ):
     sim = simulate_events( args )
     return sim.generate_image( args )
 
+def sample(table, N):
+    x_min, x_max = table[0][0], table[0][-1]
+    y_max = max(table[1])
+    f = scipy.interpolate.interp1d(table[0], table[1], kind='quadratic')
+    x = []
+    while True:
+        _x = random.uniform(x_min, x_max, N - len(x) )
+        prob = f(_x)/y_max
+        x = concatenate( ( x, _x[prob > random.random( N - len(x) )] ) )
+        if len(x) == N:
+            break
+    return array(x)
+
 def simulate_events( args ):
     ccd_shape = args.ccd_shape
     depth_range = args.depth_range
     charge_range = args.charge_range
-    number_of_charges = args.number_of_charges
-    array_of_positions = random.random( number_of_charges*2 ).reshape(-1,2)*array(ccd_shape)
-    array_of_depths = random.uniform( *(depth_range+[number_of_charges]) )
-    array_of_charges = random.uniform( *(charge_range+[number_of_charges]) )
-    array_of_identities = ['random']*number_of_charges
+    number_of_events = args.number_of_events
+    if 'number_of_charges' in args:
+        number_of_events = args.number_of_charges
+    array_of_positions = random.random( number_of_events*2 ).reshape(-1,2)*array(ccd_shape)
+    array_of_depths = random.uniform( *(depth_range+[number_of_events]) )
+    
+    if 'charge_pdf_table' in args:
+        pdf_table = genfromtxt( args.charge_pdf_table, names = True, skip_header = 1, dtype = [('E', float), ('R', float)] ).view(recarray)
+        array_of_energies = sample(table, number_of_events)
+        array_of_charges = array_of_energies/electron_in_keV
+        array_of_identities = ['nu']*number_of_events
+    else:
+        array_of_charges = random.uniform( *(charge_range+[number_of_events]) )
+        array_of_identities = ['random']*number_of_events
     
     list_of_X_charges = [['number_of_Cu_charges', Cu_energy_eV, 'Cu'], 
                          ['number_of_Cu2_charges', Cu2_energy_eV, 'Cu2'], 
                          ['number_of_Si_charges', Si_energy_eV, 'Si'] ]
+    
     for key, energy_eV, charge_type in list_of_X_charges:
         if key in args:
             number_of_X_charges = getattr(args, key)
@@ -405,7 +429,7 @@ def simulate_events( args ):
     if len(array_of_depths) > 0:
         data = array( zip(arange(len(array_of_depths)), array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype ).view(recarray)
         
-    if 'csv' in args:
+    if 'csv' in args or True:
         output = args.basename + '.csv'
         header = json.dumps(vars(args))
         header += '\n' + ', '.join(cols)
@@ -413,6 +437,7 @@ def simulate_events( args ):
             savetxt( output, data, delimiter=', ', header=header, fmt=fmt )
         else:
             open( output, 'w' ).writelines( header )
+    
     return Simulation( data, args )
 
 def add_folder_options( p ):
