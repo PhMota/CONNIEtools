@@ -859,8 +859,8 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
         runIDs = open_HitSummary( file, branches=['runID'] ).runID
         start = amin(argwhere(runIDs==runID_range[0]))
         stop = amax(argwhere(runIDs==runID_range[1]))+1
-    if not branches is None:
-        branches = list( set(branches) & set(root_numpy.list_branches( file, treename='hitSumm' )) )
+    #if not branches is None:
+        #branches = list( set(branches) & set(root_numpy.list_branches( file, treename='hitSumm' )) )
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
 
 def update_catalog( fname, output, hitSummary ):
@@ -1236,10 +1236,7 @@ def scatter( **args ):
             args.selections.append( branch_selection[-1] )
         if not has_color:
             args.cbranches = args.xbranches
-        
-        print( 'xbranches', args.xbranches )
-        print( 'ybranches', args.ybranches )
-        
+                
         if not 'runID_range' in args:
             args.runID_range = None
         data_selection = get_selections( file[0], 

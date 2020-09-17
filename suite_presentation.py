@@ -20,7 +20,7 @@ def makefigure( code, file, doc, height=1 ):
     return [a,b]
 
 with Timer('presentation'):
-    with openBeamer( folder, 'analysis suite' ) as doc:
+    with openBeamer( folder, 'analysis suite\\\\https://github.com/PhMota/CONNIEtools/wiki' ) as doc:
     
         doc.frame('simulation',
             'generates fits images',
@@ -141,6 +141,16 @@ with Timer('presentation'):
         
         doc.frame('match with simulation',
             'comparison between reconstructed and simulated depths',
-            *makefigure('./catalog scatter presentationCu2_fit_matched.root --x-range 0 2 --y-range -20000 20000 --branch-selections sigmaSim E0 1 --branch-selections sigmaSim ESim 1  --branch-selections sigmaSim \'E0-ESim\' 1 --png', 'presentationCu2_fit_matched.root.scatter.E0.vs.sigmaSim.png', doc, height=.6 )
+            *makefigure('./catalog scatter presentationCu2_fit_matched.root --x-range 0 1.4 --y-range -0.25 0.25 --branch-selections sigmaSim "(E0-ESim)/ESim" 1  --branch-selections sigmaSim "(E1-ESim)/ESim" 1  --branch-selections sigmaSim "(Efit-ESim)/ESim" 1 --png', 'presentationCu2_fit_matched.root.scatter.(E0-ESim)_ESim.vs.sigmaSim.png', doc, height=.6 )
+        )
+        
+        doc.frame('summary',
+            doc.itemize(
+            'tools are modular, versatile and straightforward to include new features',
+            'I have shown results using simulations here, but all tools work with CONNIE images and catalogs and are compatible with damicViewer too',
+            'focus on exposing options to command line, so there is less need to change the code -- such as PCC layer efficiency and neutrino PDF for simulations',
+            'can add noise and DC on top of pre existing fits images too',
+            'https://github.com/PhMota/CONNIEtools/wiki'
+            )
         )
         

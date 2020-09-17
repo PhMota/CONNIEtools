@@ -310,6 +310,7 @@ def add_charges_options(p):
     g = p.add_argument_group('charge options')
     g.add_argument('-N', '--number-of-charges', type=int, default = 0, help = 'number of charges to be randomly generated' )
     g.add_argument('--charge-range', nargs=2, type=int, default = [5, 200], help = 'range into which to randomly generate charges' )
+    g.add_argument('--charge-pdf-table', type=str, default=argparse.SUPPRESS, help = 'file with a table of E[keV] rate[1/kg/day/keV]' )
     g.add_argument('--number-of-Cu-charges',
                         type=int,
                         default = 0,
