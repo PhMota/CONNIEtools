@@ -1428,10 +1428,11 @@ def scatter( **args ):
         fig.savefig( fname )
         print( 'saved', fname )
     elif 'png' in args:
-        extra = ''
-        if 'fit' in args:
-            extra += '_fit{}'.format(''.join(args.fit))
-        fname = args.output+'.scatter.{}.vs.{}{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
+        #extra = ''
+        #if 'fit' in args:
+            #extra += '_fit{}'.format(''.join(args.fit))
+        #fname = args.output+'.scatter.{}.vs.{}{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
+        fname = args.output+'.png'
         fig.savefig( fname )
         print( 'saved', fname )
     else:

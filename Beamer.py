@@ -68,12 +68,7 @@ numbers=left
 
 B = '\n'
 
-def pdflatex( basename ):
-    print( 'pdflatex %s.tex' % basename )
-    subprocess.check_output(['pdflatex', '{}.tex'.format(basename)])
-
 #class Frame:
-    
 
 class Beamer:
     def writelines( self, s, mode = 'a' ):
@@ -81,6 +76,9 @@ class Beamer:
     
     def __init__(self, fname='calculations', title='simulation tools'):
         self.fname = fname
+        self.folder = fname
+        if not os.path.exists(self.folder):
+            os.mkdirs(self.folder)
         self.basename = '{0}/{0}'.format(fname)
         self.writelines( preamble %( title, title ), mode = 'w' )
     
@@ -89,7 +87,17 @@ class Beamer:
     
     def __exit__(self, type, value, traceback):
         self.writelines( [r'\end{document}'] )
-        pdflatex( self.basename )
+        self.pdflatex( self.fname )
+
+    def pdflatex(self, basename ):
+        self.subprocess_cmd( 'cd {0}; pdflatex {0}.tex >/dev/null; cd ..'.format(basename) )
+
+    def subprocess_cmd(self, command):
+        subprocess.call( [command], shell=True )
+        #process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
+        #proc_stdout = process.communicate()[0].strip()
+        
+        #return proc_stdout
     
     def par( self, s ):
         self.writelines( [s + '\n'] )
@@ -169,12 +177,15 @@ class Beamer:
         
     def check_file( self, fname ):
         if not os.path.exists(fname):
-            print('file not found', fname)
-            print( 'running function' )
+            print('!!! file not found', fname)
+            print('running function' )
             self.func()
             if not os.path.exists(fname):
-                print('file not generated', fname)
+                print('!!! file not generated', fname)
                 exit()
+        print('file found', fname)
+        print('skipping')
+
         
     def itemize( self, *items ):
         s = r'\begin{itemize}' + B
@@ -185,12 +196,13 @@ class Beamer:
         
     
     def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None, center=False ):
-        try:
-            fname = path
-            self.check_file(fname)
-        except:
-            fname = self.fname+'/'+path
-            self.check_file(fname)
+        fname = path
+        #try:
+            #fname = path
+            #self.check_file(fname)
+        #except:
+            #fname = self.fname+'/'+path
+            #self.check_file(fname)
         if center:
             s += r'\begin{center}' + B
         if width is not None:

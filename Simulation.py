@@ -101,7 +101,7 @@ class Simulation:
             E = self.q * self.charge_gain
             E_eff = q_eff * self.charge_gain
             sigma = self.diffusion_function( self.z )
-            map_id = {'random': 1, 'Si':10, 'Cu': 11, 'Cu2': 12}
+            map_id = {'random': 1, 'nu': 5, 'Si':10, 'Cu': 11, 'Cu2': 12}
             id_code = map( lambda i: map_id[i], self.__recarray__.id )
         else:
             q_eff = []
@@ -167,7 +167,7 @@ class Simulation:
         image = image.reshape( (self.rebinned_ccd_shape[0], -1, self.rebinned_ccd_shape[1]) ).sum(axis = 1)
 
         new_image = zeros( self.image_shape )
-        new_image[self.vertical_overscan:, :-self.horizontal_overscan] = image
+        new_image[:-self.vertical_overscan:, :-self.horizontal_overscan] = image
         image = new_image
 
         if 'verbose' in args:
@@ -371,9 +371,10 @@ def image( args ):
     return sim.generate_image( args )
 
 def sample(table, N):
-    x_min, x_max = table[0][0], table[0][-1]
-    y_max = max(table[1])
-    f = scipy.interpolate.interp1d(table[0], table[1], kind='quadratic')
+    table_x, table_y = zip(*table)
+    x_min, x_max = table_x[0], table_x[-1]
+    y_max = max(table_y)
+    f = scipy.interpolate.interp1d(table_x, table_y, kind='quadratic')
     x = []
     while True:
         _x = random.uniform(x_min, x_max, N - len(x) )
@@ -387,17 +388,20 @@ def simulate_events( args ):
     ccd_shape = args.ccd_shape
     depth_range = args.depth_range
     charge_range = args.charge_range
-    number_of_events = args.number_of_events
-    if 'number_of_charges' in args:
+    if 'number_of_events' in args:
+        number_of_events = args.number_of_events
+    elif 'number_of_charges' in args:
         number_of_events = args.number_of_charges
     array_of_positions = random.random( number_of_events*2 ).reshape(-1,2)*array(ccd_shape)
     array_of_depths = random.uniform( *(depth_range+[number_of_events]) )
     
     if 'charge_pdf_table' in args:
-        pdf_table = genfromtxt( args.charge_pdf_table, names = True, skip_header = 1, dtype = [('E', float), ('R', float)] ).view(recarray)
-        array_of_energies = sample(table, number_of_events)
+        pdf_table = genfromtxt( args.charge_pdf_table, names = True, dtype = [('E', float), ('R', float)] ).view(recarray)
+        array_of_energies = sample(pdf_table, number_of_events)
         array_of_charges = array_of_energies/electron_in_keV
         array_of_identities = ['nu']*number_of_events
+        print( 'E', array_of_energies, len(array_of_energies), number_of_events )
+        #exit(0)
     else:
         array_of_charges = random.uniform( *(charge_range+[number_of_events]) )
         array_of_identities = ['random']*number_of_events
