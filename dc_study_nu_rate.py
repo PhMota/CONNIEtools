@@ -133,7 +133,7 @@ with Timer('presentation'):
         #doc.frame('dark current and noise', '')
                 
         doc.frame('dark current and noise',
-            'superpose noise 12 ADU and DC 0.1',
+            'superpose noise 15 ADU and DC 0.1',
             doc.column(
                 '\n'.join( makefigure('./image superpose {0}/dc_study_only_noise.fits {0}/dc_study_only_dc.fits --output {0}/dc_study_dc_noise.fits; ./image display {0}/dc_study_dc_noise.fits --ohdu -1 --plot proj 0 --png'.format(folder), 'dc_study_dc_noise.fits.proj_0.png', doc, height=.4 ) )
                 ,
@@ -156,7 +156,7 @@ with Timer('presentation'):
         
         doc.frame('conclusion',
             doc.itemize(
-                'by adding DC 12 ADU and noise 0.1, fake events start showing up (around 30 events) and they all fall in the n0==1 and n0==2 range',
+                'by adding DC 0.1 and noise 15 ADU, fake events start showing up (around 30 events) and they all fall in the n0==1 and n0==2 range',
             )
         )
 
@@ -197,7 +197,7 @@ with Timer('presentation'):
  
         doc.frame('conclusion',
             doc.itemize(
-                'by adding the neutrino spectrum to the noise of 12 ADU and applying a threshold of 60 ADU, the population of n0==1 and n0==2 neutrinos is huge',
+                'by adding the neutrino spectrum to the noise of 15 ADU and applying a threshold of 60 ADU, the population of n0==1 and n0==2 neutrinos is huge',
                 'however, it concentrates in the surface and on very low energy events, as expected'
             )
         )
@@ -261,7 +261,7 @@ with Timer('presentation'):
         
         doc.frame('conclusion',
             doc.itemize(
-                'by adding the neutrino spectrum to the DC 0.1 and noise 12 ADU and applying a threshold of 60 ADU, the population of n0==1 and n0==2 neutrinos is huge',
+                'by adding the neutrino spectrum to the DC 0.1 and noise 15 ADU and applying a threshold of 60 ADU, the population of n0==1 and n0==2 neutrinos is huge',
                 'removing n0==1 and n0==2 succesfully remove all fake events, but it is an overkill and removes MUCH MORE neutrinos',
                 'on the other hand, removing surface neutrinos can be dealt with since we will apply a depth cut in the analysis',
                 'disregarding the surface events, we end up with a much higher efficiency from 200 ADU up removing n0==1 and from 500 ADU up removing n0==2 aswell',
