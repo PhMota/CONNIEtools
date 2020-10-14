@@ -1238,6 +1238,7 @@ def add_display_options( p ):
     p.add_argument( '--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png file' )
     
     geom = p.add_argument_group('geometry options')
+    geom.add_argument( '--E-range', nargs=2, type=eval, default = [-np.inf, np.inf], help = 'Emin Emax' )
     geom.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
     geom.add_argument( '--y-range', nargs=2, type=eval, default = [None, None], help = 'ymin ymax' )
     geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
@@ -1396,6 +1397,9 @@ def display( args ):
             data = data[:, args.x_range[0]:args.x_range[1]] 
         if 'y_range' in args:
             data = data[args.y_range[0]:args.y_range[1], :]
+        if 'E_range' in args:
+            data[data<=args.E_range[0]] = np.nan
+            data[data>args.E_range[1]] = np.nan
         
         fig = plt.figure()
         ax = fig.add_subplot(111)

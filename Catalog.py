@@ -1274,7 +1274,7 @@ def scatter( **args ):
                     #x = x[ logical_and(args.x_range[0] < x, x < args.x_range[1], axis=0) ]
                     #y = y[ logical_and(args.y_range[0] < x, x < args.y_range[1], axis=0) ]
                     
-                    scatter_obj.append( ax.scatter( x, y, label = '{} vs. {}\n{}'.format( ybranch, xbranch, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
+                    scatter_obj.append( ax.scatter( x, y, label = '{} vs. {} ({})\n{}'.format( ybranch, xbranch, x.size, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
                     
                     if 'errorbar' in args:
                         bins = arange( args.x_range[0], args.x_range[1], 20 )
@@ -1286,124 +1286,6 @@ def scatter( **args ):
                         yerr = bin_std    
                         ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
                 
-                #if 'noise' == xbranch or 'noise' == ybranch:
-                    
-                    #sigma = 12
-                    #factor = sqrt(2.)*sigma
-                    #def func( entry ):
-                        #e = entry.ePix
-                        #x = entry.xPix
-                        #y = entry.yPix
-                        #E = e[:,None]*e[None,:]
-                        #d = (x[:,None] - x[None,:])**2 + (y[:,None] - y[None,:])**2
-                        ##v = sum(E[d>0]/d[d>0])/sum(e**2)
-                        #v = sum(E[d>0]/d[d>0])/sum(abs(E[d>0])/d[d>0])
-                        #return v
-
-                    ##p_value = array([ 1./len(entry.ePix[entry.level<=4]) * sum( log( 1 - erf(entry.ePix[entry.level<=4]/factor)) ) for entry in datum ])
-                    ##print( sqrt(2)*erfi(1. - exp(p_value) ) )
-                    ##z_value = sqrt(2)*erfi(1. - exp(p_value))
-                    #z_value = array([ func(entry) for entry in datum ])
-                    #print( 'z-value', z_value )
-                    #print( 'max', min(z_value) )
-
-                    #new_xbranch = xbranch
-                    #new_ybranch = ybranch
-                    #if 'noise' == xbranch:
-                        #x = z_value
-                        #new_xbranch = 'noise'
-                        #y = datum[ybranch]
-                        ##y = y[ args.y_range[0] < y < args.y_range[1] ]
-                    #else:
-                        #y = z_value
-                        #new_ybranch = 'noise'
-                        #x = datum[xbranch]
-                        ##x = x[ args.x_range[0] < x < args.x_range[1] ]
-                    
-                    #mode = 'noise'
-                    #ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
-                    
-                    #bins = arange( args.x_range[0], args.x_range[1], 20 )
-                    #bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=bins )
-                    #xbins = .5*(bin_edges[1:] + bin_edges[:-1])
-                    #dx = bin_edges[1] - bin_edges[0]
-                    #yerr = [0]*len(bin_means)
-                    #if 'errorbar' in args:
-                        #bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
-                        #yerr = bin_std
-                    #ax.errorbar( xbins+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
-                    
-                
-                #if 'fit' in args:
-                    #for mode in args.fit:
-                        #with Timer('computing new fields'):
-                            #lvl = 2
-                            #mask = lambda entry, lvl=lvl: entry.level <= lvl
-                            #print( 'level', datum[0].level[ mask(datum[0]) ] )
-                            #xmu, ymu, xsigma, ysigma, Et, success = zip(*[ stats.norm2d_norm.fit( 
-                                #dat.xPix[mask(dat)], 
-                                #dat.yPix[mask(dat)], 
-                                #dat.ePix[mask(dat)], 
-                                #dat.xBary1, 
-                                #dat.yBary1, 
-                                #sqrt(dat.xVar1), 
-                                #sqrt(dat.yVar1),
-                                #sum(dat.ePix[mask(dat)]), 
-                                #sigma_e = 12., ftol=1e-8, mode=mode, loss='linear' ) for dat in datum ])
-                        
-                        #print( 'falses', sum( array(success) == False ) )
-                        #x = datum[xbranch]
-                        #y = datum[ybranch]
-                        
-                        #new_xbranch = xbranch
-                        #new_ybranch = ybranch
-                        #if xbranch == 'xBary0' or xbranch == 'xBary1':
-                            #new_xbranch = 'xMufit'
-                            #x = xmu
-
-                        #if ybranch == 'xBary0' or ybranch == 'xBary1':
-                            #new_ybranch = 'xMufit'
-                            #y = xmu
-
-                        #if xbranch == 'sqrt(xVar0)' or xbranch == 'sqrt(xVar1)':
-                            #new_xbranch = 'xSigmafit'
-                            #x = xsigma
-
-                        #if ybranch == 'sqrt(xVar0)' or ybranch == 'sqrt(xVar1)':
-                            #new_ybranch = 'xSigmafit'
-                            #y = xsigma
-                            
-                        #if ybranch in ['E0','E1']:
-                            #new_ybranch = 'Efit'
-                            #y = Et
-                            
-                        #if xbranch in ['E0','E1']:
-                            #new_xbranch = 'Efit'
-                            #x = Et
-                                
-                        #if ybranch in ['(E0-ESim)/ESim', '(E1-ESim)/ESim']:
-                            #new_ybranch = '(Efit-ESim)/ESim'
-                            #y = (Et - datum.ESim)/datum.ESim
-
-                        #for axis in ['x','y']:
-                            #if ybranch in ['(sqrt({}Var{})-sigmaSim)/sigmaSim'.format(axis,n) for n in [0,1,2,3]]:
-                                #new_ybranch = '({}Sigmafit-sigmaSim)/sigmaSim'.format(axis)
-                                #print( colored( 'axis', 'green' ), axis )
-                                #if axis == 'x':
-                                    #y = (xsigma - datum.sigmaSim)/datum.sigmaSim
-                                #elif axis == 'y':
-                                    #y = (ysigma - datum.sigmaSim)/datum.sigmaSim
-
-                        #ax.scatter( x, y, label = '{}: {} vs. {}\n{}'.format( mode, new_ybranch, new_xbranch, selection ), marker=marker, alpha=.1 )
-                        
-                        #bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=20 )
-                        #_x = .5*(bin_edges[1:] + bin_edges[:-1])
-                        #dx = bin_edges[1] - bin_edges[0]
-                        #yerr = [0]*len(bin_means)
-                        #if 'errorbar' in args:
-                            #bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
-                            #yerr = bin_std
-                        #ax.errorbar( _x+.1*dx, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
                         
         ax.legend()
         ax.grid()
@@ -1476,21 +1358,47 @@ def histogram( **args ):
 
     import matplotlib.pylab as plt
     with Timer('histogram'):
-        file = glob.glob(args.root_file)
-        #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
+        print( 'len', len(args.root_file) )
+        if len(args.root_file) == 1:
+            args.root_file = args.root_file[0]
         
-        args.branches = []
-        args.selections = []
-        print( args.branch_selections )
-        for branch_selection in args.branch_selections:
-            args.branches.append( branch_selection[0] )
-            args.selections.append( branch_selection[1] )
-        
-        if not 'runID_range' in args:
-            args.runID_range = None
-        data_selection = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
-                                              #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-
+            file = glob.glob(args.root_file)
+            #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
+            
+            args.branches = []
+            args.selections = []
+            print( args.branch_selections )
+            for branch_selection in args.branch_selections:
+                args.branches.append( branch_selection[0] )
+                args.selections.append( branch_selection[1] )
+            
+            if not 'runID_range' in args:
+                args.runID_range = None
+            data_selection = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
+                                                #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
+        else:
+            nargs = len(args.root_file)
+            files = args.root_file
+            print( args.root_file )
+            args.branches = []
+            args.selections = []
+            data_selection = {}
+            for i in range(nargs/3):
+                file = args.root_file[3*i+0]
+                branch = args.root_file[3*i+1]
+                args.branches.append(branch)
+                selection = args.root_file[3*i+2]
+                args.selections.append('{}:{}'.format(file,selection))
+                print( 'file', file )
+                print( 'br', branch )
+                print( 'sel', selection )
+                data_entry = get_selections( file, [branch], [selection], args.global_selection )
+                data_selection.update( { '{}:{}'.format(file, data_entry.keys()[0]): data_entry.values()[0] } )
+                print( type(data_selection) )
+            print( data_selection.keys() )
+            #exit(0)
+            
+            
         if 'x_range' in args:
             bins = arange( args.x_range[0], args.x_range[1], args.binsize )
         else:
@@ -1507,7 +1415,7 @@ def histogram( **args ):
         ax.set_title(', '.join(args.branches))
         #ax.hist(data, bins=bins, histtype='step', label='all')
         if 'selections' in args:
-            for branch, selection in zip(args.branches, args.selections):
+            for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
                 print( 'selection', data_selection[selection][branch].shape, len(bins) )
                 datum = data_selection[selection]
 
@@ -1515,8 +1423,9 @@ def histogram( **args ):
                 if 'factor' in args:
                     factor = args.factor
                 hist, x, dx = stats.make_histogram( datum[branch], bins )
-                ax.errorbar( x, hist*factor/dx, xerr=dx/2, yerr=sqrt(hist)*factor/dx, label='{}:{}'.format(branch,selection), fmt='.' )
+                ax.errorbar( x+i*dx/2./len(args.branches), hist*factor, xerr=dx/2., yerr=sqrt(hist)*factor, label='{}:{} ({})'.format(branch,selection,datum[branch].size), fmt='.' )
         ax.legend()
+        ax.grid()
         ax.set_xlabel(args.branches[0])
         ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
         if 'log' in args:
@@ -1539,7 +1448,7 @@ def histogram( **args ):
     return
 
 def add_histogram_options(p):
-    p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.add_argument('root_file', nargs='+', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('--branch-selections', action='append', nargs=2, type=str, default=argparse.SUPPRESS, help = 'selections' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
