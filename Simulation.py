@@ -7,7 +7,7 @@ except ImportError:
     print('missing module, please run')
     print('module load softwares/python/2.7-gnu-5.3')
     exit(0)
-    
+
 import scipy.stats
 from numpy.lib import recfunctions as rfn
 import json
@@ -52,7 +52,7 @@ def simulation_from_file( basename, invert=False, shift=0 ):
     if invert:
         data.x, data.y = data.y, data.x
     return Simulation( data, args )
-    
+
 class Simulation:
     def __updateattrs__(self, data, verbose=0 ):
         self.__recarray__ = data
@@ -60,8 +60,8 @@ class Simulation:
             if verbose:
                 print( name )
             setattr(self, name, getattr(self.__recarray__, name) )
-    
-        
+
+
     def __init__(self, data, args ):
         if not isinstance(data, recarray):
             print( 'type(data)', type(data) )
@@ -69,7 +69,7 @@ class Simulation:
         if 'verbose' in args:
             verbose = 1
         self.__updateattrs__( data, verbose )
-        
+
         for key, arg in vars(args).items():
             if 'verbose' in args:
                 print( key, arg )
@@ -89,7 +89,7 @@ class Simulation:
                 self.expose_hours = 1
             else:
                 print( 'image_mode {} not recognized. Ignoring.'.format(self.image_mode) )
-        
+
         self.rebin = array(self.rebin)
         self.ccd_shape = array(self.ccd_shape)
         self.rebinned_ccd_shape = self.ccd_shape/self.rebin
@@ -98,7 +98,7 @@ class Simulation:
         self.charge_efficiency_function = eval( 'vectorize(lambda z: {})'.format( self.charge_efficiency_function ) )
         self.vertical_modulation_function = eval( 'vectorize(lambda y: {})'.format( self.vertical_modulation_function ) )
         self.horizontal_modulation_function = eval( 'vectorize(lambda x: {})'.format( self.horizontal_modulation_function ) )
-        
+
         if len( self.q ) > 0:
             q_eff = ( self.charge_efficiency_function(self.z) * self.q ).astype(int)
             E = self.q * self.charge_gain
@@ -112,7 +112,7 @@ class Simulation:
             E_eff = []
             sigma = []
             id_code = []
-        
+
         try:
             self.count = len( self.q )
         except TypeError:
@@ -120,21 +120,21 @@ class Simulation:
             self.count = 1
 
         self.__updateattrs__( rfn.append_fields( self.__recarray__, ['q_eff', 'E', 'E_eff', 'sigma', 'id_code'], [q_eff, E, E_eff, sigma, id_code], dtypes=(int, float, float, float, int), asrecarray=True ) )
-        
+
         return
-    
+
     def __len__(self):
         return len(self.__recarray__)
-    
+
     def __getitem__(self, i):
         return self.__recarray__[i]
-    
+
     @property
     def xy( self ):
         if not '__xy' in self.__dict__:
             self.__xy = array( (self.x, self.y) ).T
         return self.__xy
-        
+
     def generate_image( self, args ):
         if self.count > 0:
             Q = sum( self.q_eff )
@@ -159,14 +159,14 @@ class Simulation:
             max_ADU = max( image.flatten() )
             max_charge = max_ADU/self.charge_gain
             print_var( ['max_charge', 'max_ADU'], locals() )
-        
+
         if self.dark_current > 0:
             dark_current_image = scipy.stats.poisson.rvs( self.dark_current, size = self.ccd_shape[0]*self.ccd_shape[1] ).reshape(self.ccd_shape)
             image += dark_current_image * self.charge_gain
             if 'verbose' in args:
                 max_ADU = max_charge * self.charge_gain
                 #print_var( ['max_charge', 'max_ADU', 'total_dark_charge'], locals() )
-        
+
         image = image.reshape( (self.rebinned_ccd_shape[0], -1, self.rebinned_ccd_shape[1]) ).sum(axis = 1)
 
         new_image = zeros( self.image_shape )
@@ -179,7 +179,7 @@ class Simulation:
             max_ADU = max( image.flatten() )
             max_charge = max_ADU/self.charge_gain
             print_var( ['max_charge', 'max_ADU'], locals() )
-        
+
         if self.readout_noise > 0:
             readout_noise_image = scipy.stats.norm.rvs( size=self.image_shape[0]*self.image_shape[1] ).reshape(self.image_shape)*self.readout_noise
             image += readout_noise_image
@@ -206,7 +206,7 @@ class Simulation:
             self.save_image( image, args.basename+'.pdf' )
         if 'png' in args:
             self.save_image( image, args.basename+'.png' )
-        
+
         hdu_list = self.make_fits( image, args )
         if not 'no_fits' in args: self.save_fits( hdu_list, args )
         return hdu_list
@@ -235,7 +235,7 @@ class Simulation:
             hdu_list = astropy.io.fits.HDUList([primary, fits_image])
             #return fits_image
             return hdu_list
-    
+
     def save_fits( self, hdu_list, args ):
         if 'compress' in args:
             fname = args.basename + '.fits.' + args.compress
@@ -244,7 +244,7 @@ class Simulation:
         with Timer('saved ' + fname ):
             hdu_list.writeto( fname, overwrite=True )
             return
-    
+
     def save_image(self, image, fname ):
         with Timer( 'saved ' + fname ):
             from matplotlib import pylab as plt
@@ -311,7 +311,7 @@ def add_depth_options(p):
 
 def add_charges_options(p):
     g = p.add_argument_group('charge options')
-    g.add_argument('-N', '--number-of-events', type=int, default = 0, help = 'number of events to be randomly generated' )
+    g.add_argument('--number-of-events', type=int, default = 0, help = 'number of events to be randomly generated' )
     g.add_argument('--number-of-charges', type=int, default = 0, help = 'number of events to be randomly generated' )
     g.add_argument('--charge-range', nargs=2, type=int, default = [5, 200], help = 'range into which to randomly generate charges' )
     g.add_argument('--charge-pdf-table', type=str, default=argparse.SUPPRESS, help = 'file with a table of E[keV] rate[1/kg/day/keV]' )
