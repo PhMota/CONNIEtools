@@ -35,6 +35,9 @@ class to_object:
 
 def simulation_from_file( basename, invert=False, shift=0 ):
     fname = basename+'.csv'
+    if not os.path.exists(fname):
+        print( 'file not found', fname )
+        exit(0)
     json_str = open( fname ).readline().strip(' #').replace('\'','"')
     args_dict = json.loads( json_str )
     args = to_object(args_dict)
@@ -269,8 +272,8 @@ class Simulation:
 def add_params_options(p):
     g = p.add_argument_group('parameter options')
     g.add_argument('-g', '--charge-gain', help = 'factor to convert charges into ADU',
-                   type=float, default = 7.25 )    
-    g.add_argument('-rn', '--readout-noise', help = 'sigma of the normal noise distribution in ADU', 
+                   type=float, default = 7.25 )
+    g.add_argument('-rn', '--readout-noise', help = 'sigma of the normal noise distribution in ADU',
                    type=float, default = 0 )
     g.add_argument('-dc', '--dark-current', help = 'lambda of Poisson distribution in 1/(e-·h)',
                    type=float, default = 0 )
@@ -287,7 +290,7 @@ def add_geometry_options(p):
     g.add_argument('--ccd-shape', nargs=2, type=int, default = constants.ccd_shape.tolist(), help = 'shape of the image as 2d pixels' )
     g.add_argument('--rebin', nargs=2, type=int, default = [1,1], help = '2d rebinning strides' )
     g.add_argument('--image-type', type=str, default='float', help = 'image type' )
-    g.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5', 
+    g.add_argument('--image-mode', help = 'set to "1" to use official 1x1 image geomtry or "5" to 1x5',
                     type=int, default = argparse.SUPPRESS )
     return
 
@@ -295,14 +298,14 @@ def add_depth_options(p):
     g = p.add_argument_group('depth options')
     g.add_argument('--depth-range', nargs=2, type=float, default = [0,670], help = 'range into which to randomly generate depths' )
     g.add_argument('--diffusion-function',
-                        type=str, 
+                        type=str,
                         default = '{}'.format(constants.diffusion_function),
-                        help = 'function to map z-depth into xy-sigma' 
+                        help = 'function to map z-depth into xy-sigma'
                         )
     g.add_argument('--charge-efficiency-function',
                         type=str,
                         default = constants.charge_efficiency_function,
-                        help = 'function for charge efficiency dependent of z-depth' 
+                        help = 'function for charge efficiency dependent of z-depth'
                         )
     return
 
@@ -315,24 +318,24 @@ def add_charges_options(p):
     g.add_argument('--number-of-Cu-charges',
                         type=int,
                         default = 0,
-                        help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV' 
+                        help = 'number of charges to be randomly generated at the Copper fluorescence energy 8.046keV'
                         )
-    g.add_argument('--number-of-Cu2-charges', type=int, default = 0, 
+    g.add_argument('--number-of-Cu2-charges', type=int, default = 0,
                         help = 'number of charges to be randomly generated at the secundary Copper fluorescence energy 8.904keV' )
     g.add_argument('--number-of-Si-charges', type=int, default = 0, help = 'number of charges to be randomly generated at the Silicon fluorescence energy 1.740keV' )
     return
 
 def add_modulation_options(p):
     g = p.add_argument_group('modulation options')
-    g.add_argument('--vertical-modulation-function', help = 'function to modulate the vertical axis', 
+    g.add_argument('--vertical-modulation-function', help = 'function to modulate the vertical axis',
                     type=str, default = "0" )
     g.add_argument('--horizontal-modulation-function', help = 'function to modulate the horizontal axis',
                         type=str, default = "0" )
     g.add_argument('--default-vertical-modulation', help = 'set vertical modulation to "{}"'.format(constants.vertical_modulation_function),
                     type=str, default=argparse.SUPPRESS )
-    g.add_argument('--default-horizontal-modulation', help = 'set horizontal modulation to "{}"'.format(constants.horizontal_modulation_function), 
+    g.add_argument('--default-horizontal-modulation', help = 'set horizontal modulation to "{}"'.format(constants.horizontal_modulation_function),
                     type=str, default=argparse.SUPPRESS )
-    g.add_argument('--default-modulation', help = 'set modulations to "{}" and "{}"'.format(constants.horizontal_modulation_function, constants.vertical_modulation_function), 
+    g.add_argument('--default-modulation', help = 'set modulations to "{}" and "{}"'.format(constants.horizontal_modulation_function, constants.vertical_modulation_function),
                     type=str, default=argparse.SUPPRESS )
     return
 
@@ -346,7 +349,7 @@ def add_output_options(p):
                    action='store_true', default=argparse.SUPPRESS )
     g.add_argument('--spectrum', help = 'generate energy spectrum',
                    action='store_true', default=argparse.SUPPRESS )
-    g.add_argument('--verbose', help = 'verbose level', 
+    g.add_argument('--verbose', help = 'verbose level',
                    action='store_true', default=argparse.SUPPRESS )
     #g.add_argument('--csv', help = 'generate csv output',
                    #action='store_true', default=argparse.SUPPRESS )
@@ -394,7 +397,7 @@ def simulate_events( args ):
         number_of_events = args.number_of_charges
     array_of_positions = random.random( number_of_events*2 ).reshape(-1,2)*array(ccd_shape)
     array_of_depths = random.uniform( *(depth_range+[number_of_events]) )
-    
+
     if 'charge_pdf_table' in args:
         pdf_table = genfromtxt( args.charge_pdf_table, names = True, dtype = [('E', float), ('R', float)] ).view(recarray)
         array_of_energies = sample(pdf_table, number_of_events)
@@ -405,26 +408,26 @@ def simulate_events( args ):
     else:
         array_of_charges = random.uniform( *(charge_range+[number_of_events]) )
         array_of_identities = ['random']*number_of_events
-    
-    list_of_X_charges = [['number_of_Cu_charges', Cu_energy_eV, 'Cu'], 
-                         ['number_of_Cu2_charges', Cu2_energy_eV, 'Cu2'], 
+
+    list_of_X_charges = [['number_of_Cu_charges', Cu_energy_eV, 'Cu'],
+                         ['number_of_Cu2_charges', Cu2_energy_eV, 'Cu2'],
                          ['number_of_Si_charges', Si_energy_eV, 'Si'] ]
-    
+
     for key, energy_eV, charge_type in list_of_X_charges:
         if key in args:
             number_of_X_charges = getattr(args, key)
-            array_of_positions = concatenate( 
-                ( array_of_positions, random.random( number_of_X_charges*2 ).reshape(-1,2)*array(ccd_shape) ), 
+            array_of_positions = concatenate(
+                ( array_of_positions, random.random( number_of_X_charges*2 ).reshape(-1,2)*array(ccd_shape) ),
                 axis=0 )
-            array_of_depths = append( 
+            array_of_depths = append(
                 array_of_depths, random.uniform( *(depth_range+[number_of_X_charges]) )
                 )
             array_of_charges = append( array_of_charges, [energy_eV/electron_in_eV]*number_of_X_charges )
             array_of_identities.extend( [charge_type]*number_of_X_charges )
-    
-    if 'verbose' in args and args.verbose == 0: 
+
+    if 'verbose' in args and args.verbose == 0:
         print( 'total charges created', len( array_of_identities ) )
-    
+
     cols = ['n', 'x', 'y', 'z', 'q', 'id']
     types = [int, float, float, float, float, 'S16']
     fmt = ['%d', '%.4f', '%.4f', '%.4f', '%.4f', '%s']
@@ -432,7 +435,7 @@ def simulate_events( args ):
     data = empty( (0,len(dtype)), dtype=dtype ).view(recarray)
     if len(array_of_depths) > 0:
         data = array( zip(arange(len(array_of_depths)), array_of_positions[:,0], array_of_positions[:,1], array_of_depths, array_of_charges, array_of_identities), dtype=dtype ).view(recarray)
-        
+
     if 'csv' in args or True:
         output = args.basename + '.csv'
         header = json.dumps(vars(args))
@@ -441,7 +444,7 @@ def simulate_events( args ):
             savetxt( output, data, delimiter=', ', header=header, fmt=fmt )
         else:
             open( output, 'w' ).writelines( header )
-    
+
     return Simulation( data, args )
 
 def add_folder_options( p ):
@@ -473,18 +476,18 @@ def generate_folder( args ):
         args.dark_current = random.uniform(*args.dark_current_range)
         args.charge_gain = random.unfiform(*args.charge_gain_range)
         args.count = count
-        args.basename = '{folder_name}/{folder_name}{count:04d}RN{readout_noise:.2f}DC{dark_current:.4f}CG{charge_gain:.1f}'.format(**vars(args)) 
+        args.basename = '{folder_name}/{folder_name}{count:04d}RN{readout_noise:.2f}DC{dark_current:.4f}CG{charge_gain:.1f}'.format(**vars(args))
         sim = simulate_events( args )
         sim.generate_image( args )
     return
-    
+
 def print_options( args ):
     print( colored('using parameters:', 'green', attrs=['bold'] ) )
     print_var( vars(args).keys(), vars(args), line_char='\t' )
-    
+
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser( description = 'simulation tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter 
+    parser = argparse.ArgumentParser( description = 'simulation tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter
                                      )
     subparsers = parser.add_subparsers( help = 'a' )
 
