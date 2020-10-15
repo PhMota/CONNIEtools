@@ -348,7 +348,13 @@ with Timer('presentation'):
         doc.frame('fake events',
             'all spectra together -- count in $y$-axis',
             makefigure( 
-                './catalog histogram /home/bonifazi/public/sims_13.4_0.043_7.0.root E0 1 {0}/sims_13.4_0.043_7.0_b0.root E0 1 {0}/sims_13.4_0.043_7.0.root E0 1 --log --binsize 3 --output {0}/sims_13.4_0.043_7.0.all.histo.range1d --png'.format( folder ),
+                './catalog histogram \
+                E0 /home/bonifazi/public/sims_13.4_0.043_7.0.root 1 \
+                E0 {0}/sims_13.4_0.043_7.0_b0.root 1 \
+                E0 {0}/sims_13.4_0.043_7.0.root 1 \
+                --log --binsize 3 \
+                --output {0}/sims_13.4_0.043_7.0.all.histo.range1d --png\
+                '.format( folder ),
                 'sims_13.4_0.043_7.0.all.histo.range1d.png', doc, height=.6
             )
         )

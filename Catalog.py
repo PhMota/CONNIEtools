@@ -599,15 +599,15 @@ class HitSummary:
                     #print( 'hitSummary.xy', zip(xPix, yPix) )
                 key = ( int(event.x/events.rebin[0]), int(event.y/events.rebin[1]) )
                 try:
-                    print( 'key', key )
+                    #print( 'key', key )
                     hit_ind = xy2hit_ind[key]
                     matched[event_ind] = 1
                     #print( 'matched', key, hit_ind )
                     #print( 'Bary0', self.__recarray__[hit_ind].xBary0, self.__recarray__[hit_ind].yBary0 )
                     #print( 'Bary1', self.__recarray__[hit_ind].xBary1, self.__recarray__[hit_ind].yBary1 )
-                    print( 'xy', event.x, event.y )
-                    if 'verbose' in args:
-                        print( 'match', event.x, event.y )
+                    #print( 'xy', event.x, event.y )
+                    #if 'verbose' in args:
+                        #print( 'match', event.x, event.y )
                     if idSim[hit_ind] == 0:
                         xSim[hit_ind] = float(event.x/events.rebin[0])
                         ySim[hit_ind] = float(event.y/events.rebin[1])
@@ -625,7 +625,7 @@ class HitSummary:
                         zSim[hit_ind] = -1
                         sigmaSim[hit_ind] = -1
                 except KeyError:
-                    print( 'NO match', event.x, event.y )
+                    #print( 'NO match', event.x, event.y )
                     pass
         
         #print( 'x', xSim[xSim!=0] )
@@ -861,6 +861,7 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
         stop = amax(argwhere(runIDs==runID_range[1]))+1
     #if not branches is None:
         #branches = list( set(branches) & set(root_numpy.list_branches( file, treename='hitSumm' )) )
+    print( file, root_numpy.list_branches( file, treename='hitSumm' ) )
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
 
 def update_catalog( fname, output, hitSummary ):
@@ -1180,6 +1181,7 @@ def get_selections( file, branches, selections, global_selection=None, runID_ran
             selection_full = global_selection + ' and ' + selection
         selection_string = selection_full.replace('and', '&&')
         data_selection[selection] = open_HitSummary( file, branches=list(set(branches+extra_branches)), selection='flag==0 && '+selection_string, runID_range=runID_range )
+        print( 'read fileds', data_selection[selection].names )
     return data_selection
 
 
@@ -1219,6 +1221,7 @@ def scatter( **args ):
     args = Namespace(**args)
     import matplotlib.pylab as plt    
     with Timer('scatter'):
+
         file = glob.glob(args.root_file)
         
         args.xbranches = []
@@ -1384,18 +1387,21 @@ def histogram( **args ):
             args.selections = []
             data_selection = {}
             for i in range(nargs/3):
-                file = args.root_file[3*i+0]
-                branch = args.root_file[3*i+1]
+                branch = args.root_file[3*i+0]
                 args.branches.append(branch)
+                
+                file = args.root_file[3*i+1]
+                
                 selection = args.root_file[3*i+2]
-                args.selections.append('{}:{}'.format(file,selection))
+                args.selections.append('{}:{}:{}'.format(branch,file,selection))
                 print( 'file', file )
                 print( 'br', branch )
                 print( 'sel', selection )
                 data_entry = get_selections( file, [branch], [selection], args.global_selection )
-                data_selection.update( { '{}:{}'.format(file, data_entry.keys()[0]): data_entry.values()[0] } )
+                data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
                 print( type(data_selection) )
-            print( data_selection.keys() )
+            print( 'selections', data_selection.keys() )
+            print( 'branches', args.branches )
             #exit(0)
             
             
@@ -1416,6 +1422,7 @@ def histogram( **args ):
         #ax.hist(data, bins=bins, histtype='step', label='all')
         if 'selections' in args:
             for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
+                print( 'selection', selection, data_selection[selection].names )
                 print( 'selection', data_selection[selection][branch].shape, len(bins) )
                 datum = data_selection[selection]
 
@@ -1423,7 +1430,7 @@ def histogram( **args ):
                 if 'factor' in args:
                     factor = args.factor
                 hist, x, dx = stats.make_histogram( datum[branch], bins )
-                ax.errorbar( x+i*dx/2./len(args.branches), hist*factor, xerr=dx/2., yerr=sqrt(hist)*factor, label='{}:{} ({})'.format(branch,selection,datum[branch].size), fmt='.' )
+                ax.errorbar( x+i*dx/2./len(args.branches), hist*factor, xerr=dx/2., yerr=sqrt(hist)*factor, label='{} ({})'.format(selection,datum[branch].size), fmt='.' )
         ax.legend()
         ax.grid()
         ax.set_xlabel(args.branches[0])
@@ -1466,7 +1473,7 @@ def add_histogram_options(p):
     p.set_defaults(_func=histogram)
 
 def add_ratio_options(p):
-    p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.add_argument('root_file', nargs='+', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('--branch-selections', action='append', nargs=3, type=str, default=argparse.SUPPRESS, help = 'selections as branch numerator and denominator' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
@@ -1487,23 +1494,62 @@ def ratio( **args ):
 
     import matplotlib.pylab as plt
     with Timer('ratio'):
-        file = glob.glob(args.root_file)
-        #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
+        print( 'len', len(args.root_file) )
+        if len(args.root_file) == 1:
+            args.root_file = args.root_file[0]
         
-        args.branches = []
-        args.numselections = []
-        args.denselections = []
-        print( args.branch_selections )
-        for branch_selection in args.branch_selections:
-            args.branches.append( branch_selection[0] )
-            args.numselections.append( branch_selection[1] )
-            args.denselections.append( branch_selection[2] )
+            file = glob.glob(args.root_file)
+            #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
         
-        if not 'runID_range' in args:
-            args.runID_range = None
-        data_numselection = get_selections( file[0], args.branches, args.numselections, args.global_selection, runID_range=args.runID_range )
-        data_denselection = get_selections( file[0], args.branches, args.denselections, args.global_selection, runID_range=args.runID_range )
-                                              #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
+            args.branches = []
+            args.numselections = []
+            args.denselections = []
+            print( args.branch_selections )
+            for branch_selection in args.branch_selections:
+                args.branches.append( branch_selection[0] )
+                args.numselections.append( branch_selection[1] )
+                args.denselections.append( branch_selection[2] )
+        
+            if not 'runID_range' in args:
+                args.runID_range = None
+            data_numselection = get_selections( file[0], args.branches, args.numselections, args.global_selection, runID_range=args.runID_range )
+            data_denselection = get_selections( file[0], args.branches, args.denselections, args.global_selection, runID_range=args.runID_range )
+                                                #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
+        
+        else:
+            nargs = len(args.root_file)
+            files = args.root_file
+            print( args.root_file )
+            args.branches = []
+            args.numselections = []
+            args.denselections = []
+            data_numselection = {}
+            data_denselection = {}
+            for i in range(nargs/4):
+                branch = args.root_file[5*i+0]
+                args.branches.append(branch)
+
+                file0 = args.root_file[5*i+1]
+                selection0 = args.root_file[5*i+2]
+                args.numselections.append('{}:{}'.format(file0, selection0))
+
+                file1 = args.root_file[5*i+3]
+                selection1 = args.root_file[5*i+4]
+                args.denselections.append('{}:{}'.format(file1, selection1))
+
+                #print( 'file', file )
+                #print( 'br', branch )
+                #print( 'sel', selection )
+                data_entry0 = get_selections( file0, [branch], [selection0], args.global_selection )
+                data_numselection.update( { '{}:{}'.format(file0, data_entry0.keys()[0]): data_entry0.values()[0] } )
+
+                data_entry1 = get_selections( file1, [branch], [selection1], args.global_selection )
+                data_denselection.update( { '{}:{}'.format(file1, data_entry1.keys()[0]): data_entry1.values()[0] } )
+
+            #print( data_selection.keys() )
+            #exit(0)
+            
+            
 
         if 'x_range' in args:
             bins = arange( args.x_range[0], args.x_range[1], args.binsize )
@@ -1529,7 +1575,7 @@ def ratio( **args ):
             denhist, x, dx = stats.make_histogram( denominator[branch], bins )
             hist = numhist.astype(float)/denhist
             dy = sqrt( (sqrt(numhist)/denhist)**2 + (numhist*sqrt(denhist)/denhist**2)**2 )
-            ax.errorbar( x, hist, xerr=dx/2, yerr=dy, label='{}:[{}]/[{}]'.format(branch,numselection, denselection), fmt=' ' )
+            ax.errorbar( x, hist, xerr=dx/2, yerr=dy, label='{}:{}\n{}'.format(branch,numselection, denselection), fmt=' ' )
         ax.legend()
         ax.set_xlabel(args.branches[0])
         #ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
