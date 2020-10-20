@@ -46,7 +46,7 @@ from scipy.special import erf, erfinv
 
 
 def binned_statistic_fast(x, values, func, nbins, range):
-    '''The usage is nearly the same as scipy.stats.binned_statistic''' 
+    '''The usage is nearly the same as scipy.stats.binned_statistic'''
 
     N = len(values)
     r0, r1 = range
@@ -64,17 +64,17 @@ class NeighborIndexHistogram:
         self.shiftsdd = tuple( itertools.product( *[range( -shift, shift+1 )]*self.__d ) )
         self.digitized = rint(self.__data/length).astype(int)
         self.occupied_bins, inv_bins = unique( self.digitized, axis=0, return_inverse = True )
-        
+
         print( 'dig', self.digitized, len(self.digitized) )
         print( 'bins', self.occupied_bins, len(self.occupied_bins) )
         print( 'inv_bins',inv_bins, len(inv_bins) )
         print( 'data', data, len(data) )
         print( 'occupied', self.occupied_bins )
-        
+
         for inv_bin, occupied in enumerate(self.occupied_bins):
             elements = nonzero( inv_bins == inv_bin )[0]
             print( 'elements', elements )
-        
+
 
 class HitSummary:
     def __init__( self, recarray, transpose=False, verbose=False ):
@@ -90,7 +90,7 @@ class HitSummary:
         self.shape = recarray.shape
         self.size = recarray.size
         self.names = recarray.dtype.names
-    
+
     def __getitem__(self, *args):
         if type(args[0]) == str:
             return self.__recarray__[args[0]]
@@ -98,15 +98,15 @@ class HitSummary:
 
     def __len__(self):
         return len(self.__recarray__)
-    
+
     #def __new__( cls, recarray ):
         #print( '__new__', recarray.xPix[1] )
         #obj = recarray.view(cls)
         #return obj
-    
+
     def extend(self, a):
         self.__updateattrs__(rfn.stack_arrays( (self.__recarray__, a), asrecarray=True ))
-    
+
     def add_fields( self, names, types=None, arrays=None ):
         if self.verbose: print( 'adding', names )
         self.__updateattrs__( rfn.append_fields( self.__recarray__, names, arrays, dtypes=types, asrecarray=True ) )
@@ -115,7 +115,7 @@ class HitSummary:
         if mask is None:
             return array( map( func, self.__recarray__ ) )
         return array( map( lambda p: func(p[0], p[1]), zip(self.__recarray__, mask) ) )
-    
+
     def __energy_mask(self, eThr):
         return map( lambda e: e >= eThr, self.ePix )
 
@@ -123,13 +123,13 @@ class HitSummary:
         return map( lambda l: l <= lvl, self.level )
 
     def __flag( self, entry ): return 0
-    
+
     def __nSat( self, entry ): return 0
 
     def __nSavedPix( self, entry ): return len(entry.ePix)
-    
+
     def __n( self, entry, mask ): return len(entry.ePix[mask])
-    
+
     def __E( self, entry, mask ): return sum(entry.ePix[mask])
 
     def __Bary(self, entry, mask, axis ):
@@ -147,7 +147,7 @@ class HitSummary:
         weights = entry.ePix[mask]
         pos = weights > 0
         return average( getattr(entry, '{}Pix'.format(axis))[mask][pos]**2, weights=weights[pos], axis=0 )
-        
+
     def __thr_vars( self, entry, mask ):
         n = self.__n(entry, mask)
         E = self.__E(entry, mask)
@@ -156,31 +156,31 @@ class HitSummary:
         xVar = self.__SqrBary(entry, mask, 'x') - xBary**2
         yVar = self.__SqrBary(entry, mask, 'y') - yBary**2
         return n, E, xBary, yBary, xVar, yVar
-    
+
     def __basic_vars( self, entry ):
         flag = 0
         nSat = 0
         nSavedPix = self.__nSavedPix(entry)
         return flag, nSat, nSavedPix
-        
+
     def add_basic_fields( self ):
         self.add_fields( ['flag','nSat','nSavedPix'],
                         types=(int,int,int),
                         arrays=self.__apply_to_entries( self.__basic_vars ).T
-                        )        
-        
+                        )
+
     def add_energy_threshold_fields( self, eThr ):
         self.add_fields( [ '{}{}'.format(name,int(eThr)) for name in ['n','E','xBary','yBary','xVar','yVar']],
                         types=(int,float,float,float,float,float),
                         arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__energy_mask(eThr) ).T
                         )
-        
+
     def add_level_fields( self, lvl ):
         self.add_fields( [ '{}{}'.format(name,int(lvl)) for name in ['n','E','xBary','yBary','xVar','yVar']],
                         types=(int,float,float,float,float,float),
                         arrays=self.__apply_to_entries( self.__thr_vars, mask=self.__level_mask(lvl) ).T
                         )
-        
+
     def add_fit_fields( self ):
         self.t_fit = Timer('done')
         self.t_fit.wait_secs = 30
@@ -188,19 +188,19 @@ class HitSummary:
         self.t_fit.__enter__()
         arrays = self.__apply_to_entries( self.__fit_vars ).T
         del self.t_fit
-        
+
         print( 'fit fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
         self.add_fields( ['Efit', 'xMufit', 'yMufit', 'xSigmafit', 'ySigmafit'],
                         types=(float,float,float,float,float),
                         arrays=arrays
                         )
-    
+
     def __fit_vars( self, entry ):
         try:
             self.t_fit.check()
         except AttributeError:
             pass
-        
+
         rawNoise = 10
         #if 'rawNoise' in self.names:
             #rawNoise = self.rawNoise
@@ -217,17 +217,17 @@ class HitSummary:
             xsigma = sqrt(entry.xVar)
             ysigma = sqrt(entry.yVar)
             #print( xmu, ymu, xsigma, ysigma )
-            
-        xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit( 
-            entry.xPix, 
-            entry.yPix, 
-            entry.ePix, 
+
+        xMufit, yMufit, xSigmafit, ySigmafit, Efit = stats.norm2d_norm.fit(
+            entry.xPix,
+            entry.yPix,
+            entry.ePix,
             xmu,
-            ymu, 
-            xsigma, 
-            ysigma, 
+            ymu,
+            xsigma,
+            ysigma,
             sum(entry.ePix),
-            ftol=1e-8, 
+            ftol=1e-8,
             mode='fit',
             sigma_e=rawNoise,
             g=7.25,
@@ -239,24 +239,24 @@ class HitSummary:
     def add_like_fields( self ):
         self.t_like = Timer('done')
         self.t_like.wait_secs = 30
-        self.t_like.total_loop_number = self.size            
+        self.t_like.total_loop_number = self.size
         self.t_like.__enter__()
         arrays = self.__apply_to_entries( self.__like_vars ).T
         del self.t_like
-        
+
         print( 'like fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
-        
+
         self.add_fields( ['ELike', 'xMuLike', 'yMuLike', 'xSigmaLike', 'ySigmaLike'],
                         types=(float,float,float,float,float),
                         arrays=arrays
                         )
-        
+
     def __like_vars( self, entry ):
         try:
             self.t_like.check()
         except AttributeError:
             pass
-        
+
         rawNoise = 10
         try:
             xmu = entry.xBary1
@@ -268,15 +268,15 @@ class HitSummary:
             ymu = entry.yBary
             xsigma = sqrt(entry.xVar)
             ysigma = sqrt(entry.yVar)
-        
-        xMu, yMu, xSigma, ySigma, E = stats.norm2d_binom_norm.mle( 
-            entry.xPix, 
-            entry.yPix, 
-            entry.ePix, 
-            xmu, 
-            ymu, 
-            xsigma, 
-            ysigma, 
+
+        xMu, yMu, xSigma, ySigma, E = stats.norm2d_binom_norm.mle(
+            entry.xPix,
+            entry.yPix,
+            entry.ePix,
+            xmu,
+            ymu,
+            xsigma,
+            ysigma,
             sum(entry.ePix),
             sigma_e = rawNoise,
             g=7.25,
@@ -287,24 +287,24 @@ class HitSummary:
     def add_noise_fields( self ):
         self.t_noise = Timer('done')
         self.t_noise.wait_secs = 30
-        self.t_noise.total_loop_number = self.size            
+        self.t_noise.total_loop_number = self.size
         self.t_noise.__enter__()
         arrays = self.__apply_to_entries( self.__noise_vars ).T
         del self.t_noise
-        
+
         print( 'like fields false', arrays.shape[-1], sum( arrays[-1] == -1 ), float(sum( arrays[-1] == -1 ))/len(arrays[-1]) )
-        
+
         self.add_fields( ['noise', 'noise2'],
                         types=(float, float),
                         arrays=arrays
                         )
-    
+
     def __noise_vars( self, entry ):
         try:
             self.t_noise.check()
         except AttributeError:
             pass
-        
+
         e = entry.ePix
         x = entry.xPix
         y = entry.yPix
@@ -315,12 +315,12 @@ class HitSummary:
         #v = sum(E[d>0]/d[d>0])/sum(abs(E[d>0])/d[d>0])
         return sum(v), sum(v)/sum(abs(v))
 
-    
+
     def match_bruteforce( self, events, verbose, basename ):
-        
+
         N = len(events)
         indices = range(N)
-        
+
         if verbose:
             print( 'events.xy', events.xy )
         N_hits = len(self.__recarray__)
@@ -353,13 +353,13 @@ class HitSummary:
                     id_code[i] = event.id_code
                     del indices[j]
                     break
-        
+
         print( 'matched', count_nonzero(id_code) )
         code = '''
         TFile f( fname.c_str(), "update" );
         TTree *t = (TTree*) f.Get("hitSumm");
         Long64_t nentries = t->GetEntries();
-        
+
         Float_t c_x;
         Float_t c_y;
         Float_t c_z;
@@ -384,7 +384,7 @@ class HitSummary:
             c_sigma = sigma[n];
             c_E = E[n];
             c_id_code = id_code[n];
-            
+
             x_branch->Fill();
             y_branch->Fill();
             z_branch->Fill();
@@ -406,10 +406,10 @@ class HitSummary:
                             compiler='gcc',
                             #verbose=1,
                             )
-        
+
         print( 'added columns {}'.format(varnames) )
         return
-    
+
     def efficiency( self, events, args ):
         print( 'fields', self.__recarray__.dtype.names )
         E_bins = arange( 0, max(events.E), args.E_binsize )
@@ -418,8 +418,8 @@ class HitSummary:
         E0, x, dx = stats.make_histogram( self.E0[ self.id_code==1 ], E_bins )
         E1, x, dx = stats.make_histogram( self.E1[ self.id_code==1 ], E_bins )
         print( simE, recE.astype(float)/simE, E0.astype(float)/simE, E1.astype(float)/simE )
-        
-        
+
+
         z_bins = arange( 0, max(events.z), args.z_binsize )
         simz, x, dx = stats.make_histogram( events.z, z_bins )
         recz, x, dx = stats.make_histogram( self.z[ self.id_code==1 ], z_bins )
@@ -434,7 +434,7 @@ class HitSummary:
         xVar1, x, dx = stats.make_histogram( self.xVar1[ self.id_code==1 ], sigma_bins )
         print( simsigma, recsigma.astype(float)/simsigma )
         exit()
-        
+
     def match_slow( self, events, args ):
         if 'sigma' in self.__recarray__.dtype.names:
             print( 'catalog already matched' )
@@ -443,14 +443,14 @@ class HitSummary:
 
         if 'verbose' in args:
             print( 'events.xy', events.xy )
-        
+
         xy2event_ind = {}
         for i, event in enumerate(events):
             key = ( int(event.x), int(event.y) )
             xy2event_ind[key] = i
         if 'verbose' in args:
             print( xy2event_ind.keys() )
-        
+
         N_hits = len(self.__recarray__)
         x = zeros(N_hits)
         y = zeros(N_hits)
@@ -460,7 +460,7 @@ class HitSummary:
         #E_eff = zeros(N_hits)
         id_code = zeros(N_hits)
         sigma = zeros(N_hits)
-        
+
         matched = zeros(N)
 
         for i, hit in enumerate(self.__recarray__):
@@ -496,7 +496,7 @@ class HitSummary:
                         sigma[i] = -1
                 except KeyError:
                     pass
-        
+
         print( 'matched', count_nonzero(id_code) )
         print( 'multiple matched', count_nonzero(id_code==2) )
         print( 'not matched', count_nonzero(matched==0) )
@@ -509,15 +509,15 @@ class HitSummary:
         fname = args.basename + '.root'
         varnames = ['x','y','z','q','sigma','E','id_code']
         self.add_fields( varnames, (float, float, float, int, float, float, int), [x, y, z, q, sigma, E, id_code] )
-        
+
         if 'no_catalog' in args:
             return
-        
+
         code = '''
         TFile f( fname.c_str(), "update" );
         TTree *t = (TTree*) f.Get("hitSumm");
         Long64_t nentries = t->GetEntries();
-        
+
         Float_t c_x;
         Float_t c_y;
         Float_t c_z;
@@ -542,7 +542,7 @@ class HitSummary:
             c_sigma = sigma[n];
             c_E = E[n];
             c_id_code = id_code[n];
-            
+
             x_branch->Fill();
             y_branch->Fill();
             z_branch->Fill();
@@ -564,7 +564,7 @@ class HitSummary:
                             compiler='gcc',
                             #verbose=1,
                             )
-        
+
         print( 'added columns {}'.format(varnames) )
         return
 
@@ -575,13 +575,13 @@ class HitSummary:
 
         if 'verbose' in args:
             print( 'events.xy', events.xy )
-        
+
         with Timer('build occupied bins'):
             xy2hit_ind = { ( xPix, yPix ): i for i, hit in enumerate(self.__recarray__) for xPix, yPix, level in zip(hit.xPix, hit.yPix, hit.level)  }
 
         if 'verbose' in args:
             print( 'all keys', xy2hit_ind.keys() )
-        
+
         N_hits = len(self.__recarray__)
         xSim = zeros(N_hits)
         ySim = zeros(N_hits)
@@ -590,9 +590,9 @@ class HitSummary:
         ESim = zeros(N_hits)
         idSim = zeros(N_hits)
         sigmaSim = zeros(N_hits)
-        
+
         matched = zeros( len(events) )
-        
+
         with Timer('matching'):
             for event_ind, event in enumerate(events):
                 #if 'verbose' in args:
@@ -627,7 +627,7 @@ class HitSummary:
                 except KeyError:
                     #print( 'NO match', event.x, event.y )
                     pass
-        
+
         #print( 'x', xSim[xSim!=0] )
         #print( 'y', ySim[ySim!=0] )
         print( 'matched', count_nonzero(idSim) )
@@ -643,18 +643,18 @@ class HitSummary:
         varnames = ['xSim','ySim','zSim','qSim','sigmaSim','ESim','idSim']
 
         self.add_fields( varnames, (float, float, float, int, float, float, int), [xSim, ySim, zSim, qSim, sigmaSim, ESim, idSim] )
-        
+
         print( 'added columns {}'.format(varnames) )
-        
-        
+
+
         #if 'no_catalog' in args:
             #return
-        
+
         #code = '''
         #TFile f( fname.c_str(), "update" );
         #TTree *t = (TTree*) f.Get("hitSumm");
         #Long64_t nentries = t->GetEntries();
-        
+
         #Float_t c_xSim;
         #Float_t c_ySim;
         #Float_t c_zSim;
@@ -679,7 +679,7 @@ class HitSummary:
             #c_sigmaSim = sigmaSim[n];
             #c_ESim = ESim[n];
             #c_idSim = idSim[n];
-            
+
             #x_branch->Fill();
             #y_branch->Fill();
             #z_branch->Fill();
@@ -703,12 +703,12 @@ class HitSummary:
                             #)
 
         return
-        
+
     def compute_sizelike_each( self, entry, lvl, gain, sigma_noise, fast = True, tol = 1e-1 ):
-        _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
-                                E0 = entry['E%d'%lvl]/gain, 
-                                mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ], 
-                                sigma0 = sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ), 
+        _Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix,
+                                E0 = entry['E%d'%lvl]/gain,
+                                mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ],
+                                sigma0 = sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ),
                                 sigma_noise0 = sigma_noise,
                                 single_sigma = False,
                                 fast = fast,
@@ -719,15 +719,15 @@ class HitSummary:
         new_fields = array( map( lambda entry: self.compute_sizelike_each( entry, lvl, gain, sigma_noise, fast, tol ), self ) )
         self = self.add_fields( ['EL', 'xMu', 'yMu', 'xSigma', 'ySigma'], new_fields.T, (float, float, float, float, float) )
         return self
-        
+
     #def get_sizeLike( self, lvl, gain, sigma_noise, fast=True, tol = None ):
         #Q = []
         #mu, sigma = [], []
         #for entry in self:
-            #_Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix, 
-                                  #E0 = entry['E%d'%lvl]/gain, 
-                                  #mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ], 
-                                  #sigma0 = sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ), 
+            #_Q, _mu, _sigma = size_like( entry.ePix/gain, entry.xPix, entry.yPix,
+                                  #E0 = entry['E%d'%lvl]/gain,
+                                  #mu0 = [ entry['xBary%d' % lvl], entry['yBary%d' % lvl] ],
+                                  #sigma0 = sqrt( [ entry['xVar%d'%lvl], entry['yVar%d'%lvl] ] ),
                                   #sigma_noise0 = sigma_noise,
                                   #single_sigma=False,
                                   #fast = fast,
@@ -736,7 +736,7 @@ class HitSummary:
             #mu.append( _mu )
             #sigma.append( _sigma )
         #return array(Q)*gain, array(mu), array(sigma)
-    
+
     def get_Bary(self):
         return array( (self.xBary, self.yBary) ).T
 
@@ -753,12 +753,12 @@ class HitSummary:
         assignmentsArray = ''
         branch = ''
         setbranch = ''
-        
+
         names = list(self.__recarray__.dtype.names)
         names.remove('nSavedPix')
         names = ['nSavedPix'] + names
         print( names )
-        
+
         for name in names:
             type_ = getattr( self.__recarray__, name ).dtype
             if name.startswith('n') and name != 'nSavedPix' and name != 'nSat':
@@ -791,18 +791,18 @@ class HitSummary:
                 exit(0)
             branch += 'tree->Branch( "{}", {}, "{}" );\n'.format( name, var, expr )
             setbranch += 'tree->SetBranchAddress("{}", {});\n'.format(name, var)
-        
+
         code = '''
         const Int_t knSavedPix = Nmax;
-        
+
         TFile f( fname.c_str(), mode.c_str() );
-        
+
         char c_mode[32];
         strcpy(c_mode, mode.c_str());
         TTree *tree;
-        
+
         {declarations}
-        
+
         if( strcmp(c_mode, "recreate") == 0 ){{
             std::cout<<"new TTree"<<std::endl;
             tree = new TTree( "hitSumm", "hitSumm" );
@@ -821,7 +821,7 @@ class HitSummary:
         }}
         tree->Write(0,TObject::kWriteDelete,0);
         '''.format(declarations=declarations, branch=branch, setbranch=setbranch, assignments=assignments, assignmentsArray=assignmentsArray)
-        
+
         for name in self.__recarray__.dtype.names:
             exec( '{} = array(self.__recarray__.{})'.format(name, name) )
 
@@ -829,14 +829,14 @@ class HitSummary:
         xPix = [ array(x_) for x_ in self.__recarray__.xPix ]
         yPix = [ array(y_) for y_ in self.__recarray__.yPix ]
         level = [ array(l_).astype(int) for l_ in self.__recarray__.level ]
-        
+
         fname = basename
         mode = 'recreate'
         if os.path.exists( fname ):
             mode = 'update'
-            
+
         #print( 'code', code )
-        
+
         varnames = ['fname', 'mode', 'N', 'Nmax'] + list(self.__recarray__.dtype.names)
         weave.inline( code, varnames,
                             headers=['"TFile.h"', '"TTree.h"', '"TObject.h"'],
@@ -853,7 +853,7 @@ class HitSummary:
         elif mode == 'update':
             print( 'updated catalog {} with {}'.format(fname, number_of_entries) )
         return fname
-    
+
 def open_HitSummary( file, branches=None, selection=None, start=None, stop=None, runID_range=None ):
     if runID_range:
         runIDs = open_HitSummary( file, branches=['runID'] ).runID
@@ -903,7 +903,7 @@ def update_catalog( fname, output, hitSummary ):
     #if number_of_selected_hits == 0:
         #print( 'selection found no hits, exiting' )
         #return
-    
+
     #output_file = TFile.Open( output, 'recreate' )
     #with Timer('clone config and write') as t:
         #output_config = input_file.config.CloneTree()
@@ -911,24 +911,24 @@ def update_catalog( fname, output, hitSummary ):
 
     #with Timer('clone tree') as t:
         #output_hitSumm = input_file.hitSumm.CloneTree(0)
-        
+
     #with Timer('copy tree selection') as t:
         #cut_hitSumm = input_file.hitSumm.CopyTree( selection )
 
     #with Timer('select') as t:
         #print( cut_hitSumm.GetEntries() )
-    
+
     #if condition:
         #def func_event( event ):
             #if condition(event):
-                #output_hitSumm.Fill()            
+                #output_hitSumm.Fill()
         #with Timer('copy loop') as t:
             #map( func_event, cut_hitSumm )
     #else:
         #output_hitSumm = cut_hitSumm.CloneTree()
 
     #print( 'output_file hitSumm entries', output_hitSumm.GetEntries() )
-    #with Timer('write and close') as t:    
+    #with Timer('write and close') as t:
         #output_hitSumm.Write()
         #output_file.Close()
         #input_file.Close()
@@ -943,7 +943,7 @@ def build_new_catalog_from_recarray__( input, output ):
     with Timer('fill') as t:
         root_numpy.array2root( input, output + '.root', treename='hitSumm', mode='recreate' )
 
-        
+
 #def build_new_root_from_existing_rootpy( input, output, condition = None, selection = '' ):
     #with Timer('open file') as t:
         #input_file = rootpy.io.root_open( input )
@@ -955,20 +955,20 @@ def build_new_catalog_from_recarray__( input, output ):
 
     #with Timer('get entries') as t:
         #print( input_file.hitSumm.GetEntries( selection ) )
-        
+
     #with Timer('clone tree') as t:
         #output_hitSumm = input_file.hitSumm.Clone()
-        
+
     #with Timer('copy tree selection') as t:
         #cut_hitSumm = input_file.hitSumm.CopyTree( selection )
 
     #with Timer('select') as t:
         #print( cut_hitSumm.GetEntries() )
-    
+
     #if condition:
         #def func_event( event ):
             #if condition(event):
-                #output_hitSumm.Fill()            
+                #output_hitSumm.Fill()
         #with Timer('copy loop') as t:
             #map( func_event, cut_hitSumm )
     #else:
@@ -982,29 +982,29 @@ def build_new_catalog_from_recarray__( input, output ):
 def addbranches( **args ):
     with Timer('add branches'):
         args = Namespace(**args)
-        
+
         fname = glob.glob(args.basename)[0]
         fout = args.output
         if not os.path.exists(fname):
             raise FileNotFoundError
-        
+
         if os.path.exists(fout):
             print( 'output already exists', fout )
             raise FileExistsError
-        
+
         hitSummary = open_HitSummary(fname)
         print( hitSummary.names )
         branches_set = set(args.branches) - set(hitSummary.names)
-        
+
         fit_set = set(['Efit', 'xSigmafit', 'xMufit', 'ySigmafit', 'yMufit', 'fit'])
         like_set = set( ['ELike', 'xSigmaLike', 'xMuLike', 'ySigmaLike', 'yMuLike', 'like'] )
         noise_set = set( ['noise', 'noise2'] )
-        
+
         if not branches_set.isdisjoint(fit_set):
             branches_set -= fit_set
             print( 'adding fit fields' )
             hitSummary.add_fit_fields()
-        
+
         if not branches_set.isdisjoint(like_set):
             branches_set -= like_set
             print( 'adding like fields' )
@@ -1014,7 +1014,7 @@ def addbranches( **args ):
             branches_set -= noise_set
             print( 'adding noise fields' )
             hitSummary.add_noise_fields()
-            
+
         if len(branches_set) > 0:
             print( 'branches not recognized', list(branches_set) )
 
@@ -1057,7 +1057,7 @@ def simulate( args ):
                 images[image_mode].append( Image.Image([part]) )
                 simulations[image_mode].append( simulation )
                 t.check( 10, args.number_of_images*len(args.image_modes) )
-        
+
     thresholds = list(args.threshold)
     with Timer('extract&match all') as t2:
         for image_mode in args.image_modes:
@@ -1073,13 +1073,13 @@ def simulate( args ):
                     with Timer('save catalog'):
                         hitSummary.save_catalog( args.basename + '.root' )
                     t2.check( 60, len(thresholds)*len(images)*len(args.image_modes) )
-    
+
 
 def add_simulate_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.add_argument('-t', '--threshold', nargs='+', type=float, default=[60,50,40,30], help = 'energy threshold in ADU' )
-    p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )   
+    p.add_argument('-b', '--border', type=int, default=1, help = 'pixel border' )
     p.add_argument('--image-modes', nargs='+', type=int, default=[1,5], help = 'image modes' )
     #p.add_argument('--E-binsize', type=float, default=1, help = 'E binsize' )
     #p.add_argument('--z-binsize', type=float, default=10, help = 'z binsize' )
@@ -1091,7 +1091,7 @@ def add_simulate_options(p):
     Simulation.add_depth_options(p)
     Simulation.add_charges_options(p)
     Simulation.add_modulation_options(p)
-    
+
     p.set_defaults( _func=simulate )
 
 def match( args ):
@@ -1110,7 +1110,7 @@ def match( args ):
 def add_match_options(p):
     p.add_argument('basename', type=str, help = 'basename of the simulation csv file' )
     p.add_argument('catalog', type=str, help = 'basename of the simulation catalog' )
-    p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )    
+    p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.add_argument('-o', '--output', type=str, default='matched.root', help = 'output' )
     p.add_argument('--invert', type=bool, default=False, help = 'invert x and y' )
     p.add_argument('--x-shift', type=int, default=0, help = 'shift x axis' )
@@ -1125,14 +1125,14 @@ def image_extract( image, args ):
         os_range = args.overscan_subtraction
         print( 'os_range', os_range, os_range[0] )
         correction = median( image.all[ None:None, os_range[0]:os_range[1] ], axis=1 )[:,None]
-        image.all -= correction 
+        image.all -= correction
 
     if 'vertical_overscan_subtraction' in args:
         os_range = args.vertical_overscan_subtraction
         print( 'os_range', os_range, os_range[0] )
         correction = median( image.all[ os_range[0]:os_range[1], None:None ], axis=0 )[None,:]
-        image.all -= correction 
-    
+        image.all -= correction
+
     hitSummary = HitSummary( image.all.extract_hits( args.threshold, args.border, verbose ), transpose=False, verbose=verbose )
     for field, dtype in [('ohdu', int32), ('runID', int32), ('gain', float32), ('rebin',int32), ('dc',float32), ('noise',float32)]:
         if field.upper() in image.header:
@@ -1156,8 +1156,8 @@ def extract( args ):
     args.input_files = args.fits_files
     args.func = image_extract
     image = Image.apply_to_files( args )
-    
-    
+
+
 def add_extract_options(p):
     p.add_argument('basename', type=str, help = 'basename of the output catalog' )
     p.add_argument('fits_files', type=str, help = 'fits file (example: )' )
@@ -1170,7 +1170,7 @@ def add_extract_options(p):
     p.add_argument('-v', '--verbose', action="store_true", default=argparse.SUPPRESS, help = 'verbose' )
     p.add_argument( '--overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'horizontal overscan subtraction' )
     p.add_argument( '--vertical-overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'vertical overscan subtraction' )
-    
+
     p.set_defaults(_func=extract)
 
 def get_selections( file, branches, selections, global_selection=None, runID_range=None, extra_branches = [] ):
@@ -1202,7 +1202,7 @@ def test_std_correction():
     print( 'len', len(rvs) )
     std_ = std(rvs)
     mu = mean(rvs)
-    rvsmin, rvsmax = min(rvs), max(rvs) 
+    rvsmin, rvsmax = min(rvs), max(rvs)
     print( 'stats factor', mu, std_, sigma, std*sqrt(std**2/var_norm( mu, std_, rvsmin, rvsmax)) )
     print( 'stats add', mu, std_, sigma, sqrt( (std**2 + var_norm( mu, std_, -inf, rvsmin) + var_norm( mu, std, rvsmax, inf) ))*std**2/var_norm(mu, std, rvsmin, rvsmax) )
     print( 'stats add', mu, std, sigma, sqrt( (std**2 + var_norm( mu, std, -inf, rvsmin) + var_norm( mu, std, rvsmax, inf) )) )
@@ -1219,17 +1219,17 @@ def test_std_correction():
 
 def scatter( **args ):
     args = Namespace(**args)
-    import matplotlib.pylab as plt    
+    import matplotlib.pylab as plt
     with Timer('scatter'):
 
         file = glob.glob(args.root_file)
-        
+
         args.xbranches = []
         args.ybranches = []
         args.cbranches = []
         args.selections = []
         has_color = False
-        
+
         for branch_selection in args.branch_selections:
             args.xbranches.append( branch_selection[0] )
             args.ybranches.append( branch_selection[1] )
@@ -1239,17 +1239,17 @@ def scatter( **args ):
             args.selections.append( branch_selection[-1] )
         if not has_color:
             args.cbranches = args.xbranches
-                
+
         if not 'runID_range' in args:
             args.runID_range = None
-        data_selection = get_selections( file[0], 
+        data_selection = get_selections( file[0],
                                         args.xbranches + args.ybranches + args.cbranches,
-                                        args.selections, 
-                                        args.global_selection, 
-                                        runID_range=args.runID_range, 
-                                        #extra_branches=[ 'ePix', 'xPix', 'yPix', 'level' ] 
+                                        args.selections,
+                                        args.global_selection,
+                                        runID_range=args.runID_range,
+                                        #extra_branches=[ 'ePix', 'xPix', 'yPix', 'level' ]
                                         )
-        
+
         fig = plt.figure()
         ax = fig.add_subplot(111)
         if 'global_selection' in args:
@@ -1260,7 +1260,7 @@ def scatter( **args ):
             for xbranch, ybranch, cbranches, selection, marker in zip(args.xbranches, args.ybranches, args.cbranches, args.selections, markers):
                 print( 'plot', xbranch, ybranch, cbranches )
                 datum = data_selection[selection]
-                
+
                 if has_color:
                     colors = datum[cbranches]
                     cmap = matplotlib.cm.plasma
@@ -1269,16 +1269,16 @@ def scatter( **args ):
                     colors = None
                     cmap = None
                     alpha = (len(datum))**(-.1) if len(datum) > 0 else 1
-                
+
                 if xbranch in datum.names and ybranch in datum.names or True:
-                    
+
                     x = datum[xbranch]
                     y = datum[ybranch]
                     #x = x[ logical_and(args.x_range[0] < x, x < args.x_range[1], axis=0) ]
                     #y = y[ logical_and(args.y_range[0] < x, x < args.y_range[1], axis=0) ]
-                    
+
                     scatter_obj.append( ax.scatter( x, y, label = '{} vs. {} ({})\n{}'.format( ybranch, xbranch, x.size, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
-                    
+
                     if 'errorbar' in args:
                         bins = arange( args.x_range[0], args.x_range[1], 20 )
                         bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=bins )
@@ -1286,10 +1286,10 @@ def scatter( **args ):
                         dx = bin_edges[1] - bin_edges[0]
                         yerr = [0]*len(bin_means)
                         bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
-                        yerr = bin_std    
+                        yerr = bin_std
                         ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
-                
-                        
+
+
         ax.legend()
         ax.grid()
         ax.set_xlim( *args.x_range )
@@ -1306,7 +1306,7 @@ def scatter( **args ):
             args.output = args.root_file
     else:
         args.output = args.root_file
-            
+
     if 'pdf' in args:
         extra = ''
         fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
@@ -1326,7 +1326,7 @@ def scatter( **args ):
 
 def add_scatter_options(p):
     p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('--branch-selections', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branches used for x- and y-axis' )
+    p.add_argument('-s', '--branch-selections', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branches used for x- and y-axis' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     #p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
     p.add_argument('--define', nargs='+', type=str, default=argparse.SUPPRESS, help = 'definitions' )
@@ -1364,17 +1364,17 @@ def histogram( **args ):
         print( 'len', len(args.root_file) )
         if len(args.root_file) == 1:
             args.root_file = args.root_file[0]
-        
+
             file = glob.glob(args.root_file)
             #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
-            
+
             args.branches = []
             args.selections = []
             print( args.branch_selections )
             for branch_selection in args.branch_selections:
                 args.branches.append( branch_selection[0] )
                 args.selections.append( branch_selection[1] )
-            
+
             if not 'runID_range' in args:
                 args.runID_range = None
             data_selection = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
@@ -1389,9 +1389,9 @@ def histogram( **args ):
             for i in range(nargs/3):
                 branch = args.root_file[3*i+0]
                 args.branches.append(branch)
-                
+
                 file = args.root_file[3*i+1]
-                
+
                 selection = args.root_file[3*i+2]
                 args.selections.append('{}:{}:{}'.format(branch,file,selection))
                 print( 'file', file )
@@ -1403,8 +1403,8 @@ def histogram( **args ):
             print( 'selections', data_selection.keys() )
             print( 'branches', args.branches )
             #exit(0)
-            
-            
+
+
         if 'x_range' in args:
             bins = arange( args.x_range[0], args.x_range[1], args.binsize )
         else:
@@ -1415,7 +1415,7 @@ def histogram( **args ):
                 bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
             else:
                 bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
-        
+
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.set_title(', '.join(args.branches))
@@ -1443,7 +1443,7 @@ def histogram( **args ):
             args.output = args.root_file
     else:
         args.output = args.root_file
-    
+
     if 'pdf' in args:
         fig.savefig(args.output+'.pdf')
         print( 'saved', args.output+'.pdf' )
@@ -1469,7 +1469,7 @@ def add_histogram_options(p):
     p.add_argument('--log', action='store_true', default=argparse.SUPPRESS, help = 'log' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-    
+
     p.set_defaults(_func=histogram)
 
 def add_ratio_options(p):
@@ -1486,7 +1486,7 @@ def add_ratio_options(p):
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-    
+
     p.set_defaults(_func=ratio)
 
 def ratio( **args ):
@@ -1497,10 +1497,10 @@ def ratio( **args ):
         print( 'len', len(args.root_file) )
         if len(args.root_file) == 1:
             args.root_file = args.root_file[0]
-        
+
             file = glob.glob(args.root_file)
             #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
-        
+
             args.branches = []
             args.numselections = []
             args.denselections = []
@@ -1509,13 +1509,13 @@ def ratio( **args ):
                 args.branches.append( branch_selection[0] )
                 args.numselections.append( branch_selection[1] )
                 args.denselections.append( branch_selection[2] )
-        
+
             if not 'runID_range' in args:
                 args.runID_range = None
             data_numselection = get_selections( file[0], args.branches, args.numselections, args.global_selection, runID_range=args.runID_range )
             data_denselection = get_selections( file[0], args.branches, args.denselections, args.global_selection, runID_range=args.runID_range )
                                                 #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-        
+
         else:
             nargs = len(args.root_file)
             files = args.root_file
@@ -1548,8 +1548,8 @@ def ratio( **args ):
 
             #print( data_selection.keys() )
             #exit(0)
-            
-            
+
+
 
         if 'x_range' in args:
             bins = arange( args.x_range[0], args.x_range[1], args.binsize )
@@ -1561,7 +1561,7 @@ def ratio( **args ):
                 bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
             else:
                 bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
-        
+
         fig = plt.figure()
         ax = fig.add_subplot(111)
         ax.set_title(', '.join(args.branches))
@@ -1585,7 +1585,7 @@ def ratio( **args ):
             args.output = args.root_file
     else:
         args.output = args.root_file
-    
+
     if 'pdf' in args:
         fig.savefig(args.output+'.pdf')
         print( 'saved', args.output+'.pdf' )
@@ -1636,17 +1636,16 @@ if __name__ == '__main__':
     add_simulate_options( subparsers.add_parser('simulation', help='simulate, extract and match', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_addbranches_options( subparsers.add_parser('addbranches', help='add branches to catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_ratio_options( subparsers.add_parser('ratio', help='make ratio histograms from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    
+
     args = parser.parse_args()
-    
+
     _func = args._func
     del args._func
     print( colored('using parameters:', 'green', attrs=['bold'] ) )
     print_var( vars(args).keys(), vars(args), line_char='\t' )
-    
+
     with Timer('finished'):
         try:
             _func(args)
         except TypeError:
             _func(**vars(args))
-    
