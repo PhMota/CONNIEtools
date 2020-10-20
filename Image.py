@@ -1486,7 +1486,7 @@ def display( args ):
                 cmap.set_bad('black',0)
             try:
                 vmean = np.nanmedian(im)
-                vmax = np.max(np.abs(im - vmean))
+                vmax = np.nanmax(np.abs(im - vmean))
                 if 'vmax' in args:
                     vmax = args.vmax
 
