@@ -1302,6 +1302,9 @@ def display( args ):
         path = path[0]
         print( colored('path', 'green'), path )
         title = path.split('/')[-1]
+        if not os.path.exists(path):
+            print( 'file not found:', path )
+            exit(0)
         listHDU = astropy.io.fits.open( path )
         imageHDU = None
         for i, HDU in enumerate(listHDU):
