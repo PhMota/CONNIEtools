@@ -1320,18 +1320,8 @@ def display( args ):
             exit(0)
 
         data = imageHDU.data.astype(float)
-<<<<<<< HEAD
-<<<<<<< HEAD
-        
         data[data>1e9] = np.nan
         
-=======
-
->>>>>>> 635bfad13613e222971bdf26005be88afc5dcf05
-=======
-        data[data>1e9] = np.nan
-        
->>>>>>> 70a50e7f8cfff0c074a73234a097f673225c8fdc
         height, width = data.shape
         print( colored('height', 'green'), height )
         print( colored('width', 'green'), width )
