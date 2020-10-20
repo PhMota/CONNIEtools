@@ -1258,6 +1258,7 @@ def add_display_options( p ):
 
     geom = p.add_argument_group('geometry options')
     geom.add_argument( '--E-range', nargs=2, type=eval, default = [-np.inf, np.inf], help = 'Emin Emax' )
+    geom.add_argument( '--E-span', nargs=1, type=eval, default = argparse.SUPPRESS, help = 'mean+-E_span' )
     geom.add_argument( '--x-range', nargs=2, type=eval, default = [None, None], help = 'xmin xmax' )
     geom.add_argument( '--y-range', nargs=2, type=eval, default = [None, None], help = 'ymin ymax' )
     geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
@@ -1414,7 +1415,7 @@ def display( args ):
 
         if 'E_span' in args:
             E = np.median(data)
-            data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
+            data[np.logical_or( data<E-args.E_span, data>E+args.E_span )] = np.nan
 
         if 'x_range' in args:
             data = data[:, args.x_range[0]:args.x_range[1]]
