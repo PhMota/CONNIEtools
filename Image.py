@@ -1299,6 +1299,8 @@ def display( args ):
 
         data = imageHDU.data.astype(float)
         
+        data[data>1e9] = np.nan
+        
         height, width = data.shape
         print( colored('height', 'green'), height )
         print( colored('width', 'green'), width )
@@ -1377,7 +1379,7 @@ def display( args ):
         if 'section' in args:
             if args.section == 'bias' or args.section == 'os':
                 print( colored('section', 'green'), 'overscan' )
-                data = data[None:None, -bias_width+5:None]
+                data = data[None:None, -bias_width:None]
             if args.section == 'data' or args.section == 'ac':
                 print( colored('section', 'green'), 'active' )
                 data = data[None:None, None:-bias_width+5]
@@ -1394,7 +1396,7 @@ def display( args ):
             #data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
 
         if 'x_range' in args:
-            data = data[:, args.x_range[0]:args.x_range[1]] 
+            data = data[:, args.x_range[0]:args.x_range[1]]
         if 'y_range' in args:
             data = data[args.y_range[0]:args.y_range[1], :]
         if 'E_range' in args:
