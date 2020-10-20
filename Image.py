@@ -1428,7 +1428,7 @@ def display( args ):
         elif 'E_range' in args:
             data[data<=args.E_range[0]] = np.nan
             data[data>args.E_range[1]] = np.nan
-            print( colored('E-range', 'green'), args.E_range, np.nanmin(data), np.nanmin(data) )
+            print( colored('E-range', 'green'), args.E_range, np.nanmin(data), np.nanmax(data) )
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
