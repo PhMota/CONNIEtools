@@ -1239,7 +1239,6 @@ def add_display_options( p ):
         help = 'ohdu to be displayed',
         required = True
     )
-    p.add_argument( '--E-span', type=int, default = 10, help = 'E' )
     p.add_argument(
         '--plot',
         nargs = '+',
