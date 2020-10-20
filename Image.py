@@ -1416,14 +1416,19 @@ def display( args ):
 
         if 'x_range' in args:
             data = data[:, args.x_range[0]:args.x_range[1]]
+            print( colored('x-range', 'green'), args.x_range )
         if 'y_range' in args:
             data = data[args.y_range[0]:args.y_range[1], :]
+            print( colored('y-range', 'green'), args.y_range )
         if 'E_span' in args:
             E = np.nanmedian(data)
-            data[np.logical_or( data<E-args.E_span, data>E+args.E_span )] = np.nan
+            mask = np.logical_or( data<E-args.E_span, data>E+args.E_span )
+            data[mask] = np.nan
+            print( colored('E-span', 'green'), args.E_span, np.nanmin(data), np.nanmax(data) )
         elif 'E_range' in args:
             data[data<=args.E_range[0]] = np.nan
             data[data>args.E_range[1]] = np.nan
+            print( colored('E-range', 'green'), args.E_range, np.nanmin(data), np.nanmin(data) )
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
