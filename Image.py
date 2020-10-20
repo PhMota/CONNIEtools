@@ -1413,15 +1413,15 @@ def display( args ):
             print( colored('remove above', 'green'), args.remove )
             data[ data > args.remove ] = np.nan
 
-        if 'E_span' in args:
-            E = np.median(data)
-            data[np.logical_or( data<E-args.E_span, data>E+args.E_span )] = np.nan
 
         if 'x_range' in args:
             data = data[:, args.x_range[0]:args.x_range[1]]
         if 'y_range' in args:
             data = data[args.y_range[0]:args.y_range[1], :]
-        if 'E_range' in args:
+        if 'E_span' in args:
+            E = np.nanmedian(data)
+            data[np.logical_or( data<E-args.E_span, data>E+args.E_span )] = np.nan
+        elif 'E_range' in args:
             data[data<=args.E_range[0]] = np.nan
             data[data>args.E_range[1]] = np.nan
 
