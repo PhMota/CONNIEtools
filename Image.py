@@ -1244,7 +1244,7 @@ def add_display_options( p ):
         nargs = '+',
         type = str,
         default = ['image'],
-        choices = ['proj', 'spectrum', 'image'],
+        # choices = ['proj', 'spectrum', 'image'],
         required = True,
         help = 'plot type'
     )
