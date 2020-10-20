@@ -1321,7 +1321,7 @@ def display( args ):
 
         data = imageHDU.data.astype(float)
         data[data>1e9] = np.nan
-        
+
         height, width = data.shape
         print( colored('height', 'green'), height )
         print( colored('width', 'green'), width )
@@ -1412,9 +1412,9 @@ def display( args ):
             print( colored('remove above', 'green'), args.remove )
             data[ data > args.remove ] = np.nan
 
-        #if 'E_span' in args:
-            #E = np.median(data)
-            #data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
+        if 'E_span' in args:
+            E = np.median(data)
+            data[np.logical_and( data>E-args.E_span, data<E+args.E_span )] = np.nan
 
         if 'x_range' in args:
             data = data[:, args.x_range[0]:args.x_range[1]]
