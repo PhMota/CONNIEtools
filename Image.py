@@ -1489,6 +1489,8 @@ def display( args ):
                 vmax = np.max(np.abs(im - vmean))
                 if 'vmax' in args:
                     vmax = args.vmax
+
+                print( 'vmax', vmax )
                 if args.plot[0] == 'image':
                     func = ax.imshow
                 elif args.plot[0] == 'matrix':
