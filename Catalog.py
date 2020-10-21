@@ -1408,10 +1408,8 @@ def histogram( **args ):
                 print( 'file', file )
                 print( 'br', branch )
                 print( 'sel', selection )
-                for f in glob.glob(file):
-                    print( 'file', f )
-                    data_entry = get_selections( f, [branch], [selection], args.global_selection )
-                    print( 'type', data_entry.values()[0], data_entry.values()[0].size )
+                data_entry = get_selections( glob.glob(file), [branch], [selection], args.global_selection )
+                # print( 'type', data_entry.values()[0], data_entry.values()[0].size )
                 data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
                 print( type(data_selection) )
             print( 'selections', data_selection.keys() )
