@@ -1416,6 +1416,7 @@ def histogram( **args ):
                                         data_entry,
                                         branch,
                                         data_entry_temp,
+                                        dtypes = data_entry_temp.dtypes,
                                         asrecarray = True
                                         )
                     except UnboundLocalError:
