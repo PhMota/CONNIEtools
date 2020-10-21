@@ -1410,19 +1410,16 @@ def histogram( **args ):
                 print( 'sel', selection )
                 for f in glob.glob(file):
                     print( 'file', f )
-                    data_entry_temp = get_selections( f, [branch], [selection], args.global_selection )
-                    try:
-                        data_entry = rfn.append_fields(
-                                        data_entry,
-                                        branch,
-                                        data_entry_temp,
-                                        dtypes = data_entry_temp.dtypes,
-                                        asrecarray = True
-                                        )
-                    except UnboundLocalError:
-                        data_entry = data_entry_temp
+                    data_entry = get_selections( f, [branch], [selection], args.global_selection )
+
                     print( 'type', data_entry.values()[0], data_entry.values()[0].size )
-                data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
+
+                    key = '{}:{}:{}'.format(branch,file, data_entry.keys()[0])
+                    try:
+                        data_selection[key].append( data_entry.values()[0] )
+                    except KeyError:
+                        data_selection[key] = [ data_entry.values()[0] ]
+                    # data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
                 print( type(data_selection) )
             print( 'selections', data_selection.keys() )
             print( 'branches', args.branches )
