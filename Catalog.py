@@ -1180,7 +1180,16 @@ def get_selections( file, branches, selections, global_selection=None, runID_ran
         if global_selection:
             selection_full = global_selection + ' and ' + selection
         selection_string = selection_full.replace('and', '&&')
-        data_selection[selection] = open_HitSummary( file, branches=list(set(branches+extra_branches)), selection='flag==0 && '+selection_string, runID_range=runID_range )
+        list_of_branches = list(set(branches+extra_branches))
+        if type(file) is list:
+            read_data = open_HitSummary( file, branches=list_of_branches, selection='flag==0 && '+selection_string, runID_range=runID_range )
+            data_selection[selection] = rfn.append_fields(
+                                            data_selection[selection],
+                                            list_of_branches,
+                                            read_data,
+                                            asrecarray = True
+                                            )
+
         print( 'read fileds', data_selection[selection].names )
     return data_selection
 
