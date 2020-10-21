@@ -1445,13 +1445,13 @@ def histogram( **args ):
             for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
                 print( 'selection', selection, data_selection[selection][0].names )
                 print( 'selection', data_selection[selection][0][branch].shape, len(bins) )
-                data = data_selection[selection]
+
                 x_data = None
-                for datum in data:
+                for datum in data_selection[selection]:
                     if x_data is None:
                         x_data = datum[branch]
                     else:
-                        x_data = np.concatenate( (x_data, datum[branch]) )
+                        x_data = concatenate( (x_data, datum[branch]) )
                 factor = 1
                 if 'factor' in args:
                     factor = args.factor
