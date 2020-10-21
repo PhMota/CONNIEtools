@@ -1181,17 +1181,17 @@ def get_selections( file, branches, selections, global_selection=None, runID_ran
             selection_full = global_selection + ' and ' + selection
         selection_string = selection_full.replace('and', '&&')
         list_of_branches = list(set(branches+extra_branches))
-        if type(file) is list:
-            for f in file:
-                read_data = open_HitSummary( file, branches=list_of_branches, selection='flag==0 && '+selection_string, runID_range=runID_range )
-                data_selection[selection] = rfn.append_fields(
-                                                data_selection[selection],
-                                                list_of_branches,
-                                                read_data,
-                                                asrecarray = True
-                                                )
-        else:
-            data_selection[selection] = open_HitSummary( file, branches=list_of_branches, selection='flag==0 && '+selection_string, runID_range=runID_range )
+        # if type(file) is list:
+        #     for f in file:
+        #     read_data = open_HitSummary( file, branches=list_of_branches, selection='flag==0 && '+selection_string, runID_range=runID_range )
+        #     data_selection[selection] = rfn.append_fields(
+        #                                     data_selection[selection],
+        #                                     list_of_branches,
+        #                                     read_data,
+        #                                     asrecarray = True
+        #                                     )
+        # else:
+        data_selection[selection] = open_HitSummary( file, branches=list_of_branches, selection='flag==0 && '+selection_string, runID_range=runID_range )
         print( 'read fileds', data_selection[selection].names )
     return data_selection
 
@@ -1408,8 +1408,17 @@ def histogram( **args ):
                 print( 'file', file )
                 print( 'br', branch )
                 print( 'sel', selection )
-                data_entry = get_selections( glob.glob(file), [branch], [selection], args.global_selection )
-                # print( 'type', data_entry.values()[0], data_entry.values()[0].size )
+                for f in glob.glob(file):
+                    print( 'file', f )
+                    data_entry_temp = get_selections( f, [branch], [selection], args.global_selection )
+
+                    data_entry = rfn.append_fields(
+                                        data_entry,
+                                        branch,
+                                        data_entry_temp,
+                                        asrecarray = True
+                                        )
+                    print( 'type', data_entry.values()[0], data_entry.values()[0].size )
                 data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
                 print( type(data_selection) )
             print( 'selections', data_selection.keys() )
