@@ -1443,15 +1443,20 @@ def histogram( **args ):
         #ax.hist(data, bins=bins, histtype='step', label='all')
         if 'selections' in args:
             for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
-                print( 'selection', selection, data_selection[selection].names )
-                print( 'selection', data_selection[selection][branch].shape, len(bins) )
-                datum = data_selection[selection]
-
+                print( 'selection', selection, data_selection[selection][0].names )
+                print( 'selection', data_selection[selection][0][branch].shape, len(bins) )
+                data = data_selection[selection]
+                x_data = None
+                for datum in data:
+                    if x_data is None:
+                        x_data = datum[branch]
+                    else:
+                        x_data = np.concatenate( (x_data, datum[branch]) )
                 factor = 1
                 if 'factor' in args:
                     factor = args.factor
-                hist, x, dx = stats.make_histogram( datum[branch], bins )
-                ax.errorbar( x+i*dx/2./len(args.branches), hist*factor, xerr=dx/2., yerr=sqrt(hist)*factor, label='{} ({})'.format(selection,datum[branch].size), fmt='.' )
+                hist, x, dx = stats.make_histogram( x_data, bins )
+                ax.errorbar( x+i*dx/2./len(args.branches), hist*factor, xerr=dx/2., yerr=sqrt(hist)*factor, label='{} ({})'.format(selection, x_data.size), fmt='.' )
         ax.legend()
         ax.grid()
         ax.set_xlabel(args.branches[0])
