@@ -19,21 +19,15 @@ import weave
 from numpy.lib import recfunctions as rfn
 import matplotlib
 matplotlib.use('gtk3agg')
-
+# matplotlib.rc('text', usetex=True)
 
 
 from numpy.lib.recfunctions import append_fields, stack_arrays
 from numpy import *
 import Statistics as stats
 
-with Timer('import'):
-    from ROOT import TFile, TTree, AddressOf
-
-    #import rootpy
-    #import rootpy.io
-    #from array import array
-    #from rootpy.tree import Tree, TreeModel, IntCol, IntArrayCol, FloatCol, FloatArrayCol, CharArrayCol
-    #from rootpy.io import root_open
+# with Timer('import'):
+from ROOT import TFile, TTree, AddressOf
 
 import Image
 import Simulation
@@ -1417,7 +1411,9 @@ def histogram( **args ):
                 file = args.root_file[3*i+1]
 
                 selection = args.root_file[3*i+2]
-                args.selections.append('{}:{}:{}'.format(branch,file,selection))
+                key = 'branch: {}\nfiles: {}\nselections: {}'.format(branch, file, selection)
+
+                args.selections.append(key)
                 print( 'file', file )
                 print( 'br', branch )
                 print( 'sel', selection )
@@ -1427,7 +1423,6 @@ def histogram( **args ):
 
                     print( 'type', data_entry.values()[0], data_entry.values()[0].size )
 
-                    key = '{}:{}:{}'.format(branch,file, data_entry.keys()[0])
                     try:
                         data_selection[key].append( data_entry.values()[0] )
                     except KeyError:
@@ -1452,7 +1447,10 @@ def histogram( **args ):
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        ax.set_title(', '.join(args.branches))
+        title = ', '.join(args.branches)
+        if 'global_selection' in args:
+            title += '\n' + args.global_selection
+        ax.set_title(title)
         #ax.hist(data, bins=bins, histtype='step', label='all')
         if 'selections' in args:
             for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
@@ -1469,8 +1467,14 @@ def histogram( **args ):
                 if 'factor' in args:
                     factor = args.factor
                 hist, x, dx = stats.make_histogram( x_data, bins )
-                ax.errorbar( x+i*dx/2./len(args.branches), hist*factor, xerr=dx/2., yerr=sqrt(hist)*factor, label='{} ({})'.format(selection, x_data.size), fmt='.' )
-        ax.legend()
+                ax.errorbar(
+                    x+i*dx/2./len(args.branches),
+                    hist*factor,
+                    xerr = dx/2.,
+                    yerr = sqrt(hist)*factor,
+                    label = '{} ({})'.format(selection, x_data.size), fmt = '.' )
+        legend_artist = ax.legend(frameon=False)
+        # legend_artist = ax.legend(loc='upper center', bbox_to_anchor=(0.5,0))
         ax.grid()
         ax.set_xlabel(args.branches[0])
         ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
@@ -1484,12 +1488,14 @@ def histogram( **args ):
         args.output = args.root_file
 
     if 'pdf' in args:
-        fig.savefig(args.output+'.pdf')
+        fig.savefig(args.output+'.pdf', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
         print( 'saved', args.output+'.pdf' )
     elif 'png' in args:
         fig.savefig(args.output+'.png')
-        print( 'saved', args.output+'.png' )
+        print( 'saved', args.output+'.png', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
     else:
+        # fig.tight_layout()
+        fig.subplots_adjust()
         plt.show()
     return
 
