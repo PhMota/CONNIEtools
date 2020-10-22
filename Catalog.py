@@ -41,20 +41,33 @@ import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
 from scipy.sparse import csr_matrix
-from scipy.stats import binned_statistic
+# from scipy.stats import binned_statistic
 from scipy.special import erf, erfinv
-
 
 def binned_statistic_fast(x, values, func, nbins, range):
     '''The usage is nearly the same as scipy.stats.binned_statistic'''
 
-    N = len(values)
     r0, r1 = range
 
     digitized = (float(nbins)/(r1 - r0)*(x - r0)).astype(int)
-    S = csr_matrix((values, [digitized, np.arange(N)]), shape=(nbins, N))
+    values = values[digitized < nbins].astype(float)
+    digitized = digitized[digitized < nbins]
 
-    return [func(group) for group in np.split(S.data, S.indptr[1:-1])]
+    N = len(values)
+    S = csr_matrix((values, [digitized, arange(N)]), shape=(nbins, N))
+
+    return [func(group) for group in split(S.data, S.indptr[1:-1])]
+
+# def binned_statistic_fast(x, values, func, nbins, range):
+#     '''The usage is nearly the same as scipy.stats.binned_statistic'''
+#
+#     N = len(values)
+#     r0, r1 = range
+#
+#     digitized = (float(nbins)/(r1 - r0)*(x - r0)).astype(int)
+#     S = csr_matrix((values, [digitized, arange(N)]), shape=(nbins, N))
+#
+#     return [func(group) for group in split(S.data, S.indptr[1:-1])]
 
 class NeighborIndexHistogram:
     def __init__( self, data, length, shift=1 ):
@@ -1292,11 +1305,11 @@ def scatter( **args ):
 
                     if 'errorbar' in args:
                         bins = arange( args.x_range[0], args.x_range[1], 20 )
-                        bin_means, bin_edges, binnumber = binned_statistic( x, y, statistic='mean', bins=bins )
+                        bin_means, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='mean', bins=bins )
                         xbins = .5*(bin_edges[1:] + bin_edges[:-1])
                         dx = bin_edges[1] - bin_edges[0]
                         yerr = [0]*len(bin_means)
-                        bin_std, bin_edges, binnumber = binned_statistic( x, y, statistic='std', bins=bin_edges )
+                        bin_std, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='std', bins=bin_edges )
                         yerr = bin_std
                         ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
 
