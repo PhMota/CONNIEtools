@@ -1199,7 +1199,7 @@ def get_selections( file, branches, selections, global_selection=None, runID_ran
         #                                     )
         # else:
         data_selection[selection] = open_HitSummary( file, branches=list_of_branches, selection='flag==0 && '+selection_string, runID_range=runID_range )
-        print( 'read fileds', data_selection[selection].names )
+        # print( 'read fileds', data_selection[selection].names )
     return data_selection
 
 
@@ -1239,45 +1239,117 @@ def scatter( **args ):
     args = Namespace(**args)
     import matplotlib.pylab as plt
     with Timer('scatter'):
+        print( 'len', len(args.root_file) )
 
-        file = glob.glob(args.root_file)
+        if len(args.root_file) == 1:
+            args.root_file = args.root_file[0]
 
-        args.xbranches = []
-        args.ybranches = []
-        args.cbranches = []
-        args.selections = []
-        has_color = False
+            file = glob.glob(args.root_file)
 
-        for branch_selection in args.branch_selections:
-            args.xbranches.append( branch_selection[0] )
-            args.ybranches.append( branch_selection[1] )
-            if len(branch_selection) == 4:
-                args.cbranches.append( branch_selection[2] )
-                has_color = True
-            args.selections.append( branch_selection[-1] )
-        if not has_color:
-            args.cbranches = args.xbranches
+            args.xbranches = []
+            args.ybranches = []
+            args.cbranches = []
+            args.selections = []
+            has_color = False
 
-        if not 'runID_range' in args:
-            args.runID_range = None
-        data_selection = get_selections( file[0],
+            print( args.branch_selections )
+            for branch_selection in args.branch_selections:
+                args.xbranches.append( branch_selection[0] )
+                args.ybranches.append( branch_selection[1] )
+                if len(branch_selection) == 4:
+                    args.cbranches.append( branch_selection[2] )
+                    has_color = True
+                args.selections.append( branch_selection[-1] )
+            if not has_color:
+                args.cbranches = args.xbranches
+
+            data_selection = get_selections(
+                                file[0],
+                                args.branches,
+                                args.selections,
+                                args.global_selection, runID_range = args.runID_range
+            )
+
+            data_selection = get_selections( file[0],
                                         args.xbranches + args.ybranches + args.cbranches,
                                         args.selections,
                                         args.global_selection,
                                         runID_range=args.runID_range,
-                                        #extra_branches=[ 'ePix', 'xPix', 'yPix', 'level' ]
-                                        )
+            )
+
+        else:
+            nargs = len(args.root_file)
+            print( args.root_file )
+
+            args.xbranches = []
+            args.ybranches = []
+            args.cbranches = []
+            args.selections = []
+            args.sel_expr = []
+            args.files = []
+            has_color = False
+
+            data_selection = {}
+            for i in range(nargs/4):
+                xbranch = args.root_file[4*i+0]
+                args.xbranches.append(xbranch)
+                ybranch = args.root_file[4*i+1]
+                args.ybranches.append(ybranch)
+
+                file = args.root_file[4*i+2]
+                args.files.append(file)
+                selection = args.root_file[4*i+3]
+                args.sel_expr.append(selection)
+
+                key = 'xbranch: {}, ybranch: {}\nfiles: {}\nselections: {}'.format(xbranch, ybranch, file, selection)
+
+                args.selections.append(key)
+                print( 'file', file )
+                print( 'br', xbranch, ybranch )
+                print( 'sel', selection )
+
+                for f in glob.glob(file):
+                    print( 'file', f )
+                    data_entry = get_selections( f, [xbranch,ybranch], [selection], args.global_selection )
+
+                    try:
+                        data_selection[key].append( data_entry.values()[0] )
+                    except KeyError:
+                        data_selection[key] = [ data_entry.values()[0] ]
+            if not has_color:
+                args.cbranches = args.xbranches
+
+            print( 'selections', data_selection.keys() )
+            print( 'branches', args.xbranches, args.ybranches )
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
+        title = '{} vs {}'.format(args.xbranches[0], args.ybranches[0])
         if 'global_selection' in args:
-            ax.set_title( args.global_selection )
+            subtitle = args.global_selection
+            if len(subtitle) > 50:
+                new_subtitle = subtitle[:50]
+                for i in range(1, len(subtitle)/50+1):
+                    new_subtitle += '\n' + subtitle[i*50:(i+1)*50]
+            subtitle = new_subtitle
+            title += '\n' + subtitle
+        if not 'no_title' in args:
+            ax.set_title(title)
+
         scatter_obj = []
+
         if 'selections' in args:
             markers = ['.', '+', 'x', '^']
-            for xbranch, ybranch, cbranches, selection, marker in zip(args.xbranches, args.ybranches, args.cbranches, args.selections, markers):
+            for index, (xbranch, ybranch, cbranches, files, sel_expr, selection) in enumerate( zip(args.xbranches, args.ybranches, args.cbranches, args.files, args.sel_expr, args.selections) ):
                 print( 'plot', xbranch, ybranch, cbranches )
-                datum = data_selection[selection]
+                x_data = None
+                for datum in data_selection[selection]:
+                    if x_data is None:
+                        x_data = datum[xbranch]
+                        y_data = datum[ybranch]
+                    else:
+                        x_data = concatenate((x_data, datum[xbranch]))
+                        y_data = concatenate((y_data, datum[ybranch]))
 
                 if has_color:
                     colors = datum[cbranches]
@@ -1288,27 +1360,28 @@ def scatter( **args ):
                     cmap = None
                     alpha = (len(datum))**(-.1) if len(datum) > 0 else 1
 
-                if xbranch in datum.names and ybranch in datum.names or True:
+                label = ''
+                if not 'no_label_branch' in args:
+                    label += 'x: {}, y: {}\n'.format(xbranch, ybranch)
+                if not 'no_label_file' in args:
+                    label += 'files: {}\n'.format(files)
+                if not 'no_label_selection' in args:
+                    label += 'sel: {}'.format(sel_expr)
+                label += ' ({})'.format(x_data.size)
 
-                    x = datum[xbranch]
-                    y = datum[ybranch]
-                    #x = x[ logical_and(args.x_range[0] < x, x < args.x_range[1], axis=0) ]
-                    #y = y[ logical_and(args.y_range[0] < x, x < args.y_range[1], axis=0) ]
+                scatter_obj.append( ax.scatter( x_data, y_data, label = label, marker=markers[index%4], c=colors, alpha=alpha, cmap=cmap ) )
 
-                    scatter_obj.append( ax.scatter( x, y, label = '{} vs. {} ({})\n{}'.format( ybranch, xbranch, x.size, selection ), marker=marker, c=colors, alpha=alpha, cmap=cmap ) )
+                if 'errorbar' in args:
+                    bins = arange( args.x_range[0], args.x_range[1], 20 )
+                    bin_means, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='mean', bins=bins )
+                    xbins = .5*(bin_edges[1:] + bin_edges[:-1])
+                    dx = bin_edges[1] - bin_edges[0]
+                    yerr = [0]*len(bin_means)
+                    bin_std, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='std', bins=bin_edges )
+                    yerr = bin_std
+                    ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
 
-                    if 'errorbar' in args:
-                        bins = arange( args.x_range[0], args.x_range[1], 20 )
-                        bin_means, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='mean', bins=bins )
-                        xbins = .5*(bin_edges[1:] + bin_edges[:-1])
-                        dx = bin_edges[1] - bin_edges[0]
-                        yerr = [0]*len(bin_means)
-                        bin_std, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='std', bins=bin_edges )
-                        yerr = bin_std
-                        ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
-
-
-        ax.legend()
+        ax.legend(frameon=False)
         ax.grid()
         ax.set_xlim( *args.x_range )
         ax.set_ylim( *args.y_range )
@@ -1326,24 +1399,21 @@ def scatter( **args ):
         args.output = args.root_file
 
     if 'pdf' in args:
-        extra = ''
-        fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
+        # extra = ''
+        # fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
+        fname = args.output+'.png'
         fig.savefig( fname )
         print( 'saved', fname )
     elif 'png' in args:
-        #extra = ''
-        #if 'fit' in args:
-            #extra += '_fit{}'.format(''.join(args.fit))
-        #fname = args.output+'.scatter.{}.vs.{}{}.png'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
         fname = args.output+'.png'
-        fig.savefig( fname )
+        fig.savefig( fname, bbox_inches='tight' )
         print( 'saved', fname )
     else:
         plt.show()
     return
 
 def add_scatter_options(p):
-    p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.add_argument('root_file', nargs='+', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('-s', '--branch-selections', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branches used for x- and y-axis' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     #p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
@@ -1358,6 +1428,10 @@ def add_scatter_options(p):
     p.add_argument('--fit', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
     p.add_argument('--noise', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
     p.add_argument('--errorbar', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
     p.set_defaults(_func=scatter)
 
 def energy_threshold( datum, threshold ):
@@ -1421,14 +1495,14 @@ def histogram( **args ):
                     print( 'file', f )
                     data_entry = get_selections( f, [branch], [selection], args.global_selection )
 
-                    print( 'type', data_entry.values()[0], data_entry.values()[0].size )
+                    # print( 'type', data_entry.values()[0], data_entry.values()[0].size )
 
                     try:
                         data_selection[key].append( data_entry.values()[0] )
                     except KeyError:
                         data_selection[key] = [ data_entry.values()[0] ]
                     # data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
-                print( type(data_selection) )
+                # print( type(data_selection) )
             print( 'selections', data_selection.keys() )
             print( 'branches', args.branches )
             #exit(0)
@@ -1449,9 +1523,15 @@ def histogram( **args ):
         ax = fig.add_subplot(111)
         title = ', '.join(args.branches)
         if 'global_selection' in args:
-            title += '\n' + args.global_selection
+            subtitle = args.global_selection
+            if len(subtitle) > 50:
+                new_subtitle = subtitle[:50]
+                for i in range(1, len(subtitle)/50+1):
+                    new_subtitle += '\n' + subtitle[i*50:(i+1)*50]
+            subtitle = new_subtitle
+            title += '\n' + subtitle
         ax.set_title(title)
-        #ax.hist(data, bins=bins, histtype='step', label='all')
+
         if 'selections' in args:
             for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
                 print( 'selection', selection, data_selection[selection][0].names )
@@ -1468,7 +1548,7 @@ def histogram( **args ):
                     factor = args.factor
                 hist, x, dx = stats.make_histogram( x_data, bins )
                 ax.errorbar(
-                    x+i*dx/2./len(args.branches),
+                    x+i*dx/5./len(args.branches),
                     hist*factor,
                     xerr = dx/2.,
                     yerr = sqrt(hist)*factor,
@@ -1491,8 +1571,8 @@ def histogram( **args ):
         fig.savefig(args.output+'.pdf', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
         print( 'saved', args.output+'.pdf' )
     elif 'png' in args:
-        fig.savefig(args.output+'.png')
-        print( 'saved', args.output+'.png', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
+        fig.savefig(args.output+'.png', bbox_extra_artists=(legend_artist,), bbox_inches='tight')
+        print( 'saved', args.output+'.png' )
     else:
         # fig.tight_layout()
         fig.subplots_adjust()

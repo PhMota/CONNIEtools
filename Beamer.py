@@ -18,7 +18,7 @@ preamble = r'''
   \setbeamertemplate{navigation symbols}{}
   \setbeamertemplate{caption}[numbered]
   \setbeamertemplate{footline}[frame number]
-} 
+}
 
 \usepackage[english]{babel}
 \usepackage[utf8x]{inputenc}
@@ -36,7 +36,7 @@ preamble = r'''
 language=Python,
 breakatwhitespace=true,
 breaklines=true,
-basicstyle=\sffamily\tiny,
+basicstyle=\fontsize{4}{5}\sffamily,
 keywordstyle=\bf\color{blue},
 showtabs=true,
 tabsize=2,
@@ -72,33 +72,32 @@ B = '\n'
 
 class Beamer:
     def writelines( self, s, mode = 'a' ):
-        open( '%s.tex' % (self.fname+'/'+self.fname), mode ).writelines( s )
-    
-    def __init__(self, fname='calculations', title='simulation tools'):
-        self.fname = fname
-        self.folder = fname
+        open( '%s.tex' % (self.folder+'/'+self.basename), mode ).writelines( s )
+
+    def __init__(self, folder='calculations', title='simulation tools'):
+        self.folder = folder
         if not os.path.exists(self.folder):
             os.mkdirs(self.folder)
-        self.basename = '{0}/{0}'.format(fname)
+        self.basename = self.folder.split('/')[-1]
         self.writelines( preamble %( title, title ), mode = 'w' )
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, type, value, traceback):
         self.writelines( [r'\end{document}'] )
-        self.pdflatex( self.fname )
+        self.pdflatex()
 
-    def pdflatex(self, basename ):
-        self.subprocess_cmd( 'cd {0}; pdflatex {0}.tex >/dev/null; cd ..'.format(basename) )
+    def pdflatex(self):
+        self.subprocess_cmd( 'cd {0}; pwd; ls; pdflatex {1}.tex >/dev/null; cd ..'.format(self.folder, self.basename) )
 
     def subprocess_cmd(self, command):
         subprocess.call( [command], shell=True )
         #process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
         #proc_stdout = process.communicate()[0].strip()
-        
+
         #return proc_stdout
-    
+
     def par( self, s ):
         self.writelines( [s + '\n'] )
 
@@ -106,7 +105,7 @@ class Beamer:
 
     def section( self, text ):
         self.writelines( [ r'\section{%s}' % text] )
-    
+
     def environment( self, s, env = 'equation' ):
         self.writelines( [r'\begin{%s}' % env] )
         self.writelines( s )
@@ -146,15 +145,15 @@ class Beamer:
 
     def code( self, c=None, language=None, file=None, func=None ):
         if file:
-            if not os.path.exists('%s/%s' % (self.fname,file)):
+            if not os.path.exists('%s/%s' % (self.folder,file)):
                 print( 'running function' )
                 func()
-            return r'\lstinputlisting{{{}}}'.format(self.fname+'/'+file)+B
+            return r'\lstinputlisting{{{}}}'.format(self.folder+'/'+file)+B
         s = r'\begin{lstlisting}[language=%s]' % (language) + B
         s += c
         s += r'\end{lstlisting}' + B
         return s
-    
+
     def column( self, *args, **kwargs ):
         s = ''
         widths = kwargs['widths']
@@ -164,17 +163,17 @@ class Beamer:
             s += arg+B
         s += r'\end{columns}'+B
         return s
-    
+
     def center(self, *lines ):
         s = r'\begin{center}' + B
         for line in lines:
             s += line
         s += r'\end{center}' + B
         return s
-        
+
     def set_func( self, func ):
         self.func = func
-        
+
     def check_file( self, fname ):
         if not os.path.exists(fname):
             print('!!! file not found', fname)
@@ -186,15 +185,15 @@ class Beamer:
         print('file found', fname)
         print('skipping')
 
-        
+
     def itemize( self, *items ):
         s = r'\begin{itemize}' + B
         for item in items:
             s += '\item ' + item + B
         s += r'\end{itemize}' + B
         return s
-        
-    
+
+
     def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None, center=False ):
         fname = path
         #try:
@@ -206,7 +205,7 @@ class Beamer:
         if center:
             s += r'\begin{center}' + B
         if width is not None:
-            s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B 
+            s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B
         elif height is not None:
             s += r'\includegraphics[height={height}\paperheight]{{{fname}}}'.format(height=height, fname=fname) + B
         elif scale is not None:
@@ -216,12 +215,12 @@ class Beamer:
         if center:
             s += r'\end{center}' + B
         return s
-        
+
     def table( self, file, fontsize=12, spacing=15, func=None, divide=1 ):
         s = ''
         fname = '%s/%s' % (self.fname,file)
         self.check_file(fname)
-        
+
         for d in range(divide):
             s += r'{{\fontsize{{{}}}{{{}}}\selectfont'.format(fontsize,spacing)+B
             s += r'{\setlength{\tabcolsep}{0.2em}'+B
@@ -236,7 +235,7 @@ class Beamer:
             s += r'}'+B
             s += r'}'+B
         return s
-    
+
     def tabular( self, matrix, align=None, s='' ):
         if align in ['c','r','l']:
             align = [align]*len(matrix[0])
@@ -249,7 +248,7 @@ class Beamer:
         s += r'}' + B
         #print( s )
         return s
-        
+
 def openBeamer( fname, title ): return Beamer( fname, title )
 
 #def math( expr ):
@@ -280,10 +279,10 @@ class Expr:
         self.s = s
     def __str__(self):
         return self.s
-    
+
     def __repr__(self):
         return self.s
-    
+
     def __neg__(self):
         return Expr(r'-{}'.format(self.s))
 
@@ -300,13 +299,13 @@ class Expr:
 
     def __rsub__(self, a):
         return ExprAdd(r'{}-{}'.format( str(a), self.s ))
-    
+
     def __div__( self, a ):
         return frac(self.s, a)
 
     def __rdiv__( self, a ):
         return frac(a, self.s )
-    
+
     def __mul__( self, a ):
         if isinstance( a, ExprAdd ):
             return a.__rmul__(self.s)
@@ -314,15 +313,15 @@ class Expr:
 
     def __rmul__( self, a ):
         return ExprMul(r'{}{}'.format( str(a), self.s ))
-    
+
     def __or__( self, a ):
         return Expr(r'{}|{}'.format(self.s, str(a) ))
-    
+
     def __call__( self, *a ):
         p = ', '.join( map(str,a) )
         p = delim(p)
         return Expr(r'{}{}'.format( self.s, p ) )
-        
+
     def __eq__( self, a ):
         if type(a) is tuple or type(a) is list:
             return Expr(r'{} \wall = {} \return'.format( self.s, r' \\ ='.join(map(str,a)) ) )
@@ -330,12 +329,12 @@ class Expr:
 
     def __req__( self, a ):
         return Expr(r'{} = {}'.format( str(a), self.s ) )
-    
+
     def __getitem__( self, a ):
         if type(a) is tuple:
             return Expr(r'{}_{{{}}}^{{{}}}'.format( self.s, str(a[0]), str(a[1]) ) )
         return Expr(r'{}_{{{}}}'.format( self.s, str(a) ) )
-    
+
     def __pow__( self, a ):
         return Expr(r'{}^{{ {} }}'.format( self.s, str(a) ) )
 
@@ -344,7 +343,7 @@ class Expr:
 
     def __sqrt__(self):
         return Expr(r'\sqrt{{ {} }}'.format( self.s ) )
-    
+
 class ExprGen:
     def __or__( self, a ):
         return Expr(a)
@@ -355,20 +354,20 @@ class ExprAdd(Expr):
 
     def __pow__( self, a ):
         return Expr(r'{}^{}'.format( delim(self.s), str(a) ) )
-    
+
     def __mul__( self, a ):
         return ExprMul(r'{}{}'.format( delim(self.s), str(a) ) )
 
     def __rmul__( self, a ):
         return ExprMul(r'{}{}'.format( str(a), delim(self.s) ) )
-    
+
     def __neg__(self):
         return Expr(r'-{}'.format(delim(self.s)))
-    
+
     def __rsub__(self, a):
         return Expr(r'{}-{}'.format(str(a),delim(self.s)) )
-    
-    
+
+
 class ExprMul(Expr):
     def __init__(self, s):
         self. s = s
