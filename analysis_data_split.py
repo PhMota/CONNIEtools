@@ -51,12 +51,27 @@ with Timer('presentation'):
         )
         # ohdu_selection = 'ohdu==3'
         ohdu_selection = '(ohdu<6 || ohdu==8 || ohdu==9 || ohdu==13 || ohdu==14)'
+        ohdu_selection20 = '(ohdu<6 || ohdu==9 || ohdu==13 || ohdu==14)'
         geometric_selection = '(xMin>140 and xMax<3960 and yMin>75 and yMax<898 and hPixFlag==0)'
         runID_selection = '(runID>6226 and runID<6975) || (runID>14712 and runID<15178)'
-        energy_selection = 'E0/gain3Peaks>.045 and E1/gain3Peaks>0.05 and E1/gain3Peaks<3.05'
+
+        runID_excluded = '(runID != 6415 and runID != 6475 and runID != 6499 and runID != 6926 and runID != 6927 and runID != 6031 and runID != 6093 and runID != 6096 and runID != 6139 and runID != 7074 and runID != 7222 and runID != 7226 and runID != 7374)'
+        runID_excluded20 = '(runID != 14729 and runID != 14816 and runID != 13125 and runID != 13126 and runID != 13315 and runID != 13628 and runID != 13911 and runID != 14069 and runID != 14212 and runID != 14661) and ((ohdu==5)*( runID<15128))'
+
+        energy_selection = 'E0/gain3Peaks>.045 and E1/gain3Peaks>0.05 and E1/gain3Peaks<1.05'
         size_selection = 'sizell<.95'
 
+        off19 = "(runID>6226 and runID<6975)"
+        on19 = "((runID>6030 and runID<6227) || (runID>6974 and runID<7522))"
+
+        off20 = "(runID>14712 and runID<15178)"
+        on20 = " ((runID>13013 and runID<13762) || (runID>13910 and runID<14311) || (runID>14510 and runID<14713))"
+
         global_selection = r' and '.join([ohdu_selection, geometric_selection, energy_selection, size_selection])
+
+        global_selection_hpix = r' and '.join([ohdu_selection, geometric_selection, energy_selection])
+
+        global_selection_hpix20 = r' and '.join([ohdu_selection20, geometric_selection, energy_selection])
 
         doc.frame('noise off19 and off20',
             '',
@@ -93,6 +108,69 @@ with Timer('presentation'):
                 'scatter_zoom_noise_dc.png',
                 doc,
                 height = .4
+                )
+        )
+    # scnNoise "/sh*/s*2/co*/D*/nu*/sh*_d*_14[7,9]*_*.root" 1 \\
+
+        doc.frame('event time evolution off19',
+            '',
+            makefigure(
+"""\
+./catalog histogram \\
+    runID "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" 1 \\
+    --global-selection "{}" \\
+    --no-title --no-label-file --x-range 6300 6950 --binsize 1 --output {}/event_time_evo --png
+""".format(global_selection, folder),
+                'event_time_evo.png',
+                doc,
+                height = .6
+                )
+        )
+
+        doc.frame('event time evolution off19',
+            '',
+            makefigure(
+"""\
+./catalog histogram \\
+    runID "/sh*/s*2/co*/D*/Cat*/hpix*_d*_6*_*.root" 1 \\
+    --global-selection "{} and {} and {}" \\
+    --no-title --no-label-file --x-range 6200 7000 --binsize 1 --output {}/event_time_evo_hpix --png
+""".format(global_selection_hpix, off19, runID_excluded, folder),
+                'event_time_evo_hpix.png',
+                doc,
+                height = .6
+                )
+        )
+
+        doc.frame('event time evolution on19 and off19',
+            '',
+            makefigure(
+"""\
+./catalog histogram \\
+    runID "/sh*/s*2/co*/D*/Cat*/hpix*_d*_[6,7]*_*.root" "{}" \\
+    runID "/sh*/s*2/co*/D*/Cat*/hpix*_d*_[6,7]*_*.root" "{}" \\
+    --global-selection "{} and {}" \\
+    --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --output {}/event_time_evo_hpix_on_excl_no0 --png
+""".format(off19, on19, global_selection_hpix, runID_excluded, folder),
+                'event_time_evo_hpix_on_excl_no0.png',
+                doc,
+                height = .6
+                )
+        )
+
+        doc.frame('event time evolution on20 and off20',
+            '',
+            makefigure(
+"""\
+./catalog histogram \\
+    runID "/sh*/s*2/co*/D*/Cat*/hpix*qcalib*_d*_[13,14,15]*_*.root" "{}" \\
+    runID "/sh*/s*2/co*/D*/Cat*/hpix*qcalib*_d*_[13,14,15]*_*.root" "{}" \\
+    --global-selection "{} and {}" \\
+    --hide-zeros --no-title --no-label-file --x-range 13000 15200 --binsize 1 --output {}/event_time_evo_hpix_on_off20_no0excl --png
+""".format(off20, on20, global_selection_hpix20, runID_excluded20, folder),
+                'event_time_evo_hpix_on_off20_no0excl.png',
+                doc,
+                height = .6
                 )
         )
 

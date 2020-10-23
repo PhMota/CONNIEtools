@@ -868,7 +868,7 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
         stop = amax(argwhere(runIDs==runID_range[1]))+1
     #if not branches is None:
         #branches = list( set(branches) & set(root_numpy.list_branches( file, treename='hitSumm' )) )
-    print( file, root_numpy.list_branches( file, treename='hitSumm' ) )
+    print( ', '.join( root_numpy.list_branches( file, treename='hitSumm' )) )
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
 
 def update_catalog( fname, output, hitSummary ):
@@ -1477,14 +1477,19 @@ def histogram( **args ):
             print( args.root_file )
             args.branches = []
             args.selections = []
+            args.files = []
+            args.sel_expr = []
             data_selection = {}
             for i in range(nargs/3):
                 branch = args.root_file[3*i+0]
                 args.branches.append(branch)
 
                 file = args.root_file[3*i+1]
+                args.files.append(file)
 
                 selection = args.root_file[3*i+2]
+                args.sel_expr.append(selection)
+
                 key = 'branch: {}\nfiles: {}\nselections: {}'.format(branch, file, selection)
 
                 args.selections.append(key)
@@ -1530,10 +1535,11 @@ def histogram( **args ):
                     new_subtitle += '\n' + subtitle[i*50:(i+1)*50]
             subtitle = new_subtitle
             title += '\n' + subtitle
-        ax.set_title(title)
+        if not 'no_title' in args:
+            ax.set_title(title)
 
         if 'selections' in args:
-            for i, (branch, selection) in enumerate(zip(args.branches, args.selections)):
+            for i, (branch, selection, files, sel_expr) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr)):
                 print( 'selection', selection, data_selection[selection][0].names )
                 print( 'selection', data_selection[selection][0][branch].shape, len(bins) )
 
@@ -1547,12 +1553,28 @@ def histogram( **args ):
                 if 'factor' in args:
                     factor = args.factor
                 hist, x, dx = stats.make_histogram( x_data, bins )
+
+                if 'hide_zeros' in args:
+                    x = x[hist>0]
+                    hist = hist[hist>0]
+
+                label = ''
+                if not 'no_label_branch' in args:
+                    label += 'branch: {}\n'.format(branch)
+                if not 'no_label_file' in args:
+                    label += 'files: {}\n'.format(file)
+                if not 'no_label_selection' in args:
+                    label += 'sel: {}'.format(
+                        '\n'.join([sel_expr[:50]] + [sel_expr[i*50:(i+1)*50] for i in range(1, len(sel_expr)/50) ] )
+                        )
+                label += ' ({})'.format(x_data.size)
+
                 ax.errorbar(
                     x+i*dx/5./len(args.branches),
                     hist*factor,
                     xerr = dx/2.,
                     yerr = sqrt(hist)*factor,
-                    label = '{} ({})'.format(selection, x_data.size), fmt = '.' )
+                    label = label, fmt = '.' )
         legend_artist = ax.legend(frameon=False)
         # legend_artist = ax.legend(loc='upper center', bbox_to_anchor=(0.5,0))
         ax.grid()
@@ -1594,6 +1616,11 @@ def add_histogram_options(p):
     p.add_argument('--log', action='store_true', default=argparse.SUPPRESS, help = 'log' )
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
+    p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--hide-zeros', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
 
     p.set_defaults(_func=histogram)
 
