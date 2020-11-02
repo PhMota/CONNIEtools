@@ -1564,8 +1564,9 @@ def histogram( **args ):
                 if not 'no_label_file' in args:
                     label += 'files: {}\n'.format(file)
                 if not 'no_label_selection' in args:
+                    max_length = 40
                     label += 'sel: {}'.format(
-                        '\n'.join([sel_expr[:50]] + [sel_expr[i*50:(i+1)*50] for i in range(1, len(sel_expr)/50) ] )
+                        '\n'.join([sel_expr[:40]] + [sel_expr[i*40:(i+1)*40] for i in range(1, len(sel_expr)/40+1) ] )
                         )
                 label += ' ({})'.format(x_data.size)
 
