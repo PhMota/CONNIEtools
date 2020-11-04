@@ -78,6 +78,9 @@ class F(object):
     def __radd__(self, s):
         return s + str(self.text)
 
+    def str(self):
+        return str(self.text)
+
 folder = '../analysis_data_split'
 
 print( F("folder") )
@@ -86,18 +89,22 @@ print( F("{{folder}}") )
 if not os.path.exists(folder):
     os.mkdir(folder)
 
-def makefigure( code, file, doc, height=1. ):
+def makefigure( code, filename, doc, height=1. ):
+    fullpath = F('{{folder}}/{{filename}}').str()
+    print( fullpath )
+
+    code += F(' --output "{{fullpath}}"').str()
     a = doc.code( code, language='Bash' )
-    if not os.path.exists(folder + '/' + file):
+    if not os.path.exists(fullpath):
         print()
-        print(code)
+        print( colored(code, 'green' ))
         print()
         subprocess.call( ["%s" % code], shell=True )
-    if not os.path.exists(folder + '/' + file):
+    if not os.path.exists(fullpath):
         print()
-        print( '!!!not found', folder + '/' + file )
+        print( '!!!not found', fullpath )
         exit(0)
-    b = doc.figure( file, height=height, center=True )
+    b = doc.figure( filename, height=height, center=True )
     return ''.join([a,b])
 
 def requiredFile( code, file, doc ):
@@ -149,6 +156,90 @@ with Timer('presentation'):
 
         global_selection_hpix20 = r' and '.join([ohdu_selection20, geometric_selection, energy_selection])
 
+        nuCatalogs = '/share/storage2/connie/DAna/nuCatalogs/shape*data*.root'
+
+        ohdus19 = [2,3,4,5,8,9,13,14]
+
+        # doc.frame('noise off19 zoom',
+        #     '',
+        #     makefigure(
+        #         F("""\
+        #         ./catalog scatter \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==2" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==3" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==4" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==5" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==8" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==9" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==13" \\
+        #             scnNoise scnDC "{{nuCatalogs}}" "ohdu==14" \\
+        #             --global-selection "{{global_selection}}" \\
+        #             --no-title --no-label-branch --no-label-file --x-range 1.45 2.1 --y-range 0.02 0.06 --png \\
+        #         """),
+        #         'scatter_zoom_noise_dc_a.png', doc, height = .4 )
+        # )
+
+        doc.frame('event time evolution on19 and off19 0.05--1.05keV',
+            doc.column(
+                makefigure(
+                    F("""\
+                    ./catalog histogram \\
+                        runID "{{nuCatalogs}}" "{{off19}}" \\
+                        runID "{{nuCatalogs}}" "{{on19}}" \\
+                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \\
+                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png \\
+                    """),
+                    'event_time_evo_c.png', doc, height = .6 ),
+                makefigure(
+                    F("""\
+                    ./catalog histogram \\
+                        runID "{{nuCatalogs}}" "{{off19}}" \\
+                        runID "{{nuCatalogs}}" "{{on19}}" \\
+                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \\
+                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png --count-histogram --extra-binsize 1\\
+                    """),
+                    'event_time_evo_count.png', doc, height = .6 ),
+                    widths=[.5,.5]
+                )
+        )
+
+
+        for ohdu in ohdus19:
+            this_ohdu_selection = 'ohdu==%s' % ohdu
+            this_global_selection = r' and '.join([this_ohdu_selection, geometric_selection, energy_selection, size_selection])
+
+            doc.frame(F('event time evolution on19 and off19 0.05--1.05keV ohdu{{ohdu}}'),
+                '',
+                makefigure(
+                    F("""\
+                    ./catalog histogram \\
+                        runID "{{nuCatalogs}}" "{{off19}}" \\
+                        runID "{{nuCatalogs}}" "{{on19}}" \\
+                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}} and ohdu=={{ohdu}}" \\
+                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png \\
+                    """),
+                    F('event_time_evo_ohdu{{ohdu}}_c.png'),
+                    doc,
+                    height = .6
+                    )
+            )
+
+#             doc.frame('off19 and off20 ohdu=%s' % ohdu,
+#                 '',
+#                 makefigure(
+# """
+# ./catalog histogram \\
+#     E1/gain3Peaks "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" 1 \\
+#     E1/gain3Peaks "/sh*/s*2/co*/D*/nu*/sh*_d*_14[7,9]*_*.root" 1 \\
+#     --global-selection "{}" \\
+#     --x-range 0.05 3.05 --binsize .2 --output {}/hist_test_ohdu{} --png
+# """.format(this_global_selection, folder, ohdu),
+#                     'hist_test_ohdu{}.png'.format(ohdu),
+#                     doc,
+#                     height = .6
+#                     )
+#             )
+
 #         doc.frame('noise off19 and off20',
 #             '',
 #             makefigure(
@@ -165,27 +256,6 @@ with Timer('presentation'):
 #                 )
 #         )
 
-        doc.frame('noise off19 zoom',
-            '',
-            makefigure(
-"""\
-./catalog scatter \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==2" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==3" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==4" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==5" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==8" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==9" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==13" \\
-    scnNoise scnDC "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" "ohdu==14" \\
-    --global-selection "{}" \\
-    --no-title --no-label-branch --no-label-file --x-range 1.45 2.1 --y-range 0.02 0.06 --output {}/scatter_zoom_noise_dc --png
-""".format(global_selection, folder),
-                'scatter_zoom_noise_dc.png',
-                doc,
-                height = .4
-                )
-        )
     # scnNoise "/sh*/s*2/co*/D*/nu*/sh*_d*_14[7,9]*_*.root" 1 \\
 
 #         doc.frame('event time evolution off19',
@@ -248,22 +318,6 @@ with Timer('presentation'):
 #                 height = .6
 #                 )
 #         )
-
-        doc.frame('event time evolution on19 and off19 0.5--1keV',
-            '',
-            makefigure(
-F("""\
-./catalog histogram \\
-    runID "/sh*/s*2/co*/D*/ckCat*/shape*_data*_[6,7]*_*.root" "{{off19}}" \\
-    runID "/sh*/s*2/co*/D*/ckCat*/shape*_data*_[6,7]*_*.root" "{{on19}}" \\
-    --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.5,1.)}}" \\
-    --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --output {{folder}}/event_time_evo_hpix_on_excl_no0_e --png
-"""),#.format(off19, on19, global_selection_hpix, runID_excluded, energy_selection_function(0.05, 1.05), folder),
-                'event_time_evo_hpix_on_excl_no0_e.png',
-                doc,
-                height = .6
-                )
-        )
 
 #         doc.frame('event time evolution on20 and off20',
 #             '',
@@ -359,39 +413,3 @@ F("""\
 #                 height = .6
 #                 )
 #         )
-
-        for ohdu in [2,3,4,5,8,9,13,14]:
-            this_ohdu_selection = 'ohdu==%s' % ohdu
-            this_global_selection = r' and '.join([this_ohdu_selection, geometric_selection, energy_selection, size_selection])
-
-            doc.frame(F('event time evolution on19 and off19 0.5--1keV ohdu{{ohdu}}'),
-                '',
-                makefigure(
-    F("""\
-    ./catalog histogram \\
-        runID "/sh*/s*2/co*/D*/ckCat*/shape*_data*_[6,7]*_*.root" "{{off19}}" \\
-        runID "/sh*/s*2/co*/D*/ckCat*/shape*_data*_[6,7]*_*.root" "{{on19}}" \\
-        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.5,1.)}} and ohdu=={{ohdu}}" \\
-        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --output {{folder}}/event_time_evo_hpix_on_excl_no0_ohdu{{ohdu}} --png
-    """),#.format(off19, on19, global_selection_hpix, runID_excluded, energy_selection_function(0.05, 1.05), folder),
-                    F('event_time_evo_hpix_on_excl_no0_ohdu{{ohdu}}.png'),
-                    doc,
-                    height = .6
-                    )
-            )
-
-#             doc.frame('off19 and off20 ohdu=%s' % ohdu,
-#                 '',
-#                 makefigure(
-# """
-# ./catalog histogram \\
-#     E1/gain3Peaks "/sh*/s*2/co*/D*/nu*/sh*_d*_6*_*.root" 1 \\
-#     E1/gain3Peaks "/sh*/s*2/co*/D*/nu*/sh*_d*_14[7,9]*_*.root" 1 \\
-#     --global-selection "{}" \\
-#     --x-range 0.05 3.05 --binsize .2 --output {}/hist_test_ohdu{} --png
-# """.format(this_global_selection, folder, ohdu),
-#                     'hist_test_ohdu{}.png'.format(ohdu),
-#                     doc,
-#                     height = .6
-#                     )
-#             )

@@ -868,7 +868,7 @@ def open_HitSummary( file, branches=None, selection=None, start=None, stop=None,
         stop = amax(argwhere(runIDs==runID_range[1]))+1
     #if not branches is None:
         #branches = list( set(branches) & set(root_numpy.list_branches( file, treename='hitSumm' )) )
-    print( ', '.join( root_numpy.list_branches( file, treename='hitSumm' )) )
+    # print( ', '.join( root_numpy.list_branches( file, treename='hitSumm' )) )
     return HitSummary( root_numpy.root2array( file, treename='hitSumm', branches=branches, selection=selection, start=start, stop=stop).view(recarray) )
 
 def update_catalog( fname, output, hitSummary ):
@@ -1395,21 +1395,23 @@ def scatter( **args ):
     if 'output' in args:
         if args.output == '':
             args.output = args.root_file
+        fig.savefig( args.output, bbox_inches='tight' )
     else:
-        args.output = args.root_file
-
-    if 'pdf' in args:
-        # extra = ''
-        # fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
-        fname = args.output+'.png'
-        fig.savefig( fname )
-        print( 'saved', fname )
-    elif 'png' in args:
-        fname = args.output+'.png'
-        fig.savefig( fname, bbox_inches='tight' )
-        print( 'saved', fname )
-    else:
+        # args.output = args.root_file
         plt.show()
+
+    # if 'pdf' in args:
+    #     # extra = ''
+    #     # fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
+    #     fname = args.output+'.png'
+    #     fig.savefig( fname )
+    #     print( 'saved', fname )
+    # elif 'png' in args:
+    #     fname = args.output+'.png'
+    #     fig.savefig( fname, bbox_inches='tight' )
+    #     print( 'saved', fname )
+    # else:
+    #     plt.show()
     return
 
 def add_scatter_options(p):
@@ -1570,12 +1572,18 @@ def histogram( **args ):
                         )
                 label += ' ({})'.format(x_data.size)
 
-                ax.errorbar(
-                    x+i*dx/5./len(args.branches),
-                    hist*factor,
-                    xerr = dx/2.,
-                    yerr = sqrt(hist)*factor,
-                    label = label, fmt = '.' )
+                if 'count_histogram' in args:
+                    ax.hist(
+                        x,
+                        bins = arange(min(x), max(x), args.binsize2),
+                        label = label, fmt = '.' )
+                else:
+                    ax.errorbar(
+                        x+i*dx/5./len(args.branches),
+                        hist*factor,
+                        xerr = dx/2.,
+                        yerr = sqrt(hist)*factor,
+                        label = label, fmt = '.' )
         legend_artist = ax.legend(frameon=False)
         # legend_artist = ax.legend(loc='upper center', bbox_to_anchor=(0.5,0))
         ax.grid()
@@ -1587,19 +1595,23 @@ def histogram( **args ):
     if 'output' in args:
         if args.output == '':
             args.output = args.root_file
+        fig.savefig( args.output, bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
+        print( 'saved', args.output )
     else:
         args.output = args.root_file
-
-    if 'pdf' in args:
-        fig.savefig(args.output+'.pdf', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
-        print( 'saved', args.output+'.pdf' )
-    elif 'png' in args:
-        fig.savefig(args.output+'.png', bbox_extra_artists=(legend_artist,), bbox_inches='tight')
-        print( 'saved', args.output+'.png' )
-    else:
-        # fig.tight_layout()
         fig.subplots_adjust()
         plt.show()
+
+    # if 'pdf' in args:
+    #     fig.savefig(args.output+'.pdf', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
+    #     print( 'saved', args.output+'.pdf' )
+    # elif 'png' in args:
+    #     fig.savefig(args.output+'.png', bbox_extra_artists=(legend_artist,), bbox_inches='tight')
+    #     print( 'saved', args.output+'.png' )
+    # else:
+    #     # fig.tight_layout()
+    #     fig.subplots_adjust()
+    #     plt.show()
     return
 
 def add_histogram_options(p):
@@ -1611,6 +1623,7 @@ def add_histogram_options(p):
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
     p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
     p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
+    p.add_argument('--binsize2', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
     p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
@@ -1618,10 +1631,12 @@ def add_histogram_options(p):
     p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
     p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--hide-zeros', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+    p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'hide branchat the label' )
+    p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'hide the file at the label' )
+    p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'hide the selection at the label' )
+    p.add_argument('--hide-zeros', action='store_true', default=argparse.SUPPRESS, help = 'hide zero values' )
+    p.add_argument('--count-histogram', action='store_true', default=argparse.SUPPRESS, help = 'creat a count histogram' )
+
 
     p.set_defaults(_func=histogram)
 
