@@ -6,80 +6,7 @@ from Timer import Timer
 import sys
 from termcolor import colored
 #from numpy import *
-
-import inspect
-import re
-class F(object):
-    """String formatter based on Python 3.6 'f' strings
-    `F` will automatically format anything between two
-    braces (ie: {{ ... }}) when printed. The original
-    representation of the string is kept as well and
-    printed with `print(repr(f_string))`.
-    There is also a stand alone method which takes a
-    `regex` and a `string` for input and returns the
-    string with all pattern matches replaced.
-    Attributes:
-        _string: the string to be formatted
-        text: the newly formatted string
-    """
-    _regex = re.compile("\{\{([^}]+)\}\}", re.S)
-
-    def __init__(self, s, regex=None):
-        """Init `F` with string `s`"""
-        self.regex = regex or self._regex
-        self._string = s
-        self.f_locals = self.original_caller.f_locals
-        self.f_globals = self.original_caller.f_globals
-        self.text = self._find_and_replace(s)
-
-    @property
-    def original_caller(self):
-        names = []
-        frames = []
-        frame = inspect.currentframe()
-        while True:
-            try:
-                frame = frame.f_back
-                name = frame.f_code.co_name
-                names.append(name)
-                frames.append(frame)
-            except:
-                break
-        return frames[-2]
-
-    def _find_and_replace(self, s):
-        """Evaluates and returns all occurrences of `regex` in `s`"""
-        return re.sub(self._regex, self._clean_and_eval, s)
-
-    def _clean_and_eval(self, m):
-        """Remove surrounding braces and whitespace from regex match `m`,
-            evaluate, and return the result as a string.
-        """
-        replaced = m.group()[2:][:-2].strip()
-        try:
-            result = str(eval(replaced))
-            return result
-        except (TypeError, NameError, SyntaxError):
-            try:
-                result = str(eval(replaced, self.f_locals, self.f_globals))
-                return result
-            except (TypeError, NameError, SyntaxError):
-                raise ValueError("Can't find replacement for {{ %s }}, sorry." % replaced)
-
-    def __str__(self):
-        return str(self.text)
-
-    def __repr__(self):
-        return str(self._string)
-
-    def __add__(self, s):
-        return str(self.text) + s
-
-    def __radd__(self, s):
-        return s + str(self.text)
-
-    def str(self):
-        return str(self.text)
+from fstring import F
 
 folder = '../analysis_data_split'
 
@@ -179,28 +106,24 @@ with Timer('presentation'):
         #         'scatter_zoom_noise_dc_a.png', doc, height = .4 )
         # )
 
-        doc.frame('event time evolution on19 and off19 0.05--1.05keV',
-            doc.column(
-                makefigure(
-                    F("""\
-                    ./catalog histogram \\
-                        runID "{{nuCatalogs}}" "{{off19}}" \\
-                        runID "{{nuCatalogs}}" "{{on19}}" \\
-                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \\
-                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png \\
-                    """),
-                    'event_time_evo_c.png', doc, height = .6 ),
-                makefigure(
-                    F("""\
-                    ./catalog histogram \\
-                        runID "{{nuCatalogs}}" "{{off19}}" \\
-                        runID "{{nuCatalogs}}" "{{on19}}" \\
-                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \\
-                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png --count-histogram --extra-binsize 1\\
-                    """),
-                    'event_time_evo_count.png', doc, height = .6 ),
-                    widths=[.5,.5]
-                )
+        doc.frame('time evolution on19 and off19 0.05--1.05keV',
+            makefigure(
+                F('./catalog histogram \
+                -s runID "{{nuCatalogs}}" "{{off19}}" "OFF19"\
+                -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
+                --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \
+                --hide-zeros --no-title --no-label-file --no-label-branch --x-range 6000 7600 --binsize 1 --png'),
+                'event_time_evo_2.png', doc, height = .6 ),
+        )
+
+        doc.frame('histogram on19 and off19 0.05--1.05keV',
+            makefigure(
+                F('./catalog histogram \
+                -s runID "{{nuCatalogs}}" "{{off19}}" "OFF19"\
+                -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
+                --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \
+                --hide-zeros --no-title --no-label-file --no-label-branch --x-range 6000 7600 --binsize 1 --png --count-histogram --extra-binsize 1'),
+                'event_time_evo_count4.png', doc, height = .6 ),
         )
 
 
@@ -209,16 +132,26 @@ with Timer('presentation'):
             this_global_selection = r' and '.join([this_ohdu_selection, geometric_selection, energy_selection, size_selection])
 
             doc.frame(F('event time evolution on19 and off19 0.05--1.05keV ohdu{{ohdu}}'),
-                '',
                 makefigure(
-                    F("""\
-                    ./catalog histogram \\
-                        runID "{{nuCatalogs}}" "{{off19}}" \\
-                        runID "{{nuCatalogs}}" "{{on19}}" \\
-                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}} and ohdu=={{ohdu}}" \\
-                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png \\
-                    """),
-                    F('event_time_evo_ohdu{{ohdu}}_c.png'),
+                    F('./catalog histogram \
+                        -s runID "{{nuCatalogs}}" "{{off19}}" "OFF19"\
+                        -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
+                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}} and ohdu=={{ohdu}}" \
+                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png'),
+                    F('event_time_evo_ohdu{{ohdu}}_2.png'),
+                    doc,
+                    height = .6
+                    )
+            )
+
+            doc.frame(F('event time evolution on19 and off19 0.05--1.05keV ohdu{{ohdu}}'),
+                makefigure(
+                    F('./catalog histogram \
+                        -s runID "{{nuCatalogs}}" "{{off19}}" "OFF19"\
+                        -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
+                        --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}} and ohdu=={{ohdu}}" \
+                        --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --count-histogram --extra-binsize 1'),
+                    F('event_time_evo_count_ohdu{{ohdu}}_2.png'),
                     doc,
                     height = .6
                     )

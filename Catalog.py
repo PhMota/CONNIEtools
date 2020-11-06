@@ -1456,7 +1456,33 @@ def histogram( **args ):
     import matplotlib.pylab as plt
     with Timer('histogram'):
         print( 'len', len(args.root_file) )
-        if len(args.root_file) == 1:
+        if len(args.root_file) == 0:
+            args.branches = []
+            args.files = []
+            args.selections = []
+            args.labels = []
+            args.sel_expr = []
+            data_selection = {}
+            for selection in args.selection:
+                branch = selection[0]
+                file = selection[1]
+                sel = selection[2]
+                label = selection[3]
+                args.branches.append(branch)
+                args.files.append(file)
+                args.sel_expr.append(sel)
+                args.labels.append(label)
+
+                key = label
+                args.selections.append(key)
+                for f in glob.glob(file):
+                    data_entry = get_selections( f, [branch], [sel], args.global_selection )
+                    try:
+                        data_selection[key].append( data_entry.values()[0] )
+                    except KeyError:
+                        data_selection[key] = [ data_entry.values()[0] ]
+
+        elif len(args.root_file) == 1:
             args.root_file = args.root_file[0]
 
             file = glob.glob(args.root_file)
@@ -1513,7 +1539,8 @@ def histogram( **args ):
             print( 'selections', data_selection.keys() )
             print( 'branches', args.branches )
             #exit(0)
-
+        if 'labels' not in args:
+            args.labels = ['']*len(args.selections)
 
         if 'x_range' in args:
             bins = arange( args.x_range[0], args.x_range[1], args.binsize )
@@ -1541,7 +1568,7 @@ def histogram( **args ):
             ax.set_title(title)
 
         if 'selections' in args:
-            for i, (branch, selection, files, sel_expr) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr)):
+            for i, (branch, selection, files, sel_expr, label) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr, args.labels)):
                 print( 'selection', selection, data_selection[selection][0].names )
                 print( 'selection', data_selection[selection][0][branch].shape, len(bins) )
 
@@ -1560,23 +1587,24 @@ def histogram( **args ):
                     x = x[hist>0]
                     hist = hist[hist>0]
 
-                label = ''
-                if not 'no_label_branch' in args:
-                    label += 'branch: {}\n'.format(branch)
-                if not 'no_label_file' in args:
-                    label += 'files: {}\n'.format(file)
-                if not 'no_label_selection' in args:
-                    max_length = 40
-                    label += 'sel: {}'.format(
-                        '\n'.join([sel_expr[:40]] + [sel_expr[i*40:(i+1)*40] for i in range(1, len(sel_expr)/40+1) ] )
-                        )
+                if label == '':
+                    label = ''
+                    if not 'no_label_branch' in args:
+                        label += 'branch: {}\n'.format(branch)
+                    if not 'no_label_file' in args:
+                        label += 'files: {}\n'.format(file)
+                    if not 'no_label_selection' in args:
+                        max_length = 40
+                        label += 'sel: {}'.format(
+                            '\n'.join([sel_expr[:40]] + [sel_expr[i*40:(i+1)*40] for i in range(1, len(sel_expr)/40+1) ] )
+                            )
                 label += ' ({})'.format(x_data.size)
 
+
                 if 'count_histogram' in args:
-                    ax.hist(
-                        x,
-                        bins = arange(min(x), max(x), args.binsize2),
-                        label = label, fmt = '.' )
+                    extrabins = arange(min(hist), max(hist), args.extra_binsize)
+                    extrahist, _, _ = stats.make_histogram( hist, extrabins )
+                    ax.step( extrahist, extrabins[:-1], where='pre', label=label, lw=2 )
                 else:
                     ax.errorbar(
                         x+i*dx/5./len(args.branches),
@@ -1615,15 +1643,16 @@ def histogram( **args ):
     return
 
 def add_histogram_options(p):
-    p.add_argument('root_file', nargs='+', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
+    p.add_argument('root_file', nargs='*', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('--branch-selections', action='append', nargs=2, type=str, default=argparse.SUPPRESS, help = 'selections' )
+    p.add_argument('-s','--selection', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
     p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
     p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
-    p.add_argument('--binsize2', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
+    p.add_argument('--extra-binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
     p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
