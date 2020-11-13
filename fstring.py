@@ -54,7 +54,7 @@ class F(object):
         # print( 'names', names )
         # print( 'frames[-1]', frames[-1] )
         # print( 'frames[-1]', frames[-1].f_locals )
-        return frames[-1]
+        return frames[2]
 
     def _find_and_replace(self, s):
         """Evaluates and returns all occurrences of `regex` in `s`"""
@@ -79,7 +79,7 @@ class F(object):
         return str(self.text)
 
     def __repr__(self):
-        return str(self._string)
+        return repr(self._string)
 
     def __add__(self, s):
         return str(self.text) + s
@@ -88,4 +88,4 @@ class F(object):
         return s + str(self.text)
 
     def str(self):
-        return str(self.text)
+        return self.text.__str__()

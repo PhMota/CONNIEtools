@@ -1,6 +1,7 @@
 from __future__ import print_function
 import subprocess
 import os
+from fstring import F
 
 preamble = r'''
 \documentclass{beamer}
@@ -271,17 +272,18 @@ def delim( a ):
     if '(' in str(a):
         if '[' in str(a):
             return r'\{{ {} \}}'.format( str(a) )
-        return r'[{}]'.format( str(a) )
-    return r'({})'.format( str(a) )
+        return Expr( r'[{}]'.format( str(a) ) )
+    return Expr( F(r'({{str(a)}})') )
 
 class Expr:
     def __init__(self, s):
         self.s = s
+
     def __str__(self):
-        return self.s
+        return str(self.s)
 
     def __repr__(self):
-        return self.s
+        return str(self.s)
 
     def __neg__(self):
         return Expr(r'-{}'.format(self.s))
@@ -320,7 +322,7 @@ class Expr:
     def __call__( self, *a ):
         p = ', '.join( map(str,a) )
         p = delim(p)
-        return Expr(r'{}{}'.format( self.s, p ) )
+        return Expr( r'{}{}'.format( self.s, p ) )
 
     def __eq__( self, a ):
         if type(a) is tuple or type(a) is list:
@@ -376,12 +378,15 @@ class ExprMul(Expr):
 
 
 mu = Expr(r'\mu ')
+nu = Expr(r'\nu ')
+delta = Expr(r'\delta ')
 sigma = Expr(r'\sigma ')
 alpha = Expr(r'\alpha ')
 pi = Expr(r'\pi ')
 xi = Expr(r'\xi ')
 
 Gamma = Expr(r'\Gamma ')
+Delta = Expr(r'\Delta ')
 Prod = Expr(r'\prod ')
 Sum = Expr(r'\sum ')
 exp = Expr(r'{\rm exp}')
