@@ -2,6 +2,7 @@ from __future__ import print_function
 import subprocess
 import os
 from fstring import F
+from termcolor import colored
 
 preamble = r'''
 \documentclass{beamer}
@@ -425,3 +426,45 @@ def factorial(a):
     if isinstance(a, ExprAdd) or isinstance(a, ExprMul):
         Expr(r'({})!'.format( str(a) ) )
     return Expr(r'{}!'.format( str(a) ) )
+
+
+import hashlib
+
+def my_hash(entry):
+    return int(hashlib.md5(str(entry)).hexdigest(), 16)
+
+def makefigure( code, filename, doc, height=1., folder='' ):
+    split_filename = str(filename).split('.')
+    print( 'hash', str(my_hash(code)) )
+    filename = '.'.join( split_filename[:-1] + [str(my_hash(code)), split_filename[-1]] )
+    fullpath = F('{{folder}}/{{filename}}').str()
+    print( 'fullpath', fullpath )
+
+    code += F(' --output "{{fullpath}}"').str()
+    code_print = code.replace('\n', r'\n')
+    a = doc.code( code_print, language='Bash' )
+    if not os.path.exists(fullpath):
+        print()
+        print( colored(code_print, 'green' ))
+        print()
+        subprocess.call( ["%s" % code], shell=True )
+    if not os.path.exists(fullpath):
+        print()
+        print( '!!!not found', fullpath )
+        exit(0)
+    b = doc.figure( filename, height=height, center=True )
+    return ''.join([a,b])
+
+def requiredFile( code, file, doc ):
+    a = doc.code( code, language='Bash' )
+    if not os.path.exists(folder+'/'+file):
+        print()
+        print(code)
+        print()
+        subprocess.call( [code], shell=True )
+    #b = doc.figure( file, height=height, center=True )
+    return a
+
+def makecmd( **options ):
+    cmd = options.pop('prog')
+    print( options )

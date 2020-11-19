@@ -1574,34 +1574,73 @@ def histogram( **args ):
             ax.set_title(title)
 
         if 'function' in args:
-            for function in args.function:
+            for i, function in enumerate(args.function):
                 print( 'args.function', function )
                 exec_string = function[0]
-                if len(function) > 1:
-                    exec_string_err = function[1]
-                else:
-                    exec_string_err = None
-                print( 'exec_string', exec_string, exec_string_err )
-                hist = {}
+                # if len(function) > 1:
+                #     exec_string_err = function[1]
+                # else:
+                #     exec_string_err = None
+                # print( 'exec_string', exec_string, exec_string_err )
+                # hist = {}
+                data = {}
                 for (key, entries), branch in zip( data_selection.items(), args.branches ):
-                    data = None
+                    exec_string = exec_string.replace(key, F('data["{{key}}"]').str() )
+                    function[1] = function[1].replace(key, F('data["{{key}}"]').str() )
+                    data[key] = None
                     for entry in entries:
-                        if data is None: data = entry[branch]
-                        else: data = concatenate( (data, entry[branch]) )
-                    print( key, len(data) )
-                    hist[key], x, dx = stats.make_histogram( data, bins )
-                    hist[key] = hist[key].astype(float)
+                        if data[key] is None: data[key] = entry[branch]
+                        else: data[key] = concatenate( (data[key], entry[branch]) )
+                    # print( key, len(data[key]), data[key], bins )
+                    # hist[key], x, dx = stats.make_histogram( data, bins )
+                    # hist[key] = hist[key].astype(float)
+                def roundRel(v, rel):
+                    # print('decimals', v, 10**rel)
+                    decimals = -log10(v) - rel
+                    # print('decimals', decimals, int(ceil(decimals)), round( v, int(ceil(decimals)) ))
+                    return round( v, int(ceil(decimals)) )
+                def wmean(v, w=1):
+                    return average(v, weights=w)
+                def wstd(v, w=1):
+                    # print( 'wstd', wmean(v**2, w) - wmean(v, w)**2 )
+                    return sqrt( wmean(v**2, w) - wmean(v, w)**2 )
+                def unique_unsorted(v):
+                    _, idx = unique(v, return_index=True)
+                    x = bins[1:] + bins[:-1]
+                    dx = bins[1:] - bins[:-1]
+                    y = v[ sort(idx) ]
+                    return x/2, y, dx/2, sqrt(y)
+                def hist(v, bins_, norm=False, edge=False):
+                    y, x, dx = stats.make_histogram( v, bins_ )
+                    y = y.astype(float)
+                    if norm:
+                        yerr = sqrt(y)/sum(y)
+                        y /= sum(y)
+                    else:
+                        yerr = sqrt(y)
+                    if edge:
+                        x -= dx/2
+                    return x, y, dx, yerr
+                def hist_pos(v, bins_, norm=False, edge=False):
+                    x, y, dx, dy = hist(v, bins_, norm, edge)
+                    mask = y>0
+                    return x[mask], y[mask], dx, dy[mask]
 
-                expr = eval( exec_string )
-                yerr_expr = eval( exec_string_err ) if not exec_string_err is None else None
+                print( 'exec_string', exec_string )
+                print( 'label', function[1] )
+                x, y, xerr, yerr = eval( exec_string )
+                label = F(function[1])
 
-                ax.errorbar(
-                    x+i*dx/5./len(args.function),
-                    expr,
-                    xerr = dx/2.,
-                    yerr = yerr_expr,
-                    label = F(function[2]) if len(function) > 2 else function[0],
-                    fmt = ' ' )
+                print( 'x', x, xerr )
+                markers, caps, bars = ax.errorbar(
+                    x+i*xerr/5./len( args.function ),
+                    y,
+                    xerr = xerr/2.,
+                    yerr = yerr,
+                    label = label,
+                    fmt = 'o',
+                    ms = 3 )
+                [bar.set_alpha(.2) for bar in bars]
 
             # exit(0)
         elif 'selections' in args:
@@ -1652,12 +1691,13 @@ def histogram( **args ):
                         yerr = sqrt(hist)*factor,
                         label = label, fmt = ' ' )
         try:
-            legend_artist = ax.legend(frameon=False)
+            # legend_artist = ax.legend(frameon=False)
+            legend_artist = ax.legend()
         except IndexError:
             legend_artist = None
             print( 'index error in legend')
         # legend_artist = ax.legend(loc='upper center', bbox_to_anchor=(0.5,0))
-        ax.grid()
+        ax.grid(alpha=.5)
         if 'xlabel' in args:
             ax.set_xlabel(args.xlabel)
         else:
@@ -1720,8 +1760,8 @@ def add_histogram_options(p):
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
     p.add_argument('--log', action='store_true', default=argparse.SUPPRESS, help = 'log' )
-    p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
-    p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
+    # p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
+    # p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
     p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
     p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'hide branchat the label' )
     p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'hide the file at the label' )
