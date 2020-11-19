@@ -19,6 +19,10 @@ import weave
 from numpy.lib import recfunctions as rfn
 import matplotlib
 matplotlib.use('gtk3agg')
+matplotlib.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.sans-serif": ["Helvetica"]})
 # matplotlib.rc('text', usetex=True)
 
 
@@ -37,6 +41,7 @@ from PrintVar import print_var
 from scipy.sparse import csr_matrix
 # from scipy.stats import binned_statistic
 from scipy.special import erf, erfinv
+from fstring import F
 
 def binned_statistic_fast(x, values, func, nbins, range):
     '''The usage is nearly the same as scipy.stats.binned_statistic'''
@@ -1455,7 +1460,7 @@ def histogram( **args ):
 
     import matplotlib.pylab as plt
     with Timer('histogram'):
-        print( 'len', len(args.root_file) )
+        print( 'number of input args', len(args.root_file) )
         if len(args.root_file) == 0:
             args.branches = []
             args.files = []
@@ -1477,6 +1482,7 @@ def histogram( **args ):
                 args.selections.append(key)
                 for f in glob.glob(file):
                     data_entry = get_selections( f, [branch], [sel], args.global_selection )
+                    print( 'len(data_entry)', len(data_entry.values()[0]) )
                     try:
                         data_selection[key].append( data_entry.values()[0] )
                     except KeyError:
@@ -1567,10 +1573,41 @@ def histogram( **args ):
         if not 'no_title' in args:
             ax.set_title(title)
 
-        if 'selections' in args:
+        if 'function' in args:
+            for function in args.function:
+                print( 'args.function', function )
+                exec_string = function[0]
+                if len(function) > 1:
+                    exec_string_err = function[1]
+                else:
+                    exec_string_err = None
+                print( 'exec_string', exec_string, exec_string_err )
+                hist = {}
+                for (key, entries), branch in zip( data_selection.items(), args.branches ):
+                    data = None
+                    for entry in entries:
+                        if data is None: data = entry[branch]
+                        else: data = concatenate( (data, entry[branch]) )
+                    print( key, len(data) )
+                    hist[key], x, dx = stats.make_histogram( data, bins )
+                    hist[key] = hist[key].astype(float)
+
+                expr = eval( exec_string )
+                yerr_expr = eval( exec_string_err ) if not exec_string_err is None else None
+
+                ax.errorbar(
+                    x+i*dx/5./len(args.function),
+                    expr,
+                    xerr = dx/2.,
+                    yerr = yerr_expr,
+                    label = F(function[2]) if len(function) > 2 else function[0],
+                    fmt = ' ' )
+
+            # exit(0)
+        elif 'selections' in args:
             for i, (branch, selection, files, sel_expr, label) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr, args.labels)):
-                print( 'selection', selection, data_selection[selection][0].names )
-                print( 'selection', data_selection[selection][0][branch].shape, len(bins) )
+                print( 'selection.names', selection, data_selection[selection][0].names )
+                print( 'selection.shape', data_selection[selection][0][branch].shape, 'len(bins)', len(bins) )
 
                 x_data = None
                 for datum in data_selection[selection]:
@@ -1578,6 +1615,7 @@ def histogram( **args ):
                         x_data = datum[branch]
                     else:
                         x_data = concatenate( (x_data, datum[branch]) )
+                    print( 'len(x_data)', len(x_data) )
                 factor = 1
                 if 'factor' in args:
                     factor = args.factor
@@ -1600,30 +1638,44 @@ def histogram( **args ):
                             )
                 label += ' ({})'.format(x_data.size)
 
-
+                print( 'plot label', label )
                 if 'count_histogram' in args:
                     extrabins = arange(min(hist), max(hist), args.extra_binsize)
                     extrahist, _, _ = stats.make_histogram( hist, extrabins )
                     ax.step( extrahist, extrabins[:-1], where='pre', label=label, lw=2 )
                 else:
+                    print('errorbar', label, len(x), len(hist))
                     ax.errorbar(
                         x+i*dx/5./len(args.branches),
                         hist*factor,
                         xerr = dx/2.,
                         yerr = sqrt(hist)*factor,
-                        label = label, fmt = '.' )
-        legend_artist = ax.legend(frameon=False)
+                        label = label, fmt = ' ' )
+        try:
+            legend_artist = ax.legend(frameon=False)
+        except IndexError:
+            legend_artist = None
+            print( 'index error in legend')
         # legend_artist = ax.legend(loc='upper center', bbox_to_anchor=(0.5,0))
         ax.grid()
-        ax.set_xlabel(args.branches[0])
-        ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
+        if 'xlabel' in args:
+            ax.set_xlabel(args.xlabel)
+        else:
+            ax.set_xlabel(args.branches[0])
+        if 'ylabel' in args:
+            ax.set_ylabel(args.ylabel)
+        else:
+            ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
         if 'log' in args:
             ax.set_yscale('log')
 
     if 'output' in args:
         if args.output == '':
             args.output = args.root_file
-        fig.savefig( args.output, bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
+        if legend_artist != None:
+            fig.savefig( args.output, bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
+        else:
+            fig.savefig( args.output, bbox_inches='tight' )
         print( 'saved', args.output )
     else:
         args.output = args.root_file
@@ -1645,12 +1697,23 @@ def histogram( **args ):
 def add_histogram_options(p):
     p.add_argument('root_file', nargs='*', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
     p.add_argument('--branch-selections', action='append', nargs=2, type=str, default=argparse.SUPPRESS, help = 'selections' )
+
     p.add_argument('-s','--selection', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
+
+    p.add_argument('-f','--function', nargs='+', action='append', type=str, default=argparse.SUPPRESS, help = 'function' )
+
     p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
     p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
     #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
+    p.add_argument('--xlabel', type=str, default=argparse.SUPPRESS, help = 'xlabel' )
+
+    p.add_argument('--ylabel', type=str, default=argparse.SUPPRESS, help = 'ylabel' )
+
+    p.add_argument('--average', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'average from min to max' )
+
     p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
+
     p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
     p.add_argument('--extra-binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
     p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )

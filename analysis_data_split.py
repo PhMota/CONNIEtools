@@ -17,8 +17,10 @@ if not os.path.exists(folder):
     os.mkdir(folder)
 
 def makefigure( code, filename, doc, height=1. ):
+    split_filename = filename.str().split('.')
+    filename = '.'.join( split_filename[:-1] + [str(hash(code)), split_filename[-1]] )
     fullpath = F('{{folder}}/{{filename}}').str()
-    print( fullpath )
+    print( 'fullpath', fullpath )
 
     code += F(' --output "{{fullpath}}"').str()
     a = doc.code( code, language='Bash' )
@@ -84,6 +86,7 @@ with Timer('presentation'):
         global_selection_hpix20 = r' and '.join([ohdu_selection20, geometric_selection, energy_selection])
 
         nuCatalogs = '/share/storage2/connie/DAna/nuCatalogs/shape*data*.root'
+        simCatalogs = '/share/storage2/connie/DAna/nuCatalogs/match*sim*.root'
 
         ohdus19 = [2,3,4,5,8,9,13,14]
 
@@ -113,7 +116,7 @@ with Timer('presentation'):
                 -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
                 --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \
                 --hide-zeros --no-title --no-label-file --no-label-branch --x-range 6000 7600 --binsize 1 --png'),
-                'event_time_evo_2.png', doc, height = .6 ),
+                'event_time_evo.png', doc, height = .6 ),
         )
 
         doc.frame('histogram on19 and off19 0.05--1.05keV',
@@ -123,14 +126,14 @@ with Timer('presentation'):
                 -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
                 --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \
                 --hide-zeros --no-title --no-label-file --no-label-branch --x-range 6000 7600 --binsize 1 --png --count-histogram --extra-binsize 1'),
-                'event_time_evo_count4.png', doc, height = .6 ),
+                'event_time_evo_count.png', doc, height = .6 ),
         )
 
 
-        for ohdu in ohdus19:
+        for ohdu in [2,8]:
             this_ohdu_selection = 'ohdu==%s' % ohdu
             this_global_selection = r' and '.join([this_ohdu_selection, geometric_selection, energy_selection, size_selection])
-
+            print( 'hash', hash( this_global_selection) )
             doc.frame(F('event time evolution on19 and off19 0.05--1.05keV ohdu{{ohdu}}'),
                 makefigure(
                     F('./catalog histogram \
@@ -138,7 +141,7 @@ with Timer('presentation'):
                         -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
                         --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}} and ohdu=={{ohdu}}" \
                         --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --png'),
-                    F('event_time_evo_ohdu{{ohdu}}_2.png'),
+                    F('event_time_evo_ohdu{{ohdu}}.png'),
                     doc,
                     height = .6
                     )
@@ -151,12 +154,47 @@ with Timer('presentation'):
                         -s runID "{{nuCatalogs}}" "{{on19}}" "ON19"\
                         --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}} and ohdu=={{ohdu}}" \
                         --hide-zeros --no-title --no-label-file --x-range 6000 7600 --binsize 1 --count-histogram --extra-binsize 1'),
-                    F('event_time_evo_count_ohdu{{ohdu}}_2.png'),
+                    F('event_time_evo_count_ohdu{{ohdu}}.png'),
                     doc,
                     height = .6
                     )
             )
 
+
+        doc.frame('spectrum on19 and off19 0.05--1.05keV',
+            makefigure(
+                F('./catalog histogram \
+                -s E1/gain3Peaks "{{nuCatalogs}}" "{{off19}}" "OFF19"\
+                -s E1/gain3Peaks "{{nuCatalogs}}" "{{on19}}" "ON19"\
+                --global-selection "{{global_selection_hpix}} and {{runID_excluded}} and {{energy_selection_function(0.05,1.05)}}" \
+                --hide-zeros --no-title --no-label-file --no-label-branch --x-range .05 1.05 --binsize .05 --png -f "[ON19]/[OFF19]"'),
+                'spectrum_ON_OFF.png', doc, height = .6 ),
+        )
+
+
+        # for ohdu in ohdus19:
+        for ohdu in [2,3]:
+            doc.frame(F('efficiency off19 0.05--1.05keV ohdu {{ohdu}}'),
+                makefigure(
+                    F('./catalog histogram \
+                    -s E1/gain3Peaks "{{simCatalogs}}" "1" "SIM"\
+                    -s E1/gain3Peaks "{{simCatalogs}}" "{{geometric_selection}} and {{size_selection}} and distSim<1.5 and {{energy_selection_function(0.05,1.05)}}" "REC"\
+                    --global-selection "{{off19}} and ohdu=={{ohdu}} and {{runID_excluded}}" \
+                    -f "hist[\\\"SIM\\\"]" "sqrt(hist[\\\"SIM\\\"])" "simulated"\
+                    -f "hist[\\\"REC\\\"]" "sqrt(hist[\\\"REC\\\"])" "reconstructed"\
+                    --hide-zeros --no-title --no-label-file --no-label-branch --x-range .05 1.05 --binsize .01 --png --xlabel "energy [keV]" --ylabel "counts" --average 0.3 1'),
+                    F(r'spectrum_match_19_ohdu{{ohdu}}.png'), doc, height = .6 ),
+            )
+
+            doc.frame(F('efficiency on19 and off19 0.05--1.05keV ohdu {{ohdu}}'),
+                makefigure(
+                    F('./catalog histogram \
+                    -s E1/gain3Peaks "{{simCatalogs}}" "1" "SIM"\
+                    -s E1/gain3Peaks "{{simCatalogs}}" "{{geometric_selection}} and {{size_selection}} and distSim<1.5 and {{energy_selection_function(0.05,1.05)}}" "REC"\
+                    --global-selection "{{off19}} and ohdu=={{ohdu}} and {{runID_excluded}}" \
+                    --hide-zeros --no-title --no-label-file --no-label-branch --x-range .05 1.05 --binsize .01 --png -f "[REC]/[SIM]"'),
+                    F(r'efficiency_19{{ohdu}}.png'), doc, height = .6 ),
+            )
 #             doc.frame('off19 and off20 ohdu=%s' % ohdu,
 #                 '',
 #                 makefigure(

@@ -90,7 +90,7 @@ class Beamer:
         self.pdflatex()
 
     def pdflatex(self):
-        self.subprocess_cmd( 'cd {0}; pwd; ls; pdflatex {1}.tex >/dev/null; cd ..'.format(self.folder, self.basename) )
+        self.subprocess_cmd( 'cd {0}; pwd; pdflatex {1}.tex >/dev/null; cd ..'.format(self.folder, self.basename) )
 
     def subprocess_cmd(self, command):
         subprocess.call( [command], shell=True )
