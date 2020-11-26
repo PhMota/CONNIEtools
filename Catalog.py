@@ -42,6 +42,7 @@ from scipy.sparse import csr_matrix
 # from scipy.stats import binned_statistic
 from scipy.special import erf, erfinv
 from fstring import F
+from progress import progressbar
 
 def binned_statistic_fast(x, values, func, nbins, range):
     '''The usage is nearly the same as scipy.stats.binned_statistic'''
@@ -1455,6 +1456,97 @@ def energy_threshold( datum, threshold ):
 def pdf( x, E, n, sigma ):
     return sum( [stats.norm.pdf(x, iE, sqrt(in_)*sigma) for iE, in_ in zip(E,n)], axis=0 )
 
+
+def roundRel(v, rel):
+    decimals = -log10(v) - rel
+    return round( v, int(ceil(decimals)) )
+def wmean(v, w=1):
+    return average(v, weights=w)
+def wstd(v, w=1):
+    return sqrt( wmean(v**2, w) - wmean(v, w)**2 )
+def unique_unsorted(v):
+    _, idx = unique(v, return_index=True)
+    x = bins[1:] + bins[:-1]
+    dx = bins[1:] - bins[:-1]
+    y = v[ sort(idx) ]
+    return x/2, y, dx/2, sqrt(y)
+class HistogramExpr:
+    def __init__(self, x, y, dx, dy):
+        self.x, self.y, self.dx, self.dy = x, y, dx, dy
+    def astuple(self):
+        return self.x, self.y, self.dx, self.dy
+    def __tuple__(self):
+        return self.astuple()
+    def __add__(self, a):
+        if isinstance( a, HistogramExpr ):
+            self.y += a.y
+            self.dy = sqrt( self.dy**2 + a.dy**2 )
+            return self
+        self.y += a
+        return self
+    def __mul__(self, a):
+        if isinstance( a, HistogramExpr ):
+            self.dy = self.y*a.y * sqrt( (self.dy/self.y)**2 + (a.dy/a.y)**2 )
+            self.y *= a.y
+            return self
+        self.y *= a
+        self.dy *= a
+        return self
+    def __rmul__(self, a):
+        return self*a
+    def __sub__(self, a):
+        return self + (-1)*a
+    def __div__(self, a):
+        if isinstance( a, HistogramExpr ):
+            self.dy = self.y/a.y * sqrt( (self.dy/self.y)**2 + (a.dy/a.y)**2 )
+            self.y /= a.y
+            return self
+        self.y /= a
+        self.dy /= a
+        return self
+
+class Table:
+    def __init__(self):
+        self.table = []
+        self.header = []
+    def append( self, header, column ):
+        self.table.append(column)
+        self.header.append(header)
+    def lines(self):
+        return [self.header] + zip(*self.table)
+    def csv(self):
+        return '\n'.join(map(lambda line: ', '.join(map(str,line)),  self.lines() ))
+    def save(self, name):
+        return savetxt( name, zip(*self.table), header = ', '.join(self.header), delimiter = ', ' )
+
+# table = Table()
+# table.append('test', [1,2,3,4])
+# table.append('test2', [2,3,4,5])
+# table.append('test3', [3,4,5,10])
+# print( table.lines() )
+# print( table.csv() )
+# table.save('test.csv')
+
+def hist(v, bins_, norm=False, edge=False):
+    y, x, dx = stats.make_histogram( v, bins_ )
+    y = y.astype(float)
+    if norm:
+        yerr = sqrt(y)/sum(y)
+        y /= sum(y)
+    else:
+        yerr = sqrt(y)
+    if edge:
+        x = bins_[:-1]
+    return HistogramExpr(x, y, dx, yerr)
+def hist_pos(v, bins_, norm=False, edge=False):
+    x, y, dx, dy = hist(v, bins_, norm, edge=edge).astuple()
+    mask = y>0
+    return HistogramExpr(x[mask], y[mask], dx, dy[mask])
+def waverage( hists ):
+    normalization = sum( [ 1./h.dy**2 for h in hists], axis=0 )
+    summation = sum( [ h/h.dy**2 for h in hists], axis=0 )
+    return summation/normalization
+
 def histogram( **args ):
     args = Namespace(**args)
 
@@ -1468,7 +1560,7 @@ def histogram( **args ):
             args.labels = []
             args.sel_expr = []
             data_selection = {}
-            for selection in args.selection:
+            for selection in progressbar(args.selection, msg='selections'):
                 branch = selection[0]
                 file = selection[1]
                 sel = selection[2]
@@ -1480,7 +1572,7 @@ def histogram( **args ):
 
                 key = label
                 args.selections.append(key)
-                for f in glob.glob(file):
+                for f in progressbar(glob.glob(file), msg='files'):
                     data_entry = get_selections( f, [branch], [sel], args.global_selection )
                     print( 'len(data_entry)', len(data_entry.values()[0]) )
                     try:
@@ -1573,16 +1665,12 @@ def histogram( **args ):
         if not 'no_title' in args:
             ax.set_title(title)
 
+        table = Table()
         if 'function' in args:
-            for i, function in enumerate(args.function):
+            for i, function in enumerate(progressbar(args.function, msg='functions')):
                 print( 'args.function', function )
                 exec_string = function[0]
-                # if len(function) > 1:
-                #     exec_string_err = function[1]
-                # else:
-                #     exec_string_err = None
-                # print( 'exec_string', exec_string, exec_string_err )
-                # hist = {}
+
                 data = {}
                 for (key, entries), branch in zip( data_selection.items(), args.branches ):
                     exec_string = exec_string.replace(key, F('data["{{key}}"]').str() )
@@ -1591,47 +1679,17 @@ def histogram( **args ):
                     for entry in entries:
                         if data[key] is None: data[key] = entry[branch]
                         else: data[key] = concatenate( (data[key], entry[branch]) )
-                    # print( key, len(data[key]), data[key], bins )
-                    # hist[key], x, dx = stats.make_histogram( data, bins )
-                    # hist[key] = hist[key].astype(float)
-                def roundRel(v, rel):
-                    # print('decimals', v, 10**rel)
-                    decimals = -log10(v) - rel
-                    # print('decimals', decimals, int(ceil(decimals)), round( v, int(ceil(decimals)) ))
-                    return round( v, int(ceil(decimals)) )
-                def wmean(v, w=1):
-                    return average(v, weights=w)
-                def wstd(v, w=1):
-                    # print( 'wstd', wmean(v**2, w) - wmean(v, w)**2 )
-                    return sqrt( wmean(v**2, w) - wmean(v, w)**2 )
-                def unique_unsorted(v):
-                    _, idx = unique(v, return_index=True)
-                    x = bins[1:] + bins[:-1]
-                    dx = bins[1:] - bins[:-1]
-                    y = v[ sort(idx) ]
-                    return x/2, y, dx/2, sqrt(y)
-                def hist(v, bins_, norm=False, edge=False):
-                    y, x, dx = stats.make_histogram( v, bins_ )
-                    y = y.astype(float)
-                    if norm:
-                        yerr = sqrt(y)/sum(y)
-                        y /= sum(y)
-                    else:
-                        yerr = sqrt(y)
-                    if edge:
-                        x -= dx/2
-                    return x, y, dx, yerr
-                def hist_pos(v, bins_, norm=False, edge=False):
-                    x, y, dx, dy = hist(v, bins_, norm, edge)
-                    mask = y>0
-                    return x[mask], y[mask], dx, dy[mask]
+
 
                 print( 'exec_string', exec_string )
                 print( 'label', function[1] )
-                x, y, xerr, yerr = eval( exec_string )
-                label = F(function[1])
+                x, y, xerr, yerr = (eval( exec_string )).astuple()
+                label = F(function[1]).str()
+                table.append( 'x', x )
+                table.append( F('{{label.replace(" ", "_")}}').str(), y )
+                table.append( 'xerr', [xerr]*len(x) )
+                table.append( F('{{label.replace(" ", "_")}}_err').str(), yerr )
 
-                print( 'x', x, xerr )
                 markers, caps, bars = ax.errorbar(
                     x+i*xerr/5./len( args.function ),
                     y,
@@ -1692,7 +1750,10 @@ def histogram( **args ):
                         label = label, fmt = ' ' )
         try:
             # legend_artist = ax.legend(frameon=False)
-            legend_artist = ax.legend()
+            if 'legend_title' in args:
+                legend_artist = ax.legend(title=F(args.legend_title).str())
+            else:
+                legend_artist = ax.legend()
         except IndexError:
             legend_artist = None
             print( 'index error in legend')
@@ -1716,6 +1777,7 @@ def histogram( **args ):
             fig.savefig( args.output, bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
         else:
             fig.savefig( args.output, bbox_inches='tight' )
+        table.save( args.output + '.dat' )
         print( 'saved', args.output )
     else:
         args.output = args.root_file
@@ -1762,7 +1824,11 @@ def add_histogram_options(p):
     p.add_argument('--log', action='store_true', default=argparse.SUPPRESS, help = 'log' )
     # p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
     # p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
+
     p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
+
+    p.add_argument('--legend-title', type=str, default=argparse.SUPPRESS, help = 'legend title' )
+
     p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'hide branchat the label' )
     p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'hide the file at the label' )
     p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'hide the selection at the label' )

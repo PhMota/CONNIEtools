@@ -196,7 +196,7 @@ class Beamer:
         return s
 
 
-    def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None, center=False ):
+    def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None, center=True ):
         fname = path
         #try:
             #fname = path
@@ -433,7 +433,7 @@ import hashlib
 def my_hash(entry):
     return int(hashlib.md5(str(entry)).hexdigest(), 16)
 
-def makefigure( code, filename, doc, height=1., folder='' ):
+def makefigure( code, filename, doc, height=1., folder='', nocode=False ):
     split_filename = str(filename).split('.')
     print( 'hash', str(my_hash(code)) )
     filename = '.'.join( split_filename[:-1] + [str(my_hash(code)), split_filename[-1]] )
@@ -442,7 +442,9 @@ def makefigure( code, filename, doc, height=1., folder='' ):
 
     code += F(' --output "{{fullpath}}"').str()
     code_print = code.replace('\n', r'\n')
-    a = doc.code( code_print, language='Bash' )
+    a = ''
+    if not nocode:
+        a = doc.code( code_print, language='Bash' )
     if not os.path.exists(fullpath):
         print()
         print( colored(code_print, 'green' ))

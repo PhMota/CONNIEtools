@@ -105,6 +105,6 @@ with Timer('presentation'):
                     + F(' --ylabel "frequency"')
                     + F(' --xlabel "number of events"')
                     + (' -f "hist_pos( hist_pos(OFF19, bins)[1], arange(0, 25, 1), norm=True, edge=True )" "OFF 2019 ({{ int(sum(hist( hist_pos(OFF19, bins)[1], arange(0, 25, 1) )[1])) }})\n$\mu={{ roundRel(wmean(x, y),-2) }}$, $\sigma={{ roundRel(wstd(x, y), -2) }}$"')
-                    + (' -f "hist_pos( hist_pos(ON19, bins)[1], arange(0, 25, 1), norm=True, edge=True )" "ON 2019 ({{ int(sum(hist( hist_pos(ON19, bins)[1], arange(0, 25, 1) )[1])) }})\n$\mu={{ roundRel(wmean(x, y),-2) }}$, $\sigma={{ roundRel(wstd(x, y), -2) }}$"')
+                    + (' -f "hist_pos( hist_pos(ON19, bins)[1], arange(0, 25, 1), norm=True, edge=True  )" "ON 2019 ({{ int(sum(hist( hist_pos(ON19, bins)[1], arange(0, 25, 1) )[1])) }})\n$\mu={{ roundRel(wmean(x, y),-2) }}$, $\sigma={{ roundRel(wstd(x, y), -2) }}$"')
                     , 'event_time_evo_count.pdf', doc, height = .6, folder=folder),
             )
