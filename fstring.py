@@ -82,10 +82,10 @@ class F(object):
         return repr(self._string)
 
     def __add__(self, s):
-        return str(self.text) + s
+        return str(self.text) + str(s)
 
     def __radd__(self, s):
-        return s + str(self.text)
+        return str(s) + str(self.text)
 
     def str(self):
         return self.text.__str__()

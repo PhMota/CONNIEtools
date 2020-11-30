@@ -41,6 +41,7 @@ from PrintVar import print_var
 from scipy.sparse import csr_matrix
 # from scipy.stats import binned_statistic
 from scipy.special import erf, erfinv
+from collections import *
 from fstring import F
 from progress import progressbar
 
@@ -1538,28 +1539,38 @@ def hist(v, bins_, norm=False, edge=False):
     if edge:
         x = bins_[:-1]
     return HistogramExpr(x, y, dx, yerr)
+
 def hist_pos(v, bins_, norm=False, edge=False):
     x, y, dx, dy = hist(v, bins_, norm, edge=edge).astuple()
     mask = y>0
     return HistogramExpr(x[mask], y[mask], dx, dy[mask])
+
 def waverage( hists ):
     normalization = sum( [ 1./h.dy**2 for h in hists], axis=0 )
     summation = sum( [ h/h.dy**2 for h in hists], axis=0 )
     return summation/normalization
 
+def unique_tuples( x, y, dx, dy ):
+    if not hasattr( dx, '__iter__' ):
+        dx = [dx]*len(x)
+    if not hasattr( dy, '__iter__' ):
+        dy = [dy]*len(y)
+    return unique( (x, y, dx, dy), axis=-1)
+
 def histogram( **args ):
     args = Namespace(**args)
 
     import matplotlib.pylab as plt
+
     with Timer('histogram'):
         print( 'number of input args', len(args.root_file) )
+        args.branches = []
+        args.files = []
+        args.selections = []
+        args.labels = []
+        args.sel_expr = []
+        data = OrderedDict()
         if len(args.root_file) == 0:
-            args.branches = []
-            args.files = []
-            args.selections = []
-            args.labels = []
-            args.sel_expr = []
-            data_selection = {}
             for selection in progressbar(args.selection, msg='selections'):
                 branch = selection[0]
                 file = selection[1]
@@ -1572,13 +1583,17 @@ def histogram( **args ):
 
                 key = label
                 args.selections.append(key)
-                for f in progressbar(glob.glob(file), msg='files'):
+                for f in progressbar( glob.glob(file), msg='files' ):
                     data_entry = get_selections( f, [branch], [sel], args.global_selection )
-                    print( 'len(data_entry)', len(data_entry.values()[0]) )
+                    if len(data_entry.values()[0]) == 0:
+                        continue
+                    # print( 'len(data_entry)', len(data_entry.values()[0]) )
+                    # print( 'type', data_entry.values()[0].__class__.__name__ )
                     try:
-                        data_selection[key].append( data_entry.values()[0] )
+                        data[key] = concatenate( (data[key], data_entry.values()[0][branch]) )
                     except KeyError:
-                        data_selection[key] = [ data_entry.values()[0] ]
+                        data[key] = data_entry.values()[0][branch]
+                        # print( 'data', data[key] )
 
         elif len(args.root_file) == 1:
             args.root_file = args.root_file[0]
@@ -1597,157 +1612,129 @@ def histogram( **args ):
                 args.runID_range = None
             data_selection = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
                                                 #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-        else:
-            nargs = len(args.root_file)
-            files = args.root_file
-            print( args.root_file )
-            args.branches = []
-            args.selections = []
-            args.files = []
-            args.sel_expr = []
-            data_selection = {}
-            for i in range(nargs/3):
-                branch = args.root_file[3*i+0]
-                args.branches.append(branch)
 
-                file = args.root_file[3*i+1]
-                args.files.append(file)
-
-                selection = args.root_file[3*i+2]
-                args.sel_expr.append(selection)
-
-                key = 'branch: {}\nfiles: {}\nselections: {}'.format(branch, file, selection)
-
-                args.selections.append(key)
-                print( 'file', file )
-                print( 'br', branch )
-                print( 'sel', selection )
-                for f in glob.glob(file):
-                    print( 'file', f )
-                    data_entry = get_selections( f, [branch], [selection], args.global_selection )
-
-                    # print( 'type', data_entry.values()[0], data_entry.values()[0].size )
-
-                    try:
-                        data_selection[key].append( data_entry.values()[0] )
-                    except KeyError:
-                        data_selection[key] = [ data_entry.values()[0] ]
-                    # data_selection.update( { '{}:{}:{}'.format(branch,file, data_entry.keys()[0]): data_entry.values()[0] } )
-                # print( type(data_selection) )
-            print( 'selections', data_selection.keys() )
-            print( 'branches', args.branches )
-            #exit(0)
         if 'labels' not in args:
             args.labels = ['']*len(args.selections)
 
-        if 'x_range' in args:
-            bins = arange( args.x_range[0], args.x_range[1], args.binsize )
-        else:
-            first_data_selection = data_selection.values()[0][args.branches[0]]
-            if 'binsize' in args:
-                bins = arange( min(first_data_selection), max(first_data_selection), args.binsize )
-            elif 'nbins' in args:
-                bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
-            else:
-                bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
+        # if 'x_range' in args:
+        #     bins = arange( float(F(args.x_range[0]).str()), float(F(args.x_range[1]).str()), args.binsize )
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        title = ', '.join(args.branches)
-        if 'global_selection' in args:
-            subtitle = args.global_selection
-            if len(subtitle) > 50:
-                new_subtitle = subtitle[:50]
-                for i in range(1, len(subtitle)/50+1):
-                    new_subtitle += '\n' + subtitle[i*50:(i+1)*50]
-            subtitle = new_subtitle
-            title += '\n' + subtitle
-        if not 'no_title' in args:
-            ax.set_title(title)
 
         table = Table()
+        for key in data.keys():
+            for function in args.function:
+                function[0] = function[0].replace(key, F('data["{{key}}"]').str() )
+                function[1] = function[1].replace(key, F('data["{{key}}"]').str() )
+            if 'x_range' in args:
+                args.x_range[0] = args.x_range[0].replace(key, F('data["{{key}}"]').str() )
+                args.x_range[1] = args.x_range[1].replace(key, F('data["{{key}}"]').str() )
+                args.binsize = args.binsize.replace(key, F('data["{{key}}"]').str() )
+
         if 'function' in args:
             for i, function in enumerate(progressbar(args.function, msg='functions')):
                 print( 'args.function', function )
                 exec_string = function[0]
 
-                data = {}
-                for (key, entries), branch in zip( data_selection.items(), args.branches ):
-                    exec_string = exec_string.replace(key, F('data["{{key}}"]').str() )
-                    function[1] = function[1].replace(key, F('data["{{key}}"]').str() )
-                    data[key] = None
-                    for entry in entries:
-                        if data[key] is None: data[key] = entry[branch]
-                        else: data[key] = concatenate( (data[key], entry[branch]) )
+                # for (key, entries), branch in zip( data.items(), args.branches ):
+                #     exec_string = exec_string.replace(key, F('data["{{key}}"]').str() )
+                #     function[1] = function[1].replace(key, F('data["{{key}}"]').str() )
+                #     if 'x_range' in args:
+                #         print('x-range', args.x_range[0], args.x_range[1])
+                #         args.x_range[0] = args.x_range[0].replace(key, F('data["{{key}}"]').str() )
+                #         args.x_range[1] = args.x_range[1].replace(key, F('data["{{key}}"]').str() )
+                #         print('x-range', args.x_range[0], args.x_range[1])
 
+                if 'x_range' in args:
+                    if type(args.x_range[0]) is str:
+                        args.x_range[0] = float(F(args.x_range[0]).str())
+                    if type(args.x_range[1]) is str:
+                        args.x_range[1] = float(F(args.x_range[1]).str())
+                    if type(args.binsize) is str:
+                        bins = arange( args.x_range[0], args.x_range[1], float(F(args.binsize).str()) )
 
                 print( 'exec_string', exec_string )
                 print( 'label', function[1] )
-                x, y, xerr, yerr = (eval( exec_string )).astuple()
+                try:
+                    x, y, xerr, yerr = (eval( exec_string )).astuple()
+                except AttributeError:
+                    x, y, xerr, yerr = eval( exec_string )
+
                 label = F(function[1]).str()
+                kwargs = {
+                    'fmt': 'o'
+                    , 'ms': 3
+                }
+                if len(function) > 2:
+                    print( function[2] )
+                    print( eval(function[2]) )
+                    kwargs.update( eval(function[2]) )
                 table.append( 'x', x )
                 table.append( F('{{label.replace(" ", "_")}}').str(), y )
-                table.append( 'xerr', [xerr]*len(x) )
-                table.append( F('{{label.replace(" ", "_")}}_err').str(), yerr )
+                table.append( 'xerr', xerr if hasattr(xerr, '__iter__') else [xerr]*len(x) )
+                table.append( F('{{label.replace(" ", "_")}}_err').str(), yerr if hasattr(yerr, '__iter__') else [yerr]*len(x) )
 
                 markers, caps, bars = ax.errorbar(
-                    x+i*xerr/5./len( args.function ),
-                    y,
-                    xerr = xerr/2.,
-                    yerr = yerr,
-                    label = label,
-                    fmt = 'o',
-                    ms = 3 )
+                    x+i*xerr/5./len( args.function )
+                    , y
+                    , xerr = xerr/2.
+                    , yerr = yerr
+                    , label = label
+                    , **kwargs
+                )
                 [bar.set_alpha(.2) for bar in bars]
 
             # exit(0)
-        elif 'selections' in args:
-            for i, (branch, selection, files, sel_expr, label) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr, args.labels)):
-                print( 'selection.names', selection, data_selection[selection][0].names )
-                print( 'selection.shape', data_selection[selection][0][branch].shape, 'len(bins)', len(bins) )
-
-                x_data = None
-                for datum in data_selection[selection]:
-                    if x_data is None:
-                        x_data = datum[branch]
-                    else:
-                        x_data = concatenate( (x_data, datum[branch]) )
-                    print( 'len(x_data)', len(x_data) )
-                factor = 1
-                if 'factor' in args:
-                    factor = args.factor
-                hist, x, dx = stats.make_histogram( x_data, bins )
-
-                if 'hide_zeros' in args:
-                    x = x[hist>0]
-                    hist = hist[hist>0]
-
-                if label == '':
-                    label = ''
-                    if not 'no_label_branch' in args:
-                        label += 'branch: {}\n'.format(branch)
-                    if not 'no_label_file' in args:
-                        label += 'files: {}\n'.format(file)
-                    if not 'no_label_selection' in args:
-                        max_length = 40
-                        label += 'sel: {}'.format(
-                            '\n'.join([sel_expr[:40]] + [sel_expr[i*40:(i+1)*40] for i in range(1, len(sel_expr)/40+1) ] )
-                            )
-                label += ' ({})'.format(x_data.size)
-
-                print( 'plot label', label )
-                if 'count_histogram' in args:
-                    extrabins = arange(min(hist), max(hist), args.extra_binsize)
-                    extrahist, _, _ = stats.make_histogram( hist, extrabins )
-                    ax.step( extrahist, extrabins[:-1], where='pre', label=label, lw=2 )
-                else:
-                    print('errorbar', label, len(x), len(hist))
-                    ax.errorbar(
-                        x+i*dx/5./len(args.branches),
-                        hist*factor,
-                        xerr = dx/2.,
-                        yerr = sqrt(hist)*factor,
-                        label = label, fmt = ' ' )
+        # elif 'selections' in args:
+        #     for i, (branch, selection, files, sel_expr, label) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr, args.labels)):
+        #         print( 'selection.names', selection, data_selection[selection][0].names )
+        #         print( 'selection.shape', data_selection[selection][0][branch].shape, 'len(bins)', len(bins) )
+        #
+        #         x_data = None
+        #         for datum in data_selection[selection]:
+        #             if x_data is None:
+        #                 x_data = datum[branch]
+        #             else:
+        #                 x_data = concatenate( (x_data, datum[branch]) )
+        #             print( 'len(x_data)', len(x_data) )
+        #         factor = 1
+        #         if 'factor' in args:
+        #             factor = args.factor
+        #         hist, x, dx = stats.make_histogram( x_data, bins )
+        #
+        #         if 'hide_zeros' in args:
+        #             x = x[hist>0]
+        #             hist = hist[hist>0]
+        #
+        #         if label == '':
+        #             label = ''
+        #             if not 'no_label_branch' in args:
+        #                 label += 'branch: {}\n'.format(branch)
+        #             if not 'no_label_file' in args:
+        #                 label += 'files: {}\n'.format(file)
+        #             if not 'no_label_selection' in args:
+        #                 max_length = 40
+        #                 label += 'sel: {}'.format(
+        #                     '\n'.join([sel_expr[:40]] + [sel_expr[i*40:(i+1)*40] for i in range(1, len(sel_expr)/40+1) ] )
+        #                     )
+        #         label += ' ({})'.format(x_data.size)
+        #
+        #         print( 'plot label', label )
+        #         if 'count_histogram' in args:
+        #             extrabins = arange(min(hist), max(hist), args.extra_binsize)
+        #             extrahist, _, _ = stats.make_histogram( hist, extrabins )
+        #             ax.step( extrahist, extrabins[:-1], where='pre', label=label, lw=2 )
+        #         else:
+        #             print('errorbar', label, len(x), len(hist))
+        #             ax.errorbar(
+        #                 x+i*dx/5./len(args.branches)
+        #                 , hist*factor
+        #                 , xerr = dx/2.
+        #                 , yerr = sqrt(hist)*factor
+        #                 , label = label
+        #                 , fmt = ' '
+        #             )
         try:
             # legend_artist = ax.legend(frameon=False)
             if 'legend_title' in args:
@@ -1769,15 +1756,18 @@ def histogram( **args ):
             ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
         if 'log' in args:
             ax.set_yscale('log')
-
+    if 'x_range' in args:
+        ax.set_xlim(*map(float, args.x_range))
+    if 'y_range' in args:
+        ax.set_ylim(*map(float, args.y_range))
     if 'output' in args:
         if args.output == '':
             args.output = args.root_file
+        table.save( args.output + '.csv' )
         if legend_artist != None:
             fig.savefig( args.output, bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
         else:
             fig.savefig( args.output, bbox_inches='tight' )
-        table.save( args.output + '.dat' )
         print( 'saved', args.output )
     else:
         args.output = args.root_file
@@ -1814,10 +1804,11 @@ def add_histogram_options(p):
 
     p.add_argument('--average', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'average from min to max' )
 
-    p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
+    p.add_argument('--x-range', nargs=2, type=str, default=argparse.SUPPRESS, help = 'range of the x-axis' )
+    p.add_argument('--y-range', nargs=2, type=str, default=argparse.SUPPRESS, help = 'range of the y-axis' )
 
-    p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
-    p.add_argument('--extra-binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
+    p.add_argument('--binsize', type=str, default=argparse.SUPPRESS, help = 'binsize' )
+    # p.add_argument('--extra-binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
     p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
     p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
     p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )

@@ -3,6 +3,7 @@ import subprocess
 import os
 from fstring import F
 from termcolor import colored
+from progress import progressbar
 
 preamble = r'''
 \documentclass{beamer}
@@ -38,7 +39,8 @@ preamble = r'''
 language=Python,
 breakatwhitespace=true,
 breaklines=true,
-basicstyle=\fontsize{4}{5}\sffamily,
+%% basicstyle=\fontsize{4}{5}\sffamily,
+basicstyle=\fontsize{8}{10}\sffamily,
 keywordstyle=\bf\color{blue},
 showtabs=true,
 tabsize=2,
@@ -73,21 +75,45 @@ B = '\n'
 #class Frame:
 
 class Beamer:
-    def writelines( self, s, mode = 'a' ):
-        open( '%s.tex' % (self.folder+'/'+self.basename), mode ).writelines( s )
+    def writelines( self, mode = 'a' ):
+        tab = '\t'
+        endl = '\n'
+        level = 0
+        with open( '%s.tex' % (self.folder+'/'+self.basename), mode ) as file:
+            for element in progressbar( self.elements, msg='document' ):
+                if callable( element ):
+                    element = element()
+                if not hasattr( element, '__iter__' ):
+                    element = [ element ]
+                for e in element:
+                    e = str(e)
+                    n = 1
+                    if r'\end' in e or r'\section' in e or r'\part' in e:
+                        n = 2
+                    if r'\end' in e:
+                        level -= 1
+                    try:
+                        file.write( tab*level + e + endl*n )
+                    except TypeError:
+                        print( 'failed to write', e, type(e) )
+                        raise TypeError
+                    if r'\begin' in e:
+                        level += 1
 
     def __init__(self, folder='calculations', title='simulation tools'):
         self.folder = folder
         if not os.path.exists(self.folder):
             os.mkdirs(self.folder)
         self.basename = self.folder.split('/')[-1]
-        self.writelines( preamble %( title, title ), mode = 'w' )
+        self.elements = []
+        self.elements.append( preamble %( title, title ) )
 
     def __enter__(self):
         return self
 
     def __exit__(self, type, value, traceback):
-        self.writelines( [r'\end{document}'] )
+        self.elements.append(r'\end{document}')
+        self.writelines( mode = 'w' )
         self.pdflatex()
 
     def pdflatex(self):
@@ -95,23 +121,30 @@ class Beamer:
 
     def subprocess_cmd(self, command):
         subprocess.call( [command], shell=True )
-        #process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
-        #proc_stdout = process.communicate()[0].strip()
-
-        #return proc_stdout
 
     def par( self, s ):
-        self.writelines( [s + '\n'] )
+        self.elements.append( s )
+
+    def __iadd__( self, elements ):
+        # print( '__iadd__', elements )
+        if not hasattr(elements, '__iter__'):
+            elements = [elements]
+        self.elements.extend( elements )
+        return self
 
     equation_evironment = 'equation'
 
     def section( self, text ):
-        self.writelines( [ r'\section{%s}' % text] )
+        self.elements.append( [ r'\section{%s}' % text] )
+        # self.writelines( [ r'\section{%s}' % text] )
 
     def environment( self, s, env = 'equation' ):
-        self.writelines( [r'\begin{%s}' % env] )
-        self.writelines( s )
-        self.writelines( [r'\end{%s}' % env] )
+        # self.writelines( [r'\begin{%s}' % env] )
+        # self.writelines( s )
+        # self.writelines( [r'\end{%s}' % env] )
+        self.elements.append( [r'\begin{%s}' % env] )
+        self.elements.append( s )
+        self.elements.append( [r'\end{%s}' % env] )
 
     def eq( self, lhs, rhs = None, mathmode = 'equation' ):
         #print 'eq', lhs
@@ -122,7 +155,8 @@ class Beamer:
             else:
                 r += ['=', rhs]
         r += [r'\end{%s}'%mathmode]
-        self.writelines( r )
+        # self.writelines( r )
+        self.elements.append(r)
 
     def math( self, lhs, rhs = None, label = None ):
         #print 'eq', label
@@ -132,39 +166,13 @@ class Beamer:
         if not label is None:
             r += [r'\label{%s}'%label]
         r += [r'\end{equation}']
-        self.writelines( r )
+        # self.writelines( r )
+        self.elements.append(r)
 
     def matheval( self, s ):
         #print 'eq', label
-        self.writelines( [r'\begin{equation}', latex(eval(m)), r'\label{%s}'%m, r'\end{equation}'] )
-
-    def frame( self, title, *args ):
-        s = r'\begin{frame}[fragile]{%s}' % title + B*3
-        for arg in args:
-            s += arg #+ B*2
-        s += B + r'\end{frame}' + B*3
-        self.writelines( s )
-
-    def code( self, c=None, language=None, file=None, func=None ):
-        if file:
-            if not os.path.exists('%s/%s' % (self.folder,file)):
-                print( 'running function' )
-                func()
-            return r'\lstinputlisting{{{}}}'.format(self.folder+'/'+file)+B
-        s = r'\begin{lstlisting}[language=%s]' % (language) + B
-        s += c
-        s += r'\end{lstlisting}' + B
-        return s
-
-    def column( self, *args, **kwargs ):
-        s = ''
-        widths = kwargs['widths']
-        s += r'\begin{columns}'+B
-        for arg, width in zip(args, widths):
-            s += r'\column{%s\paperwidth}'%( width if width>0 else -sum( widths ) )+B
-            s += arg+B
-        s += r'\end{columns}'+B
-        return s
+        # self.writelines( [r'\begin{equation}', latex(eval(m)), r'\label{%s}'%m, r'\end{equation}'] )
+        self.elements.append( [r'\begin{equation}', latex(eval(m)), r'\label{%s}'%m, r'\end{equation}'] )
 
     def center(self, *lines ):
         s = r'\begin{center}' + B
@@ -186,37 +194,6 @@ class Beamer:
                 exit()
         print('file found', fname)
         print('skipping')
-
-
-    def itemize( self, *items ):
-        s = r'\begin{itemize}' + B
-        for item in items:
-            s += '\item ' + item + B
-        s += r'\end{itemize}' + B
-        return s
-
-
-    def figure( self, path, width=None, height=None, scale=None, s='', frame=False, func=None, center=True ):
-        fname = path
-        #try:
-            #fname = path
-            #self.check_file(fname)
-        #except:
-            #fname = self.fname+'/'+path
-            #self.check_file(fname)
-        if center:
-            s += r'\begin{center}' + B
-        if width is not None:
-            s += r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname) + B
-        elif height is not None:
-            s += r'\includegraphics[height={height}\paperheight]{{{fname}}}'.format(height=height, fname=fname) + B
-        elif scale is not None:
-            s += r'\includegraphics[scale={scale}]{{{fname}}}'.format(scale=scale, fname=fname) + B
-        else:
-            raise Exception('missing heigh or width')
-        if center:
-            s += r'\end{center}' + B
-        return s
 
     def table( self, file, fontsize=12, spacing=15, func=None, divide=1 ):
         s = ''
@@ -250,6 +227,76 @@ class Beamer:
         s += r'}' + B
         #print( s )
         return s
+
+def textcolor(c,s):
+    return r'\textcolor{%s}{ %s }' % (c,s)
+
+def part(name):
+    return [ F(r'\part{ {{name}} }'), F(r'\frame{\partpage}') ]
+
+def figure( path, width=None, height=None, scale=None, center=True ):
+    elements = []
+    fname = path
+    if center:
+        elements.append( r'\begin{center}' )
+    if width is not None:
+        elements.append(
+            r'\includegraphics[width={width}\columnwidth]{{{fname}}}'.format(width=width, fname=fname)
+        )
+    elif height is not None:
+        elements.append(
+            r'\includegraphics[height={height}\paperheight]{{{fname}}}'.format(height=height, fname=fname)
+        )
+    elif scale is not None:
+        elements.append(
+            r'\includegraphics[scale={scale}]{{{fname}}}'.format(scale=scale, fname=fname)
+        )
+    else:
+        raise Exception('missing heigh or width')
+    if center:
+        elements.append( r'\end{center}' )
+    return elements
+
+def code( c=None, language=None ):
+    return [
+        r'\begin{lstlisting}[language=%s]' % (language),
+        c,
+        r'\end{lstlisting}'
+    ]
+
+def inlinecode( c, language='Python' ):
+    return '\lstinline[language=%s]{%s}' % (language,c)
+
+def frame( title, *args ):
+    elements = []
+    elements.append( r'\begin{frame}[fragile]{%s}' % title )
+    for arg in args:
+        if not hasattr(arg, '__iter__'): arg = [arg]
+        elements.extend( arg )
+    elements.append( r'\end{frame}' )
+    return elements
+
+def column( *args, **kwargs ):
+    elements = []
+    widths = kwargs['widths']
+    elements.append( r'\begin{columns}' )
+    for arg, width in zip(args, widths):
+        elements.append(
+            r'\column{%s\paperwidth}'%( width if width>0 else -sum( widths ) )
+        )
+        if not hasattr(arg, '__iter__'):
+            arg = [arg]
+        elements.extend( arg )
+    elements.append( r'\end{columns}' )
+    return elements
+
+def itemize( *items ):
+    elements = []
+    elements.append(r'\begin{itemize}')
+    for item in items:
+        elements.append('\item ' + item)
+    elements.append(r'\end{itemize}')
+    return elements
 
 def openBeamer( fname, title ): return Beamer( fname, title )
 
@@ -433,29 +480,35 @@ import hashlib
 def my_hash(entry):
     return int(hashlib.md5(str(entry)).hexdigest(), 16)
 
-def makefigure( code, filename, doc, height=1., folder='', nocode=False ):
+def makefigure( code, filename, height=1., folder='', nocode=False ):
     split_filename = str(filename).split('.')
     print( 'hash', str(my_hash(code)) )
-    filename = '.'.join( split_filename[:-1] + [str(my_hash(code)), split_filename[-1]] )
+    filename = '.'.join( split_filename[:-1] + ['_hash'+str(my_hash(code)), split_filename[-1]] )
     fullpath = F('{{folder}}/{{filename}}').str()
     print( 'fullpath', fullpath )
 
     code += F(' --output "{{fullpath}}"').str()
     code_print = code.replace('\n', r'\n')
-    a = ''
+    elements = []
     if not nocode:
-        a = doc.code( code_print, language='Bash' )
+        elements.extend( code( code_print, language='Bash' ) )
     if not os.path.exists(fullpath):
-        print()
-        print( colored(code_print, 'green' ))
-        print()
-        subprocess.call( ["%s" % code], shell=True )
+        # print()
+        # print( colored(code_print, 'green' ))
+        # print()
+        # subprocess.call( ['%s' % code], shell=True )
+        code_split = code.split(' ')
+        cmd = ' '.join(code_split[:2])
+        # print( 'code_split', cmd )
+        args = ' '.join(code_split[2:])
+        # print( 'code_split', args )
+        subprocess.call( F('{{cmd}} {{args}}').str(), shell=True )
     if not os.path.exists(fullpath):
         print()
         print( '!!!not found', fullpath )
         exit(0)
-    b = doc.figure( filename, height=height, center=True )
-    return ''.join([a,b])
+    elements.extend( figure( filename, height=height, center=True ) )
+    return elements
 
 def requiredFile( code, file, doc ):
     a = doc.code( code, language='Bash' )

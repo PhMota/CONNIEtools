@@ -37,7 +37,19 @@ from collections import OrderedDict
 
 import Simulation
 import constants
+from fstring import F
 
+def fitted_curve( func, params, x, y, **kwargs ):
+    x = np.array(x)
+    y = np.array(y)
+    mask = y==y
+    # print('x, y', len(x), len(y))
+    # print('x, y', x[mask], y[mask])
+    params_optimized, param_cov = scipy.optimize.curve_fit( func, x[mask], y[mask], p0=params, **kwargs )
+    print( 'popt', params_optimized )
+    y_fit = func( x, *params_optimized )
+    # print( 'y_fit', y_fit )
+    return y_fit
 
 bias_from_width = { 9340: 450, 8540: 150 }
 bin_from_width = { 9340: 5, 8540: 1 }
@@ -1008,31 +1020,6 @@ class Section( np.ndarray ):
             ax.legend()
             fig.savefig( output, bbox_inches='tight', pad_inches=0 )
 
-    #def display( self, mode, delta = None ):
-        #from matplotlib.colors import LogNorm
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111)
-        #im = -self
-        #if mode == 'xy':
-            #vmin = None
-            #vmax = None
-            #if delta:
-                #vmin = np.nanmedian(datum)-delta
-                #vmax = np.nanmedian(datum)+delta
-            #ax.imshow( im, cmap='Blues', vmin=vmin, vmax=vmax)
-        #if mode == 'x':
-            #ax.plot(self[0,:], '.')
-            #ax.plot(self[-1,:], '.')
-            #ax.set_ylim( (np.nanmedian(self)-delta,np.nanmedian(self)+delta) )
-        #if mode == 'y':
-            #ax.plot(self[:, 0], '.')
-            #ax.plot(self[:, -1], '.')
-            #ax.set_ylim( (np.nanmedian(self)-delta,np.nanmedian(self)+delta) )
-        #if mode == 'flat':
-            #ax.plot(self, '.')
-        #plt.show()
-
-
 def get_median_params_by_line( data, bias ):
     height, width = data.shape
 
@@ -1286,6 +1273,8 @@ def add_display_options( p ):
     proj.add_argument( '--no-median', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
     proj.add_argument( '--smooth', type=int, default = argparse.SUPPRESS, help = 'smoothening length' )
 
+    proj.add_argument( '--fit', action='append', type=str, default = argparse.SUPPRESS, help = 'fit command' )
+
     spec = p.add_argument_group('spectrum options')
     spec.add_argument( '--binsize', type=float, default=1, help = 'binsize' )
 
@@ -1435,14 +1424,14 @@ def display( args ):
         if args.plot[0] == 'proj':
             print( colored('plot', 'green'), 'projection' )
             axis = args.plot[1]
-            if axis in ['lines', '1']:
+            if axis in ['lines', '1', 'y']:
                 axis = 1
-            elif axis in ['rows', '0']:
+            elif axis in ['rows', '0', 'x']:
                 axis = 0
             else:
                 print( 'axis not expected' )
                 exit()
-
+            x = np.arange( 0, data.shape[axis-1] ).astype(float)
             if not 'dev' in args:
                 mins = np.nanmin( data, axis=axis )
                 if not 'no_mean' in args:
@@ -1464,6 +1453,9 @@ def display( args ):
                 if not 'no_min' in args:
                     mins = np.nanmin( data, axis=axis )
                     ax.plot( mins, '.', label='min' )
+                if 'fit' in args:
+                    for fit in args.fit:
+                        exec F(fit).str()
             else:
                 mins = np.nanmin( data, axis=axis )
                 if not 'no_mean' in args:
