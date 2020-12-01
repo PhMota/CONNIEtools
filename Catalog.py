@@ -39,6 +39,7 @@ import Statistics as stats
 from termcolor import colored
 from PrintVar import print_var
 from scipy.sparse import csr_matrix
+from scipy.interpolate import interp1d
 # from scipy.stats import binned_statistic
 from scipy.special import erf, erfinv
 from collections import *
@@ -1557,9 +1558,53 @@ def unique_tuples( x, y, dx, dy ):
         dy = [dy]*len(y)
     return unique( (x, y, dx, dy), axis=-1)
 
+def nu_spectrum(E, file='vSpectrum.csv'):
+    '''
+        vSpectrum = genfromtxt(file)
+        x0, y0 = vSpectrum.T
+        y = interp1d(x0,y0)(E)
+        return y
+    '''
+    return interp1d( *genfromtxt(file).T )(E)
+
+# print( nu_spectrum([.4,.401]) )
+# exit()
+# def nu_spectrum(*a, isotope=None):
+#     x = [7.813e-3, 1.563e-2, 3.12e-2, 6.25e-2, .125, .25, .50, .75, 1.0, 1.5, 2.0 ]
+#     if isotope == 'U235':
+#         a = [1.0461, .87, -.16, -.091]
+#         y = [.024, .092, .35, .61, 1.98, 2.16, 2.66, 2.66, 2.41, 1.69, 1.26 ]
+#     elif isotope == 'Pu239':
+#         a = [1.0527, .896, -.239, -.0981]
+#         y = [.14, .56, 2.13, .64, 1.99, 2.08, 2.63, 2.58, 2.32, 1.48, 1.08 ]
+#     elif isotope == 'U238':
+#         a = [1.0719, .976, -.162, -.079]
+#         y = [.089, .35, 1.32, .65, 2.02, 2.18, 2.91, 2.96, 2.75, 1.97, 1.50 ]
+#     elif isotope == 'Pu241':
+#         a = [1.0818, .793, -0.08, -.1085]
+#         y = [.2, .79, 3.00, .59, 1.85, 2.14, 2.82, 2.9, 2.63, 1.75, 1.32 ]
+#     def _(E):
+#         ret = zeros_like(E)
+#         ret[E<2] = scipy.interpolate.interp1d(x, y)(E[E<2])
+#         ret[E>=2] = ( lambda _E: a[0]*exp( a[1] + a[2]*_E + a[3]*_E**2 ) )( E[E>2] )
+#         return ret
+#     return _
+#
+# def quenching_factor(E):
+#     p = [56, 1096, 382, 168, 155 ]
+#     return (p[3]*E + p[4]*E**2 + E**3)/(p[0] + p[1]*E + p[2]*E**2)
+#
+# def combined_nu_spectrum(E):
+#     ret = zeros_like(E)
+#     for
+#
+# def differential_rate_recoil(CEvNS_crossSection, v_flux, numberNuclei):
+#     Emin = E_recoil + sqrt(E_recoil**2 + 2*M*E_recoil)/2
+#     return numberNuclei * quad( v_flux*CEvNS_crossSection, a=Emin, b=inf )
+
 def histogram( **args ):
     args = Namespace(**args)
-
+    print('args', args)
     import matplotlib.pylab as plt
 
     with Timer('histogram'):
@@ -1636,15 +1681,6 @@ def histogram( **args ):
             for i, function in enumerate(progressbar(args.function, msg='functions')):
                 print( 'args.function', function )
                 exec_string = function[0]
-
-                # for (key, entries), branch in zip( data.items(), args.branches ):
-                #     exec_string = exec_string.replace(key, F('data["{{key}}"]').str() )
-                #     function[1] = function[1].replace(key, F('data["{{key}}"]').str() )
-                #     if 'x_range' in args:
-                #         print('x-range', args.x_range[0], args.x_range[1])
-                #         args.x_range[0] = args.x_range[0].replace(key, F('data["{{key}}"]').str() )
-                #         args.x_range[1] = args.x_range[1].replace(key, F('data["{{key}}"]').str() )
-                #         print('x-range', args.x_range[0], args.x_range[1])
 
                 if 'x_range' in args:
                     if type(args.x_range[0]) is str:
