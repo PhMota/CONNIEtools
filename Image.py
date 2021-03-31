@@ -1273,12 +1273,343 @@ def add_display_options( p ):
     proj.add_argument( '--no-median', action='store_true', default = argparse.SUPPRESS, help = 'supress the mean line at the projection plot' )
     proj.add_argument( '--smooth', type=int, default = argparse.SUPPRESS, help = 'smoothening length' )
 
-    proj.add_argument( '--fit', action='append', type=str, default = argparse.SUPPRESS, help = 'fit command' )
+    proj.add_argument( '--fit', nargs='append', type=str, default = argparse.SUPPRESS, help = 'fit command' )
 
     spec = p.add_argument_group('spectrum options')
     spec.add_argument( '--binsize', type=float, default=1, help = 'binsize' )
 
     p.set_defaults( func=display )
+
+def add_compute_options( p ):
+    p.add_argument('input_file', help='fits file input (example: "/share/storage2/connie/data/runs/*/runID_*_03326_*.fits.fz"' )
+    p.add_argument(
+        '--ohdus',
+#         action='append',
+        type=str,
+        default='*',
+        help='ohdus to be used',
+        required = True
+    )
+    
+    p.add_argument(
+        '--out',
+        type=str,
+        default = argparse.SUPPRESS,
+        help = 'output filename'
+    )
+
+    geom = p.add_argument_group('geometry options')
+    geom.add_argument( '--E-range', nargs=2, type=eval, default = [-np.inf, np.inf], help = 'Emin Emax' )
+    geom.add_argument( '--E-span', nargs=1, type=eval, default = argparse.SUPPRESS, help = 'mean+-E_span' )
+    geom.add_argument( '--xrange', nargs='+', type=eval, default = [None, None], help = 'xmin xmax' )
+    geom.add_argument( '--yrange', nargs='+', type=eval, default = [None, None], help = 'ymin ymax' )
+    geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
+    geom.add_argument( '--section', type=str, default = argparse.SUPPRESS, help = 'data or bias' )
+    geom.add_argument( '--trim', action='store_true', default = argparse.SUPPRESS, help = 'remove trim' )
+    geom.add_argument( '--half', action='store_true', default = argparse.SUPPRESS, help = 'show half' )
+    geom.add_argument( '--quarter', action='store_true', default = argparse.SUPPRESS, help = 'show quarter' )
+    geom.add_argument( '--vmax', type=float, default = argparse.SUPPRESS, help = 'vmax' )
+
+    corr = p.add_argument_group('correction options')
+    corr.add_argument( '--remove', type=float, default=argparse.SUPPRESS, help = 'remove energies above' )
+    corr.add_argument( '--global-bias', action='store_true', default=argparse.SUPPRESS, help = 'remove global bias' )
+    corr.add_argument( '--correct-side', action='store_true', default=argparse.SUPPRESS, help = 'subtract right side' )
+    corr.add_argument( '--smooth-lines', type=int, default=argparse.SUPPRESS, help = 'smooth lines' )
+    corr.add_argument( '--sub-half', action='store_true', default=argparse.SUPPRESS, help = 'smooth lines' )
+    corr.add_argument( '--overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'horizontal overscan subtraction' )
+    corr.add_argument( '--vertical-overscan-subtraction', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'vertical overscan subtraction' )
+
+    quant = p.add_argument_group('quantities options')
+    quant.add_argument( '--axis', type=str, default=0, help = 'project on axis' )
+    quant.add_argument( '--funcs', nargs='+', type=str, default=argparse.SUPPRESS, help='supress the max line at the projection plot' )
+#     proj.add_argument( '--fitfunc', type=str, default=argparse.SUPPRESS, help='fit function' )
+
+#     spec = p.add_argument_group('spectrum options')
+#     spec.add_argument( '--binsize', type=float, default=1, help = 'binsize' )
+
+    p.set_defaults( func=compute )
+
+
+def hist_fit( func, ):
+    
+def compute_each( data, args ):
+    data = data.T
+
+    if 'side' in args:
+        side = int( args.side )
+        data = data[side*data.shape[0]:(side+1)*data.shape[0], :]
+        
+    if 'trim' in args:
+        if args.trim == 'trim8':
+            data = data[8:,:]
+    
+    if 'xrange' in args:
+        if len(args.xrange) == 1:
+            args.xrange.append(None)
+        data = data[args.xrange[0]:args.xrange[1], :]
+
+    if 'yrange' in args:
+        if len(args.yrange) == 1:
+            args.yrange.append(None)
+        data = data[:, args.yrange[0]:args.yrange[1]]
+        
+    if args.axis == '*':
+        data = data.flatten()
+    elif args.axis == '1':
+        data = data.T
+        
+    print( 'shape', data.shape )
+    for ax, func in enumerate(args.funcs):
+        print( ax, func )
+        data = eval( func )
+    
+    print( 'final value', data )
+    return
+    
+def compute( args ):
+    print( 'compute' )
+    with Timer('compute'):
+        if '*' in args.ohdus:
+            ohdus = []
+        else:
+            ohdus = map( int, args.ohdus )
+        paths = glob( args.input_file )
+        for path in paths:
+            print( colored('path', 'green'), path )
+            title = path.split('/')[-1]
+            if not os.path.exists(path):
+                print( 'file not found:', path )
+                exit(0)
+            
+            listHDU = astropy.io.fits.open( path )
+            imageHDU = None
+            for i, HDU in enumerate(listHDU):
+                if HDU.data is None:
+                    continue
+                if 'OHDU' in HDU.header:
+                    if HDU.header['OHDU'] == '1':
+                        continue
+                    if HDU.header['OHDU'] in ohdus or ohdus == []:
+                        print( 'ohdu', HDU.header['OHDU'] )
+                        compute_each( HDU.data.astype(float), args )
+    return
+
+#                         print( colored('ohdu', 'green'), args.ohdu )
+#                         break
+#                 else:
+#                     if i+1 == args.ohdu: imageHDU = HDU
+#             if imageHDU is None:
+#                 print( 'ohdu {} was not found in {}'.format( args.ohdu, path ) )
+#                 exit(0)
+
+#             data = imageHDU.data.astype(float)
+#             data = data[::-1,:]
+#             data[data>1e9] = np.nan
+
+#             height, width = data.shape
+#             print( colored('height', 'green'), height )
+#             print( colored('width', 'green'), width )
+#             number_of_amplifiers = width // constants.ccd_width
+#             print( colored('amplifiers', 'green'), number_of_amplifiers )
+#             if number_of_amplifiers > 0:
+#                 side_width = width//number_of_amplifiers
+#             else:
+#                 side_width = width
+#             print( colored('side width', 'green'), side_width )
+
+#             bias_width = int( np.ceil( (side_width - constants.ccd_width)/150. ) )*150
+#             print( colored('bias width', 'green'), bias_width )
+#             trim = constants.ccd_width + bias_width - side_width
+#             print( 'trim', trim )
+#             #bias_width = ( side_width + trim ) % constants.ccd_width
+
+#             height_trim = 1 #1
+
+#             #data.left = data[None:-height_trim, None:side_width]
+#             #data.right = data[None:-height_trim, side_width:None][:,::-1]
+
+#             if 'overscan_subtraction' in args:
+#                 os_range = args.overscan_subtraction
+#                 print( 'os_range', os_range, os_range[0] )
+#                 correction = np.median( data[ None:None, os_range[0]:os_range[1] ], axis=1 )[:,None]
+#                 data -= correction
+
+#             if 'vertical_overscan_subtraction' in args:
+#                 os_range = args.vertical_overscan_subtraction
+#                 print( 'os_range', os_range, os_range[0] )
+#                 correction = np.median( data[ os_range[0]:os_range[1], None:None ], axis=0 )[None,:]
+#                 data -= correction
+
+#             if 'side' in args:
+#                 if args.side == 'left' or args.side == '0':
+#                     print( colored('side', 'green'), 'left' )
+#                     if 'correct_side' in args:
+#                         print( colored('subtract', 'green'), 'right' )
+#                         data = data[None:-height_trim, None:side_width] - data[None:-height_trim, side_width:None][:,::-1]
+#                     else:
+#                         data = data[None:-height_trim, None:side_width]
+#                 elif args.side == 'right' or args.side == '1':
+#                     print( colored('side', 'green'), 'right' )
+#                     data = data[None:-height_trim, side_width:None][:,::-1]
+#                     if 'sub_half' in args:
+#                         print( colored('subtract line means', 'green'), 'true' )
+#                         correction = np.mean( data[None:None, constants.ccd_width/2:None], axis=1 )
+#                         if len(args.sub_half) > 0:
+#                             l = int(args.sub_half[0])
+#                             #correction =
+#                         data = data - correction[:,None]
+#                 else:
+#                     print( colored('side', 'green'), 'all' )
+
+#             if 'side' in args or number_of_amplifiers == 1:
+#                 if 'half' in args:
+#                     print( colored('half', 'green'), 'true' )
+#                     data = data[None:None, -constants.ccd_width/2:None]
+#                 elif 'quarter' in args:
+#                     print( colored('quarter', 'green'), 'true' )
+#                     data = data[None:None, -constants.ccd_width/4:None]
+
+#             if 'smooth_lines' in args:
+#                 print( colored('smooth lines', 'green'), args.smooth_lines )
+#                 data = scipy.ndimage.filters.uniform_filter1d( data, axis=1, size=args.smooth_lines, mode='mirror' )
+
+#             if 'trim' in args:
+#                 print( colored('trim', 'green'), '8' )
+#                 data = data[None:None, 8:]
+
+#             if 'global_bias' in args:
+#                 print( colored('subtract', 'green'), 'mean(OS)' )
+#                 data = data - np.nanmean( data[None:None, -bias_width:None] )
+
+#             if 'section' in args:
+#                 if args.section == 'bias' or args.section == 'os':
+#                     print( colored('section', 'green'), 'overscan' )
+#                     data = data[None:None, -bias_width:None]
+#                 if args.section == 'data' or args.section == 'ac':
+#                     print( colored('section', 'green'), 'active' )
+#                     data = data[None:None, None:-bias_width+5]
+#                     if 'half' in args:
+#                         print( colored('half', 'green'), 'true' )
+#                         data = data[None:None, data.shape[1]/2:None]
+
+#             if 'remove' in args:
+#                 print( colored('remove above', 'green'), args.remove )
+#                 data[ data > args.remove ] = np.nan
+
+
+#             if 'x_range' in args:
+#                 data = data[:, args.x_range[0]:args.x_range[1]]
+#                 print( colored('x-range', 'green'), args.x_range )
+#             if 'y_range' in args:
+#                 data = data[args.y_range[0]:args.y_range[1], :]
+#                 print( colored('y-range', 'green'), args.y_range )
+#             if 'E_span' in args:
+#                 E = np.nanmedian(data)
+#                 mask = np.logical_or( data<E-args.E_span, data>E+args.E_span )
+#                 data[mask] = np.nan
+#                 print( colored('E-span', 'green'), args.E_span, np.nanmin(data), np.nanmax(data) )
+#             elif 'E_range' in args:
+#                 data[data<=args.E_range[0]] = np.nan
+#                 data[data>args.E_range[1]] = np.nan
+#                 print( colored('E-range', 'green'), args.E_range, np.nanmin(data), np.nanmax(data) )
+
+#             fig = plt.figure()
+#             ax = fig.add_subplot(111)
+#             if args.plot[0] == 'proj':
+#                 print( colored('plot', 'green'), 'projection' )
+#                 axis = args.plot[1]
+#                 if axis in ['lines', '1', 'y']:
+#                     axis = 1
+#                 elif axis in ['rows', '0', 'x']:
+#                     axis = 0
+#                 else:
+#                     print( 'axis not expected' )
+#                     exit()
+#                 x = np.arange( 0, data.shape[axis-1] ).astype(float)
+#                 if not 'dev' in args:
+#                     mins = np.nanmin( data, axis=axis )
+#                     if not 'no_mean' in args:
+#                         means = np.nanmean( data, axis=axis )
+#                         print( means.shape )
+#                         ax.plot( means, '.', label='mean $\mu={:.4f}$'.format(np.nanmean(means)) )
+#                     if not 'no_median' in args:
+#                         medians = np.nanmedian( data, axis=axis )
+#                         ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
+
+#                     if 'smooth' in args:
+#                         #ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
+#                         ax.plot( scipy.ndimage.filters.uniform_filter1d( medians, size=args.smooth, mode='nearest' ), '.', label='median{}'.format(args.smooth) )
+#                         if not 'no_mean' in args:
+#                             ax.plot( scipy.ndimage.filters.uniform_filter1d( means, size=args.smooth, mode='nearest' ), '.', label='mean{}'.format(args.smooth) )
+#                     if not 'no_max' in args:
+#                         maxs = np.nanmax( data, axis=axis )
+#                         ax.plot( maxs, '.', label='max' )
+#                     if not 'no_min' in args:
+#                         mins = np.nanmin( data, axis=axis )
+#                         ax.plot( mins, '.', label='min' )
+#                     if 'fit' in args:
+#                         for fit in args.fit:
+#                             exec F(fit).str()
+#                 else:
+#                     mins = np.nanmin( data, axis=axis )
+#                     if not 'no_mean' in args:
+#                         stds = np.nanstd( data, axis=axis )
+#                         ax.plot( stds, '.', label='std $\mu={:.4f}$'.format(np.nanmean(stds)) )
+#                     mads = MAD( data, axis=axis )
+#                     ax.plot( mads, '.', label='MAD $\mu={:.4f}$'.format(np.nanmean(mads)) )
+#                     #fwhm = stats.FWHM( data, axis=axis, f=.001 )[0]
+#                     #ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
+#                     sigmas = mle_norm( data, axis=axis )[1]
+#                     ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )
+
+#             elif args.plot[0] == 'spectrum':
+#                 bins = np.arange( np.nanmin(data), np.nanmax(data), args.binsize )
+#                 y, x, dx = stats.make_histogram( data.flatten(), bins )
+#                 ax.step( x, y, where='mid', label = '' )
+
+#             elif args.plot[0] == 'image' or args.plot[0] == 'matrix':
+#                 cmap = matplotlib.cm.seismic
+#                 cmap.set_bad(color='black')
+#                 if 'log' in args.plot[1:]:
+#                     im = np.log(data - np.nanmin(data) + 1)
+#                     cmap.set_bad('black',0)
+#                 else:
+#                     im = data
+#                     cmap.set_bad('black',0)
+#                 try:
+#                     vmean = np.nanmedian(im)
+#                     vmax = np.nanmax(np.abs(im - vmean))
+#                     if 'vmax' in args:
+#                         vmax = args.vmax
+
+#                     print( 'vmax', vmax )
+#                     if args.plot[0] == 'image':
+#                         func = ax.imshow
+#                     elif args.plot[0] == 'matrix':
+#                         func = ax.matshow
+#                     obj = func( im, cmap=cmap, origin='lower', vmin=vmean-vmax, vmax=vmean+vmax, interpolation='none' )
+#                     divider = make_axes_locatable(ax)
+#                     cax = divider.append_axes("right", size="5%", pad=0.1)
+#                     fig.colorbar( obj, cax )
+#                     title += '\n mean {:.4}'.format( np.nanmean( im ) )
+#                     title += '\n std {:.4}'.format( np.nanstd( im ) )
+#                 except:
+#                     print( 'im.shape', im.shape, data.shape )
+#                     exit()
+#             else:
+#                 print( 'plot option "{}" not implemented'.format( args.plot ) )
+#                 exit(0)
+
+#             ax.set_title( title, fontsize=8 )
+#             ax.grid()
+#             ax.legend()
+#         if 'png' in args:
+#             outfile = args.input_file + '.' + '_'.join(args.plot) + '.png'
+#             print( 'outfile', outfile )
+#             fig.savefig( outfile, bbox_inches='tight', pad_inches=0 )
+#         else:
+#             plt.show()
+#         return
 
 def display( args ):
     from matplotlib import pylab as plt
@@ -1453,9 +1784,9 @@ def display( args ):
                 if not 'no_min' in args:
                     mins = np.nanmin( data, axis=axis )
                     ax.plot( mins, '.', label='min' )
-                if 'fit' in args:
-                    for fit in args.fit:
-                        exec F(fit).str()
+#                 if 'fit' in args:
+#                     for fit in args.fit:
+#                         exec F(fit).str()
             else:
                 mins = np.nanmin( data, axis=axis )
                 if not 'no_mean' in args:
@@ -1758,10 +2089,10 @@ def superpose( args ):
 
 def add_superpose_options( p ):
     p.add_argument( 'input_files', nargs='+' )
-    p.add_argument( '--indices', nargs='*', default = None, type=int, help='indexes to be shown' )
-    p.add_argument( '--include', nargs='*', default = '', help='fields to be shown' )
-    p.add_argument( '--exclude', nargs='*', default = '', help='fields not to be shown' )
-    p.add_argument( '--output', default = 'output', help='output name' )
+    p.add_argument( '--indices', nargs='*', default=None, type=int, help='indexes to be shown' )
+    p.add_argument( '--include', nargs='*', default='', help='fields to be shown' )
+    p.add_argument( '--exclude', nargs='*', default='', help='fields not to be shown' )
+    p.add_argument( '--output', default='output', help='output name' )
     p.set_defaults( func=superpose )
     return
 
@@ -1813,11 +2144,15 @@ if __name__ == '__main__':
     add_monitor_options( subparsers.add_parser('monitor', help='monitorViewer functions'), monitor )
     add_HWFM_options( subparsers.add_parser('hwfm', help='test the hwfm algorithm') )
     add_display_options( subparsers.add_parser('display', help='display the image') )
+    add_compute_options( subparsers.add_parser('compute', help='compute quantities of the image') )
     add_superpose_options( subparsers.add_parser('superpose', help='superpose images') )
 
+    print( 'running Image.py' )
+    args = parser.parse_args()
     try:
         args = parser.parse_args()
     except:
+        print( 'error in parser' )
         parser.print_help()
         exit(1)
 

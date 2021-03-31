@@ -133,271 +133,271 @@ def weighted( name, label, binsize, Emax, ohdus, selections = [geometric_selecti
 height = .45
 
 with Timer('presentation'):
-    # with openBeamer( folder, r'run2019 data analysis' ) as doc:
-    #
-    #     # doc += part('measured event rate')
-    #
-    #     doc += frame( F('weighted average of the differential rate'),
-    #         'the weighted average of the differential event rate is',
-    #         Math((
-    #             ave(delim(calR[nu])[i,a]) == (
-    #                 frac( Sum[a]* w[i,a] * delim(calR[nu])[i,a], Sum[a]* w[i,a] )
-    #             ),
-    #             w[i,a] == frac(1, delim(delta*delim(calR[nu])[i,a])**2)
-    #             )
-    #         ),
-    #         column( *[ makefigure(
-    #             rate_defs( Emax, binsize, 'weighted average' )
-    #             + weighted( 'data', 'reactor ON--OFF', binsize, Emax, ohdus19)
-    #             , F(r'differentialRateOHDUwAverageBinsize{{binsize}}.pdf')
-    #             , height = height
-    #             , folder = folder
-    #             , nocode = True
-    #             ) for binsize, Emax in loop ], widths=[.5,.5]
-    #         )
-    #     )
-    #
-    #     doc += frame( F('weighted average of the differential rate'),
-    #         'the weighted average of the differential event rate is',
-    #         Math((
-    #             ave(delim(calR[nu])[i,a]) == (
-    #                 frac( Sum[a]* w[i,a] * delim(calR[nu])[i,a], Sum[a]* w[i,a] )
-    #             ),
-    #             w[i,a] == frac(1, delim(delta*delim(calR[nu])[i,a])**2)
-    #             )
-    #         ),
-    #         column( *[ makefigure(
-    #             rate_defs( Emax, binsize, 'weighted average\nreactor ON--OFF', global_selection = '' )
-    #             + weighted( 'data', 'low-noise included', binsize, Emax, ohdus19, selections = [geometric_selection, size_selection, 'E0/gain3Peaks>.045', column_selection, runID_excluded])
-    #             + weighted( 'data2', 'low-noise excluded', binsize, Emax, ohdus19, selections = [geometric_selection, size_selection, 'E0/gain3Peaks>.045', column_selection, runID_excluded, runID_excluded_low], N_on = non_noise19, N_off = noff_noise19)
-    #             , F(r'differentialRateOHDUwAverageLowNoiseXBinsize{{binsize}}.pdf')
-    #             , height = height
-    #             , folder = folder
-    #             , nocode = True
-    #             ) for binsize, Emax in loop ], widths=[.5,.5]
-    #         )
-    #     )
-    #
-    #     itemize_entry = itemize(
-    #                     textcolor( 'orange', 'energy: ' ) + inlinecode( 'E0/gain3Peaks>.045' )
-    #                     , textcolor( 'teal', 'geometric: ' ) + inlinecode( geometric_selection )
-    #                     , textcolor( 'red', 'columns: ' ) + inlinecode( column_selection )
-    #                     , textcolor( 'violet', 'depth: ' ) + inlinecode( size_selection )
-    #                 )
-    #     doc += frame( F('comparison of the selections'),
-    #         'adding selections to the unbiased data',
-    #         itemize_entry,
-    #         column( *[ makefigure(
-    #             rate_defs( Emax, binsize, 'weighted average\nreactor ON--OFF' )
-    #             + weighted( 'dataU', 'unbiased', binsize, Emax, ohdus19, selections = [])
-    #             + weighted( 'dataE', 'energy selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045'])
-    #             + weighted( 'dataG', 'geometric selection', binsize, Emax, ohdus19, selections = [geometric_selection])
-    #             + weighted( 'dataC', 'column selection', binsize, Emax, ohdus19, selections = [column_selection])
-    #             + weighted( 'dataS', 'depth selection', binsize, Emax, ohdus19, selections = [size_selection])
-    #             + weighted( 'data', 'combined', binsize, Emax, ohdus19, extra = '"{\'ms\':5}"')
-    #             , F(r'differentialRateOHDUwAverageBinsize{{binsize}}.pdf')
-    #             , height = height
-    #             , folder = folder
-    #             , nocode = True
-    #             ) for binsize, Emax in loop ], widths=[.5,.5]
-    #         )
-    #     )
-    #
-    #     doc += frame( F('comparison of the selections'),
-    #         'subtracting selections from the combined data',
-    #         itemize_entry,
-    #         column( *[ makefigure(
-    #             rate_defs( Emax, binsize, 'weighted average\nreactor ON--OFF' )
-    #             + weighted( 'dataU', 'unbiased', binsize, Emax, ohdus19, selections = [])
-    #             + weighted( 'dataE', 'energy selection', binsize, Emax, ohdus19, selections = [geometric_selection, column_selection, size_selection])
-    #             + weighted( 'dataG', 'geometric selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', column_selection, size_selection])
-    #             + weighted( 'dataC', 'column selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', geometric_selection, size_selection])
-    #             + weighted( 'dataS', 'depth selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection])
-    #             + weighted( 'data', 'combined', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection, size_selection], extra = '"{\'ms\':5}"')
-    #             , F(r'differentialRateOHDUwAverageBinsize{{binsize}}.pdf')
-    #             , height = height
-    #             , folder = folder
-    #             , nocode = True
-    #             ) for binsize, Emax in loop ], widths=[.5,.5]
-    #         )
-    #     )
-    #
-    #     for ohdu in ohdus19:
-    #         doc += frame(F('differential rate ohdu {{ohdu}}'),
-    #             'adding selections to the unbiased data',
-    #             itemize_entry,
-    #             column( *[ makefigure(
-    #                 rate_defs( Emax, binsize, F('OHDU{{ohdu}}\nreactor ON--OFF') )
-    #                 + weighted( 'dataU', 'unbiased', binsize, Emax, [ohdu], selections = [])
-    #                 + weighted( 'dataE', 'energy selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045'])
-    #                 + weighted( 'dataG', 'geometric selection', binsize, Emax, [ohdu], selections = [geometric_selection])
-    #                 + weighted( 'dataC', 'column selection', binsize, Emax, [ohdu], selections = [column_selection])
-    #                 + weighted( 'dataS', 'depth selection', binsize, Emax, [ohdu], selections = [size_selection])
-    #                 + weighted( 'data', 'combined', binsize, Emax, [ohdu], extra = '"{\'ms\':5}"')
-    #                 , F(r'differentialRateOHDU{{ohdu}}binsize{{binsize}}.pdf')
-    #                 , height = height
-    #                 , folder = folder
-    #                 , nocode = True
-    #                 ) for binsize, Emax in loop ],
-    #             widths=[.5,.5]
-    #             )
-    #         )
-    #
-    #     for ohdu in ohdus19:
-    #         doc += frame(F('differential rate ohdu {{ohdu}}'),
-    #             'subtracting selections from the combined data',
-    #             itemize_entry,
-    #             column( *[ makefigure(
-    #                 rate_defs( Emax, binsize, F('OHDU{{ohdu}}\nreactor ON--OFF') )
-    #                 + weighted( 'dataU', 'unbiased', binsize, Emax, [ohdu], selections = [])
-    #                 + weighted( 'dataE', 'energy selection', binsize, Emax, [ohdu], selections = [geometric_selection, column_selection, size_selection])
-    #                 + weighted( 'dataG', 'geometric selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', column_selection, size_selection])
-    #                 + weighted( 'dataC', 'column selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', geometric_selection, size_selection])
-    #                 + weighted( 'dataS', 'depth selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection])
-    #                 + weighted( 'data', 'combined', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection, size_selection], extra = '"{\'ms\':5}"')
-    #                 , F(r'differentialRateOHDU{{ohdu}}binsize{{binsize}}.pdf')
-    #                 , height = height
-    #                 , folder = folder
-    #                 , nocode = True
-    #                 ) for binsize, Emax in loop ],
-    #             widths=[.5,.5]
-    #             )
-    #         )
+    with openBeamer( folder, r'run2019 data analysis' ) as doc:
 
-    with openBeamer( folder, r'on-chip sources' ) as doc:
+        # doc += part('measured event rate')
 
-        doc += frame('excluded runIDs',
-            'excluded runIDs',
-            itemize(
-                'remove high noise (official): ' + inlinecode(runID_excluded, language='bash'),
-                'remove zero-like noise: ' + inlinecode(runID_excluded_low, language='bash')
+        doc += frame( F('weighted average of the differential rate'),
+            'the weighted average of the differential event rate is',
+            Math((
+                ave(delim(calR[nu])[i,a]) == (
+                    frac( Sum[a]* w[i,a] * delim(calR[nu])[i,a], Sum[a]* w[i,a] )
+                ),
+                w[i,a] == frac(1, delim(delta*delim(calR[nu])[i,a])**2)
+                )
+            ),
+            column( *[ makefigure(
+                rate_defs( Emax, binsize, 'weighted average' )
+                + weighted( 'data', 'reactor ON--OFF', binsize, Emax, ohdus19)
+                , F(r'differentialRateOHDUwAverageBinsize{{binsize}}.pdf')
+                , height = height
+                , folder = folder
+                , nocode = True
+                ) for binsize, Emax in loop ], widths=[.5,.5]
             )
         )
 
-        doc += part('noise evolution')
-
-        for ohdu in ohdus19:
-            doc += frame(F('noise evolution OHDU{{ohdu}}'),
-                column(
-                makefigure(
-                    './catalog histogram'
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
-                    + F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "noise_ON_19"')
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
-                    + F(' -s "scnNoise" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "noise_OFF_19"')
-                    + F(' -f "unique_tuples(runID_ON_19, noise_ON_19, 0, 0)"') + (' "reactor ON {{len(unique(runID_ON_19))}}"')
-                    + F(' -f "unique_tuples(runID_OFF_19, noise_OFF_19, 0, 0)"') + (' "reactor OFF {{len(unique(runID_OFF_19))}}"')
-                    + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "runID" --ylabel "noise [e-]" --legend-title "noise"')
-                    , F(r'evoNoiseOHDU{{ohdu}}.pdf')
-                    , height = height
-                    , folder = folder
-                    , nocode = True
-                    ),
-                makefigure(
-                    './catalog histogram'
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
-                    + F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "noise_ON_19"')
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
-                    + F(' -s "scnNoise" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "noise_OFF_19"')
-                    + F(' -f "hist(unique_tuples(runID_ON_19, noise_ON_19, 0, 0)[1], bins,norm=True)"') + ' "reactor ON {{len(unique(runID_ON_19))}}"'
-                    + F(' -f "hist(unique_tuples(runID_OFF_19, noise_OFF_19, 0, 0)[1],bins,norm=True)"') + ' "reactor OFF {{len(unique(runID_OFF_19))}}"'
-                    + ' --x-range "{{ mean(noise_OFF_19) - 5*std(noise_OFF_19) }}" "{{ mean(noise_OFF_19) + 5*std(noise_OFF_19) }}" --binsize "{{std(noise_OFF_19)/2}}"'
-                    + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --ylabel "frequency" --xlabel "noise [e-]" --legend-title "noise"')
-                    , F(r'histNoiseOHDU{{ohdu}}.pdf')
-                    , height = height
-                    , folder = folder
-                    , nocode = True
-                    ),
-                widths = [.5,.5]
-                )
-                )
-
-        doc += part('dark current evolution')
-
-        for ohdu in ohdus19:
-            doc += frame(F('dark current OHDU{{ohdu}}'),
-                column(
-                makefigure(
-                    './catalog histogram'
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
-                    + F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "dc_ON_19"')
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
-                    + F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "dc_OFF_19"')
-                    + F(' -f "unique_tuples(runID_ON_19, dc_ON_19, 0, 0)" "reactor ON"')
-                    + F(' -f "unique_tuples(runID_OFF_19, dc_OFF_19, 0, 0)" "reactor OFF"')
-                    + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "runID" --ylabel "dark current [e-]" --legend-title "dark current"')
-                    , F(r'evoDCOHDU{{ohdu}}.pdf')
-                    , height = height
-                    , folder = folder
-                    , nocode = True
-                    ),
-                makefigure(
-                    './catalog histogram'
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
-                    + F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "dc_ON_19"')
-                    + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
-                    + F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "dc_OFF_19"')
-                    + F(' -f "hist(unique_tuples(runID_ON_19, dc_ON_19, 0, 0)[1], bins,norm=True)"') + ' "reactor ON {{len(unique(runID_ON_19))}}"'
-                    + F(' -f "hist(unique_tuples(runID_OFF_19, dc_OFF_19, 0, 0)[1],bins,norm=True)"') + ' "reactor OFF {{len(unique(runID_OFF_19))}}"'
-                    + ' --x-range "{{ mean(dc_OFF_19) - 5*std(dc_OFF_19) }}" "{{ mean(dc_OFF_19) + 5*std(dc_OFF_19) }}" --binsize "{{std(dc_OFF_19)/2}}"'
-                    + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --ylabel "frequency" --xlabel "dark current [e-]" --legend-title "dark current"')
-                    , F(r'histDCOHDU{{ohdu}}.pdf')
-                    , height = height
-                    , folder = folder
-                    , nocode = True
-                    ),
-                widths = [.5,.5]
-                )
-                )
-
-
-        # doc += frame(F('noise vs dark current OHDU{{ohdu}}'),
-        #     makefigure(
-        #         './catalog histogram'
-        #         # + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
-        #         + F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "noise_ON_19"')
-        #         + F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "dc_ON_19"')
-        #         # + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
-        #         # + F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "dc_OFF_19"')
-        #         + F(' -f "unique_tuples(noise_ON_19, dc_ON_19, 0, 0)" "OHDU{{ohdu}}"')
-        #         # + F(' -f "unique_tuples(runID_OFF_19, dc_OFF_19, 0, 0)" "reactor OFF"')
-        #         + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "noise [e\${}^-\$]" --ylabel "dark current [e\${}^-\$]" --legend-title ""')
-        #         , F(r'noiseDCOHDU{{ohdu}}.pdf')
-        #         , height = height
-        #         , folder = folder
-        #         , nocode = True
-        #         )
-        #     )
-
-        doc += part('combined')
-
-        doc += frame(F('noise vs dark current'),
-            column(
-            makefigure(
-                './catalog histogram'
-                + ' '.join( [ F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu_}}" "noise_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
-                + ' '.join( [ F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu_}}" "dc_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19] )
-                + ' '.join( [ F(' -f "unique_tuples(noise_ON_{{ohdu_}}, dc_ON_{{ohdu_}}, 0, 0)" "OHDU {{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
-                + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "noise [e-]" --ylabel "dark current [e-]" --legend-title "reactor ON" --x-range 1.5 2.1 --binsize 1 --y-range 0.02 0.06')
-                , F(r'noiseDCOHDUallON.pdf')
-                , height = height
-                , folder = folder
-                , nocode = True
+        doc += frame( F('weighted average of the differential rate'),
+            'the weighted average of the differential event rate is',
+            Math((
+                ave(delim(calR[nu])[i,a]) == (
+                    frac( Sum[a]* w[i,a] * delim(calR[nu])[i,a], Sum[a]* w[i,a] )
                 ),
-            makefigure(
-                './catalog histogram'
-                + ' '.join( [ F(' -s "scnNoise" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu_}}" "noise_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
-                + ' '.join( [ F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu_}}" "dc_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19] )
-                + ' '.join( [ F(' -f "unique_tuples(noise_ON_{{ohdu_}}, dc_ON_{{ohdu_}}, 0, 0)" "OHDU {{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
-                + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "noise [e-]" --ylabel "dark current [e-]" --legend-title "reactor OFF" --x-range 1.5 2.1 --binsize 1 --y-range 0.02 0.06')
-                , F(r'noiseDCOHDUallOFF.pdf')
+                w[i,a] == frac(1, delim(delta*delim(calR[nu])[i,a])**2)
+                )
+            ),
+            column( *[ makefigure(
+                rate_defs( Emax, binsize, 'weighted average\nreactor ON--OFF', global_selection = '' )
+                + weighted( 'data', 'low-noise included', binsize, Emax, ohdus19, selections = [geometric_selection, size_selection, 'E0/gain3Peaks>.045', column_selection, runID_excluded])
+                + weighted( 'data2', 'low-noise excluded', binsize, Emax, ohdus19, selections = [geometric_selection, size_selection, 'E0/gain3Peaks>.045', column_selection, runID_excluded, runID_excluded_low], N_on = non_noise19, N_off = noff_noise19)
+                , F(r'differentialRateOHDUwAverageLowNoiseXBinsize{{binsize}}.pdf')
                 , height = height
                 , folder = folder
                 , nocode = True
+                ) for binsize, Emax in loop ], widths=[.5,.5]
+            )
+        )
+
+        itemize_entry = itemize(
+                        textcolor( 'orange', 'energy: ' ) + inlinecode( 'E0/gain3Peaks>.045' )
+                        , textcolor( 'teal', 'geometric: ' ) + inlinecode( geometric_selection )
+                        , textcolor( 'red', 'columns: ' ) + inlinecode( column_selection )
+                        , textcolor( 'violet', 'depth: ' ) + inlinecode( size_selection )
+                    )
+        doc += frame( F('comparison of the selections'),
+            'adding selections to the unbiased data',
+            itemize_entry,
+            column( *[ makefigure(
+                rate_defs( Emax, binsize, 'weighted average\nreactor ON--OFF' )
+                + weighted( 'dataU', 'unbiased', binsize, Emax, ohdus19, selections = [])
+                + weighted( 'dataE', 'energy selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045'])
+                + weighted( 'dataG', 'geometric selection', binsize, Emax, ohdus19, selections = [geometric_selection])
+                + weighted( 'dataC', 'column selection', binsize, Emax, ohdus19, selections = [column_selection])
+                + weighted( 'dataS', 'depth selection', binsize, Emax, ohdus19, selections = [size_selection])
+                + weighted( 'data', 'combined', binsize, Emax, ohdus19, extra = '"{\'ms\':5}"')
+                , F(r'differentialRateOHDUwAverageBinsize{{binsize}}.pdf')
+                , height = height
+                , folder = folder
+                , nocode = True
+                ) for binsize, Emax in loop ], widths=[.5,.5]
+            )
+        )
+
+        doc += frame( F('comparison of the selections'),
+            'subtracting selections from the combined data',
+            itemize_entry,
+            column( *[ makefigure(
+                rate_defs( Emax, binsize, 'weighted average\nreactor ON--OFF' )
+                + weighted( 'dataU', 'unbiased', binsize, Emax, ohdus19, selections = [])
+                + weighted( 'dataE', 'energy selection', binsize, Emax, ohdus19, selections = [geometric_selection, column_selection, size_selection])
+                + weighted( 'dataG', 'geometric selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', column_selection, size_selection])
+                + weighted( 'dataC', 'column selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', geometric_selection, size_selection])
+                + weighted( 'dataS', 'depth selection', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection])
+                + weighted( 'data', 'combined', binsize, Emax, ohdus19, selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection, size_selection], extra = '"{\'ms\':5}"')
+                , F(r'differentialRateOHDUwAverageBinsize{{binsize}}.pdf')
+                , height = height
+                , folder = folder
+                , nocode = True
+                ) for binsize, Emax in loop ], widths=[.5,.5]
+            )
+        )
+
+        for ohdu in ohdus19:
+            doc += frame(F('differential rate ohdu {{ohdu}}'),
+                'adding selections to the unbiased data',
+                itemize_entry,
+                column( *[ makefigure(
+                    rate_defs( Emax, binsize, F('OHDU{{ohdu}}\nreactor ON--OFF') )
+                    + weighted( 'dataU', 'unbiased', binsize, Emax, [ohdu], selections = [])
+                    + weighted( 'dataE', 'energy selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045'])
+                    + weighted( 'dataG', 'geometric selection', binsize, Emax, [ohdu], selections = [geometric_selection])
+                    + weighted( 'dataC', 'column selection', binsize, Emax, [ohdu], selections = [column_selection])
+                    + weighted( 'dataS', 'depth selection', binsize, Emax, [ohdu], selections = [size_selection])
+                    + weighted( 'data', 'combined', binsize, Emax, [ohdu], extra = '"{\'ms\':5}"')
+                    , F(r'differentialRateOHDU{{ohdu}}binsize{{binsize}}.pdf')
+                    , height = height
+                    , folder = folder
+                    , nocode = True
+                    ) for binsize, Emax in loop ],
+                widths=[.5,.5]
                 )
-            , widths = [.5,.5]
-            )
             )
 
+        for ohdu in ohdus19:
+            doc += frame(F('differential rate ohdu {{ohdu}}'),
+                'subtracting selections from the combined data',
+                itemize_entry,
+                column( *[ makefigure(
+                    rate_defs( Emax, binsize, F('OHDU{{ohdu}}\nreactor ON--OFF') )
+                    + weighted( 'dataU', 'unbiased', binsize, Emax, [ohdu], selections = [])
+                    + weighted( 'dataE', 'energy selection', binsize, Emax, [ohdu], selections = [geometric_selection, column_selection, size_selection])
+                    + weighted( 'dataG', 'geometric selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', column_selection, size_selection])
+                    + weighted( 'dataC', 'column selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', geometric_selection, size_selection])
+                    + weighted( 'dataS', 'depth selection', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection])
+                    + weighted( 'data', 'combined', binsize, Emax, [ohdu], selections = ['E0/gain3Peaks>.045', geometric_selection, column_selection, size_selection], extra = '"{\'ms\':5}"')
+                    , F(r'differentialRateOHDU{{ohdu}}binsize{{binsize}}.pdf')
+                    , height = height
+                    , folder = folder
+                    , nocode = True
+                    ) for binsize, Emax in loop ],
+                widths=[.5,.5]
+                )
+            )
 
-# ./image display "/share/storage2/connie/data/runs/043/runID_043_07000_Int-400_Exp-3600_28May19_04:12_to_28May19_05:16_p1.fits.fz" --plot proj 0 --ohdu 2 --E-span 500 --side 1 --fit "ax.plot( fitted_curve(lambda x, *p: p[0] + p[1]*(np.exp(-p[2]*x) - p[3]*np.exp(-p[4]*x)), [4300,-1000,1, 100, .1, 1], x, means), '.', label = 'fit')" --no-max --x-range 10 3000 --global-bias
+#     with openBeamer( folder, r'on-chip sources' ) as doc:
+#
+#         doc += frame('excluded runIDs',
+#             'excluded runIDs',
+#             itemize(
+#                 'remove high noise (official): ' + inlinecode(runID_excluded, language='bash'),
+#                 'remove zero-like noise: ' + inlinecode(runID_excluded_low, language='bash')
+#             )
+#         )
+#
+#         doc += part('noise evolution')
+#
+#         for ohdu in ohdus19:
+#             doc += frame(F('noise evolution OHDU{{ohdu}}'),
+#                 column(
+#                 makefigure(
+#                     './catalog histogram'
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
+#                     + F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "noise_ON_19"')
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
+#                     + F(' -s "scnNoise" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "noise_OFF_19"')
+#                     + F(' -f "unique_tuples(runID_ON_19, noise_ON_19, 0, 0)"') + (' "reactor ON {{len(unique(runID_ON_19))}}"')
+#                     + F(' -f "unique_tuples(runID_OFF_19, noise_OFF_19, 0, 0)"') + (' "reactor OFF {{len(unique(runID_OFF_19))}}"')
+#                     + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "runID" --ylabel "noise [e-]" --legend-title "noise"')
+#                     , F(r'evoNoiseOHDU{{ohdu}}.pdf')
+#                     , height = height
+#                     , folder = folder
+#                     , nocode = True
+#                     ),
+#                 makefigure(
+#                     './catalog histogram'
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
+#                     + F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "noise_ON_19"')
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
+#                     + F(' -s "scnNoise" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "noise_OFF_19"')
+#                     + F(' -f "hist(unique_tuples(runID_ON_19, noise_ON_19, 0, 0)[1], bins,norm=True)"') + ' "reactor ON {{len(unique(runID_ON_19))}}"'
+#                     + F(' -f "hist(unique_tuples(runID_OFF_19, noise_OFF_19, 0, 0)[1],bins,norm=True)"') + ' "reactor OFF {{len(unique(runID_OFF_19))}}"'
+#                     + ' --x-range "{{ mean(noise_OFF_19) - 5*std(noise_OFF_19) }}" "{{ mean(noise_OFF_19) + 5*std(noise_OFF_19) }}" --binsize "{{std(noise_OFF_19)/2}}"'
+#                     + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --ylabel "frequency" --xlabel "noise [e-]" --legend-title "noise"')
+#                     , F(r'histNoiseOHDU{{ohdu}}.pdf')
+#                     , height = height
+#                     , folder = folder
+#                     , nocode = True
+#                     ),
+#                 widths = [.5,.5]
+#                 )
+#                 )
+#
+#         doc += part('dark current evolution')
+#
+#         for ohdu in ohdus19:
+#             doc += frame(F('dark current OHDU{{ohdu}}'),
+#                 column(
+#                 makefigure(
+#                     './catalog histogram'
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
+#                     + F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "dc_ON_19"')
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
+#                     + F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "dc_OFF_19"')
+#                     + F(' -f "unique_tuples(runID_ON_19, dc_ON_19, 0, 0)" "reactor ON"')
+#                     + F(' -f "unique_tuples(runID_OFF_19, dc_OFF_19, 0, 0)" "reactor OFF"')
+#                     + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "runID" --ylabel "dark current [e-]" --legend-title "dark current"')
+#                     , F(r'evoDCOHDU{{ohdu}}.pdf')
+#                     , height = height
+#                     , folder = folder
+#                     , nocode = True
+#                     ),
+#                 makefigure(
+#                     './catalog histogram'
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
+#                     + F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "dc_ON_19"')
+#                     + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
+#                     + F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "dc_OFF_19"')
+#                     + F(' -f "hist(unique_tuples(runID_ON_19, dc_ON_19, 0, 0)[1], bins,norm=True)"') + ' "reactor ON {{len(unique(runID_ON_19))}}"'
+#                     + F(' -f "hist(unique_tuples(runID_OFF_19, dc_OFF_19, 0, 0)[1],bins,norm=True)"') + ' "reactor OFF {{len(unique(runID_OFF_19))}}"'
+#                     + ' --x-range "{{ mean(dc_OFF_19) - 5*std(dc_OFF_19) }}" "{{ mean(dc_OFF_19) + 5*std(dc_OFF_19) }}" --binsize "{{std(dc_OFF_19)/2}}"'
+#                     + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --ylabel "frequency" --xlabel "dark current [e-]" --legend-title "dark current"')
+#                     , F(r'histDCOHDU{{ohdu}}.pdf')
+#                     , height = height
+#                     , folder = folder
+#                     , nocode = True
+#                     ),
+#                 widths = [.5,.5]
+#                 )
+#                 )
+#
+#
+#         # doc += frame(F('noise vs dark current OHDU{{ohdu}}'),
+#         #     makefigure(
+#         #         './catalog histogram'
+#         #         # + F(' -s "runID" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "runID_ON_19"')
+#         #         + F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "noise_ON_19"')
+#         #         + F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu}}" "dc_ON_19"')
+#         #         # + F(' -s "runID" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "runID_OFF_19"')
+#         #         # + F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu}}" "dc_OFF_19"')
+#         #         + F(' -f "unique_tuples(noise_ON_19, dc_ON_19, 0, 0)" "OHDU{{ohdu}}"')
+#         #         # + F(' -f "unique_tuples(runID_OFF_19, dc_OFF_19, 0, 0)" "reactor OFF"')
+#         #         + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "noise [e\${}^-\$]" --ylabel "dark current [e\${}^-\$]" --legend-title ""')
+#         #         , F(r'noiseDCOHDU{{ohdu}}.pdf')
+#         #         , height = height
+#         #         , folder = folder
+#         #         , nocode = True
+#         #         )
+#         #     )
+#
+#         doc += part('combined')
+#
+#         doc += frame(F('noise vs dark current'),
+#             column(
+#             makefigure(
+#                 './catalog histogram'
+#                 + ' '.join( [ F(' -s "scnNoise" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu_}}" "noise_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
+#                 + ' '.join( [ F(' -s "scnDC" "{{nuCatalogs}}" "{{on19}} and ohdu=={{ohdu_}}" "dc_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19] )
+#                 + ' '.join( [ F(' -f "unique_tuples(noise_ON_{{ohdu_}}, dc_ON_{{ohdu_}}, 0, 0)" "OHDU {{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
+#                 + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "noise [e-]" --ylabel "dark current [e-]" --legend-title "reactor ON" --x-range 1.5 2.1 --binsize 1 --y-range 0.02 0.06')
+#                 , F(r'noiseDCOHDUallON.pdf')
+#                 , height = height
+#                 , folder = folder
+#                 , nocode = True
+#                 ),
+#             makefigure(
+#                 './catalog histogram'
+#                 + ' '.join( [ F(' -s "scnNoise" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu_}}" "noise_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
+#                 + ' '.join( [ F(' -s "scnDC" "{{nuCatalogs}}" "{{off19}} and ohdu=={{ohdu_}}" "dc_ON_{{ohdu_}}"').str() for ohdu_ in ohdus19] )
+#                 + ' '.join( [ F(' -f "unique_tuples(noise_ON_{{ohdu_}}, dc_ON_{{ohdu_}}, 0, 0)" "OHDU {{ohdu_}}"').str() for ohdu_ in ohdus19 ] )
+#                 + F(' --global-selection "{{runID_excluded}} and {{runID_excluded_low}}" --xlabel "noise [e-]" --ylabel "dark current [e-]" --legend-title "reactor OFF" --x-range 1.5 2.1 --binsize 1 --y-range 0.02 0.06')
+#                 , F(r'noiseDCOHDUallOFF.pdf')
+#                 , height = height
+#                 , folder = folder
+#                 , nocode = True
+#                 )
+#             , widths = [.5,.5]
+#             )
+#             )
+#
+#
+# # ./image display "/share/storage2/connie/data/runs/043/runID_043_07000_Int-400_Exp-3600_28May19_04:12_to_28May19_05:16_p1.fits.fz" --plot proj 0 --ohdu 2 --E-span 500 --side 1 --fit "ax.plot( fitted_curve(lambda x, *p: p[0] + p[1]*(np.exp(-p[2]*x) - p[3]*np.exp(-p[4]*x)), [4300,-1000,1, 100, .1, 1], x, means), '.', label = 'fit')" --no-max --x-range 10 3000 --global-bias

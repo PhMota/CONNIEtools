@@ -1,1 +1,1 @@
-jupyter notebook --no-browser --port=8889
+jupyter lab --no-browser --port=8889

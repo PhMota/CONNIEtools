@@ -18,7 +18,7 @@ class progressbar:
         self.current += 1
         for i, active in enumerate(progressbar.active[::-1]):
             complete = 100*(active.current-1)/len(active.iter)
-            print( colored('|' + '#'*(complete*active.length/100) + ' '*(active.length -complete*active.length/100) + '| %3s%%' % complete + ' %s' %active.msg, 'green') )
+            print( colored('|' + '#'*int(complete*active.length/100) + ' '*int(active.length -complete*active.length/100) + '| %3s%%' % complete + ' %s' %active.msg, 'green') )
 
         for active in progressbar.active:
             sys.stdout.write("\033[F") # Cursor up one line
@@ -29,7 +29,7 @@ class progressbar:
         except IndexError:
             progressbar.active.pop()
             raise StopIteration
-
+    __next__ = next
 
 if __name__ == '__main__':
     for i in progressbar(range(5)):

@@ -478,7 +478,7 @@ def factorial(a):
 import hashlib
 
 def my_hash(entry):
-    return int(hashlib.md5(str(entry)).hexdigest(), 16)
+    return int(hashlib.md5(str(entry).encode('utf-8')).hexdigest(), 16)
 
 def makefigure( code, filename, height=1., folder='', nocode=False ):
     split_filename = str(filename).split('.')
