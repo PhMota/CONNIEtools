@@ -1330,7 +1330,7 @@ def add_compute_options( p ):
     p.set_defaults( func=compute )
 
 
-def hist_fit( func, ):
+# def hist_fit( func, ):
     
 def compute_each( data, args ):
     data = data.T
