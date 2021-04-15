@@ -15,7 +15,7 @@ except ImportError:
 
 from termcolor import colored
 import astropy.io.fits
-import scipy.stats
+from scipy.stats import *
 import scipy.ndimage
 from glob import glob
 import re
@@ -164,13 +164,13 @@ def outliers2nanp_1d( x, pmin = 1e-2 ):
     mean = np.nanmean(y)
     std = np.nanstd(y)
     median = np.nanmedian(y)
-    p = scipy.stats.norm.pdf( y, loc=mean, scale=std )
+    p = norm.pdf( y, loc=mean, scale=std )
     while np.nanmin(p) <= pmin:
         y[ np.argwhere( p < pmin ) ] = np.nan
         mean = np.nanmean(y)
         median = np.nanmedian(y)
         std = np.nanstd(y)
-        p = scipy.stats.norm.pdf( y, loc=mean, scale=std )
+        p = norm.pdf( y, loc=mean, scale=std )
         #print( 'minp', np.sum(np.isnan(y)), np.sum(np.isnan(p)), np.nanmin(p) )
     return y
 
@@ -726,7 +726,7 @@ class Section( np.ndarray ):
         return p, pcov
 
     def fit_norm_binned( self, binsize = 1):
-        func = lambda x, amplitude, mu, sigma: amplitude * scipy.stats.norm.pdf( x, mu, sigma )
+        func = lambda x, amplitude, mu, sigma: amplitude * norm.pdf( x, mu, sigma )
         p0 = [ len(self), self.median(), self.MAD() ]
         bounds = [(0, -np.inf, 0), (np.inf, np.inf, np.inf)]
         return self.fit_binned( func, p0, bounds, binsize )
@@ -751,7 +751,7 @@ class Section( np.ndarray ):
     def mle_norm( self ):
         data = self[~np.isnan(self)].flatten()
         def negloglikelihood( p ):
-            return -np.sum( np.log( scipy.stats.norm.pdf(data, p[0], p[1]) ) )
+            return -np.sum( np.log( norm.pdf(data, p[0], p[1]) ) )
         p0 = [np.nanmedian(data), MAD(data)]
         bounds = [(-np.inf,np.inf), (1e-3, np.inf)]
         return self.mle( negloglikelihood, p0, bounds )
@@ -965,12 +965,12 @@ class Section( np.ndarray ):
                 x = np.array(range(len(medians)))
                 y = medians
                 mask = ~np.isnan(y)
-                a, b = scipy.stats.linregress(x[mask],y[mask])[:2]
+                a, b = linregress(x[mask],y[mask])[:2]
                 ax.plot( x[mask], a*x[mask]+b, '-', label='median\na={:.4e}\nb={:.4e}'.format(a, b) )
                 x = np.array(range(len(mads)))
                 y = mads
                 mask = ~np.isnan(y)
-                a, b = scipy.stats.linregress(x[mask],y[mask])[:2]
+                a, b = linregress(x[mask],y[mask])[:2]
                 ax.plot( x[mask], a*x[mask]+b, '-', label='mad\na={:.4e}\nb={:.4e}'.format(a, b) )
 
             ax.grid()
@@ -1143,7 +1143,7 @@ def test_HWFM( args ):
     return
 
 def mle_norm( x, axis=None ):
-    fit = np.apply_along_axis( scipy.stats.norm.fit, axis, x )
+    fit = np.apply_along_axis( norm.fit, axis, x )
     if axis == 1:
         mu, sigma = fit.T
     else:
@@ -1329,12 +1329,24 @@ def add_compute_options( p ):
 
     p.set_defaults( func=compute )
 
+def norm_p0(data):
+    return [np.sum(data), np.median(data), MAD(data) ]
 
-# def hist_fit( func, ):
+def norm_pdf(x, A, mu, sigma):
+    return A*norm.pdf(x, mu, sigma)
+    
+def hist_fit( data, func, p0, lims=[None,None], binsize=1, **kwargs ):
+    xmin = data.min() if lims[0] is None else lims[0]
+    xmax = data.max() if lims[1] is None else lims[1]
+    bins = np.arange(xmin, xmax, binsize)
+    y = np.histogram(data, bins=bins)[0]
+    x = .5*(bins[1:] + bins[:-1])
+    popt = scipy.optimize.curve_fit( func, x, y, p0=p0 )[0]
+    return popt
     
 def compute_each( data, args ):
     data = data.T
-
+#     print( 'min,max', np.min(data), np.max(data) )
     if 'side' in args:
         side = int( args.side )
         data = data[side*data.shape[0]:(side+1)*data.shape[0], :]
@@ -1344,6 +1356,7 @@ def compute_each( data, args ):
             data = data[8:,:]
     
     if 'xrange' in args:
+#         print( args.xrange )
         if len(args.xrange) == 1:
             args.xrange.append(None)
         data = data[args.xrange[0]:args.xrange[1], :]
@@ -1358,9 +1371,7 @@ def compute_each( data, args ):
     elif args.axis == '1':
         data = data.T
         
-    print( 'shape', data.shape )
     for ax, func in enumerate(args.funcs):
-        print( ax, func )
         data = eval( func )
     
     print( 'final value', data )
