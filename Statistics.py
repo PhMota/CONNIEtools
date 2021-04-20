@@ -615,6 +615,7 @@ class poisson_norm:
         try:
             kmax = int( (log(tol)+lamb)/log(lamb) ) + 1
         except ValueError:
+            print( 'tolerance & lamb' )
             print( tol, lamb )
             raise ValueError
         ks = arange(0, kmax+1, 1).astype(int)

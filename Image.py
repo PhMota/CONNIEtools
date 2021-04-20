@@ -1336,22 +1336,30 @@ def norm_pdf(x, A, mu, sigma):
     return A*norm.pdf(x, mu, sigma)
 
 def poisson_norm_p0(data):
-    return [np.sum(data), np.median(data), MAD(data), 1000, .5 ]
+    return [data.size, np.median(data), MAD(data), 1000, .5 ]
+
+def poisson_norm_bounds(data):
+    bounds = ( 
+        [ 0, -np.inf, 0, 1000-1, 0], 
+        [data.size, np.inf, MAD(data), 1000+1, np.inf]
+        )
+    return bounds
 
 def poisson_norm_pdf(x, A, mu, sigma, gain, lamb):
     return A*stats.poisson_norm.pdf(x, mu, sigma, gain, lamb)
     
-def hist_fit( data, func, p0, lims=[None,None], binsize=1, **kwargs ):
+def hist_fit( data, func, p0, lims=[None,None], binsize=1, bounds=None ):
     xmin = data.min() if lims[0] is None else lims[0]
     xmax = data.max() if lims[1] is None else lims[1]
     bins = np.arange(xmin, xmax, binsize)
     y = np.histogram(data, bins=bins)[0]
     x = .5*(bins[1:] + bins[:-1])
-    popt = scipy.optimize.curve_fit( func, x, y, p0=p0 )[0]
+    popt = scipy.optimize.curve_fit( func, x, y, p0=p0, bounds=bounds )[0]
     return popt
     
 def compute_each( data, args ):
     data = data.T
+    data[data>1e9] = 0
 #     print( 'min,max', np.min(data), np.max(data) )
     if 'side' in args:
         side = int( args.side )
@@ -1362,7 +1370,6 @@ def compute_each( data, args ):
             data = data[8:,:]
     
     if 'xrange' in args:
-#         print( args.xrange )
         if len(args.xrange) == 1:
             args.xrange.append(None)
         data = data[args.xrange[0]:args.xrange[1], :]
@@ -1371,7 +1378,7 @@ def compute_each( data, args ):
         if len(args.yrange) == 1:
             args.yrange.append(None)
         data = data[:, args.yrange[0]:args.yrange[1]]
-        
+    
     if args.axis == '*':
         data = data.flatten()
     elif args.axis == '1':
@@ -1411,222 +1418,6 @@ def compute( args ):
                         compute_each( HDU.data.astype(float), args )
     return
 
-#                         print( colored('ohdu', 'green'), args.ohdu )
-#                         break
-#                 else:
-#                     if i+1 == args.ohdu: imageHDU = HDU
-#             if imageHDU is None:
-#                 print( 'ohdu {} was not found in {}'.format( args.ohdu, path ) )
-#                 exit(0)
-
-#             data = imageHDU.data.astype(float)
-#             data = data[::-1,:]
-#             data[data>1e9] = np.nan
-
-#             height, width = data.shape
-#             print( colored('height', 'green'), height )
-#             print( colored('width', 'green'), width )
-#             number_of_amplifiers = width // constants.ccd_width
-#             print( colored('amplifiers', 'green'), number_of_amplifiers )
-#             if number_of_amplifiers > 0:
-#                 side_width = width//number_of_amplifiers
-#             else:
-#                 side_width = width
-#             print( colored('side width', 'green'), side_width )
-
-#             bias_width = int( np.ceil( (side_width - constants.ccd_width)/150. ) )*150
-#             print( colored('bias width', 'green'), bias_width )
-#             trim = constants.ccd_width + bias_width - side_width
-#             print( 'trim', trim )
-#             #bias_width = ( side_width + trim ) % constants.ccd_width
-
-#             height_trim = 1 #1
-
-#             #data.left = data[None:-height_trim, None:side_width]
-#             #data.right = data[None:-height_trim, side_width:None][:,::-1]
-
-#             if 'overscan_subtraction' in args:
-#                 os_range = args.overscan_subtraction
-#                 print( 'os_range', os_range, os_range[0] )
-#                 correction = np.median( data[ None:None, os_range[0]:os_range[1] ], axis=1 )[:,None]
-#                 data -= correction
-
-#             if 'vertical_overscan_subtraction' in args:
-#                 os_range = args.vertical_overscan_subtraction
-#                 print( 'os_range', os_range, os_range[0] )
-#                 correction = np.median( data[ os_range[0]:os_range[1], None:None ], axis=0 )[None,:]
-#                 data -= correction
-
-#             if 'side' in args:
-#                 if args.side == 'left' or args.side == '0':
-#                     print( colored('side', 'green'), 'left' )
-#                     if 'correct_side' in args:
-#                         print( colored('subtract', 'green'), 'right' )
-#                         data = data[None:-height_trim, None:side_width] - data[None:-height_trim, side_width:None][:,::-1]
-#                     else:
-#                         data = data[None:-height_trim, None:side_width]
-#                 elif args.side == 'right' or args.side == '1':
-#                     print( colored('side', 'green'), 'right' )
-#                     data = data[None:-height_trim, side_width:None][:,::-1]
-#                     if 'sub_half' in args:
-#                         print( colored('subtract line means', 'green'), 'true' )
-#                         correction = np.mean( data[None:None, constants.ccd_width/2:None], axis=1 )
-#                         if len(args.sub_half) > 0:
-#                             l = int(args.sub_half[0])
-#                             #correction =
-#                         data = data - correction[:,None]
-#                 else:
-#                     print( colored('side', 'green'), 'all' )
-
-#             if 'side' in args or number_of_amplifiers == 1:
-#                 if 'half' in args:
-#                     print( colored('half', 'green'), 'true' )
-#                     data = data[None:None, -constants.ccd_width/2:None]
-#                 elif 'quarter' in args:
-#                     print( colored('quarter', 'green'), 'true' )
-#                     data = data[None:None, -constants.ccd_width/4:None]
-
-#             if 'smooth_lines' in args:
-#                 print( colored('smooth lines', 'green'), args.smooth_lines )
-#                 data = scipy.ndimage.filters.uniform_filter1d( data, axis=1, size=args.smooth_lines, mode='mirror' )
-
-#             if 'trim' in args:
-#                 print( colored('trim', 'green'), '8' )
-#                 data = data[None:None, 8:]
-
-#             if 'global_bias' in args:
-#                 print( colored('subtract', 'green'), 'mean(OS)' )
-#                 data = data - np.nanmean( data[None:None, -bias_width:None] )
-
-#             if 'section' in args:
-#                 if args.section == 'bias' or args.section == 'os':
-#                     print( colored('section', 'green'), 'overscan' )
-#                     data = data[None:None, -bias_width:None]
-#                 if args.section == 'data' or args.section == 'ac':
-#                     print( colored('section', 'green'), 'active' )
-#                     data = data[None:None, None:-bias_width+5]
-#                     if 'half' in args:
-#                         print( colored('half', 'green'), 'true' )
-#                         data = data[None:None, data.shape[1]/2:None]
-
-#             if 'remove' in args:
-#                 print( colored('remove above', 'green'), args.remove )
-#                 data[ data > args.remove ] = np.nan
-
-
-#             if 'x_range' in args:
-#                 data = data[:, args.x_range[0]:args.x_range[1]]
-#                 print( colored('x-range', 'green'), args.x_range )
-#             if 'y_range' in args:
-#                 data = data[args.y_range[0]:args.y_range[1], :]
-#                 print( colored('y-range', 'green'), args.y_range )
-#             if 'E_span' in args:
-#                 E = np.nanmedian(data)
-#                 mask = np.logical_or( data<E-args.E_span, data>E+args.E_span )
-#                 data[mask] = np.nan
-#                 print( colored('E-span', 'green'), args.E_span, np.nanmin(data), np.nanmax(data) )
-#             elif 'E_range' in args:
-#                 data[data<=args.E_range[0]] = np.nan
-#                 data[data>args.E_range[1]] = np.nan
-#                 print( colored('E-range', 'green'), args.E_range, np.nanmin(data), np.nanmax(data) )
-
-#             fig = plt.figure()
-#             ax = fig.add_subplot(111)
-#             if args.plot[0] == 'proj':
-#                 print( colored('plot', 'green'), 'projection' )
-#                 axis = args.plot[1]
-#                 if axis in ['lines', '1', 'y']:
-#                     axis = 1
-#                 elif axis in ['rows', '0', 'x']:
-#                     axis = 0
-#                 else:
-#                     print( 'axis not expected' )
-#                     exit()
-#                 x = np.arange( 0, data.shape[axis-1] ).astype(float)
-#                 if not 'dev' in args:
-#                     mins = np.nanmin( data, axis=axis )
-#                     if not 'no_mean' in args:
-#                         means = np.nanmean( data, axis=axis )
-#                         print( means.shape )
-#                         ax.plot( means, '.', label='mean $\mu={:.4f}$'.format(np.nanmean(means)) )
-#                     if not 'no_median' in args:
-#                         medians = np.nanmedian( data, axis=axis )
-#                         ax.plot( medians, '.', label='median $\mu={:.4f}$'.format(np.nanmean(medians)) )
-
-#                     if 'smooth' in args:
-#                         #ax.plot( scipy.ndimage.filters.uniform_filter1d( centers, size=args.smooth, mode='nearest' ), '.', label='center{}'.format(args.smooth) )
-#                         ax.plot( scipy.ndimage.filters.uniform_filter1d( medians, size=args.smooth, mode='nearest' ), '.', label='median{}'.format(args.smooth) )
-#                         if not 'no_mean' in args:
-#                             ax.plot( scipy.ndimage.filters.uniform_filter1d( means, size=args.smooth, mode='nearest' ), '.', label='mean{}'.format(args.smooth) )
-#                     if not 'no_max' in args:
-#                         maxs = np.nanmax( data, axis=axis )
-#                         ax.plot( maxs, '.', label='max' )
-#                     if not 'no_min' in args:
-#                         mins = np.nanmin( data, axis=axis )
-#                         ax.plot( mins, '.', label='min' )
-#                     if 'fit' in args:
-#                         for fit in args.fit:
-#                             exec F(fit).str()
-#                 else:
-#                     mins = np.nanmin( data, axis=axis )
-#                     if not 'no_mean' in args:
-#                         stds = np.nanstd( data, axis=axis )
-#                         ax.plot( stds, '.', label='std $\mu={:.4f}$'.format(np.nanmean(stds)) )
-#                     mads = MAD( data, axis=axis )
-#                     ax.plot( mads, '.', label='MAD $\mu={:.4f}$'.format(np.nanmean(mads)) )
-#                     #fwhm = stats.FWHM( data, axis=axis, f=.001 )[0]
-#                     #ax.plot( fwhm, '.', label='FWHM $\mu={:.4f}$'.format(np.nanmean(fwhm)) )
-#                     sigmas = mle_norm( data, axis=axis )[1]
-#                     ax.plot( sigmas, '.', label='$\sigma$[mle] $\mu={:.4f}$'.format(np.nanmean(sigmas)) )
-
-#             elif args.plot[0] == 'spectrum':
-#                 bins = np.arange( np.nanmin(data), np.nanmax(data), args.binsize )
-#                 y, x, dx = stats.make_histogram( data.flatten(), bins )
-#                 ax.step( x, y, where='mid', label = '' )
-
-#             elif args.plot[0] == 'image' or args.plot[0] == 'matrix':
-#                 cmap = matplotlib.cm.seismic
-#                 cmap.set_bad(color='black')
-#                 if 'log' in args.plot[1:]:
-#                     im = np.log(data - np.nanmin(data) + 1)
-#                     cmap.set_bad('black',0)
-#                 else:
-#                     im = data
-#                     cmap.set_bad('black',0)
-#                 try:
-#                     vmean = np.nanmedian(im)
-#                     vmax = np.nanmax(np.abs(im - vmean))
-#                     if 'vmax' in args:
-#                         vmax = args.vmax
-
-#                     print( 'vmax', vmax )
-#                     if args.plot[0] == 'image':
-#                         func = ax.imshow
-#                     elif args.plot[0] == 'matrix':
-#                         func = ax.matshow
-#                     obj = func( im, cmap=cmap, origin='lower', vmin=vmean-vmax, vmax=vmean+vmax, interpolation='none' )
-#                     divider = make_axes_locatable(ax)
-#                     cax = divider.append_axes("right", size="5%", pad=0.1)
-#                     fig.colorbar( obj, cax )
-#                     title += '\n mean {:.4}'.format( np.nanmean( im ) )
-#                     title += '\n std {:.4}'.format( np.nanstd( im ) )
-#                 except:
-#                     print( 'im.shape', im.shape, data.shape )
-#                     exit()
-#             else:
-#                 print( 'plot option "{}" not implemented'.format( args.plot ) )
-#                 exit(0)
-
-#             ax.set_title( title, fontsize=8 )
-#             ax.grid()
-#             ax.legend()
-#         if 'png' in args:
-#             outfile = args.input_file + '.' + '_'.join(args.plot) + '.png'
-#             print( 'outfile', outfile )
-#             fig.savefig( outfile, bbox_inches='tight', pad_inches=0 )
-#         else:
-#             plt.show()
-#         return
 
 def display( args ):
     from matplotlib import pylab as plt
