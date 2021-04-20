@@ -1335,6 +1335,13 @@ def norm_p0(data):
 def norm_pdf(x, A, mu, sigma):
     return A*norm.pdf(x, mu, sigma)
 
+def norm_bounds(data):
+    bounds = ( 
+        [ 0, -np.inf, 0], 
+        [data.size, np.inf, MAD(data)]
+        )
+    return bounds
+
 def poisson_norm_p0(data):
     return [data.size, np.median(data), MAD(data), 1000, .5 ]
 
