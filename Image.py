@@ -1337,8 +1337,8 @@ def norm_pdf(x, A, mu, sigma):
 
 def norm_bounds(data):
     bounds = ( 
-        [ 0, -np.inf, 0], 
-        [data.size, np.inf, MAD(data)]
+        [ data.size/10, -np.inf, 0 ], 
+        [ data.size, np.inf, MAD(data) ]
         )
     return bounds
 
@@ -1347,7 +1347,7 @@ def poisson_norm_p0(data):
 
 def poisson_norm_bounds(data):
     bounds = ( 
-        [ 0, -np.inf, 0, 1000-1, 0], 
+        [ 0, -np.inf, 0, 1000-1, 0.], 
         [data.size, np.inf, MAD(data), 1000+1, np.inf]
         )
     return bounds
@@ -1361,7 +1361,10 @@ def hist_fit( data, func, p0, lims=[None,None], binsize=1, bounds=None ):
     bins = np.arange(xmin, xmax, binsize)
     y = np.histogram(data, bins=bins)[0]
     x = .5*(bins[1:] + bins[:-1])
-    popt = scipy.optimize.curve_fit( func, x, y, p0=p0, bounds=bounds )[0]
+    if not bounds is None:
+        popt = scipy.optimize.curve_fit( func, x, y, p0=p0, bounds=bounds )[0]
+    else:
+        popt = scipy.optimize.curve_fit( func, x, y, p0=p0 )[0]
     return popt
     
 def compute_each( data, args ):
