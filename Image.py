@@ -1299,10 +1299,9 @@ def add_compute_options( p ):
     )
 
     geom = p.add_argument_group('geometry options')
-    geom.add_argument( '--E-range', nargs=2, type=eval, default = [-np.inf, np.inf], help = 'Emin Emax' )
-    geom.add_argument( '--E-span', nargs=1, type=eval, default = argparse.SUPPRESS, help = 'mean+-E_span' )
     geom.add_argument( '--xrange', nargs='+', type=eval, default = [None, None], help = 'xmin xmax' )
     geom.add_argument( '--yrange', nargs='+', type=eval, default = [None, None], help = 'ymin ymax' )
+    geom.add_argument( '--Erange', nargs='+', type=eval, default = [None, None], help = 'Emin Emax' )
     geom.add_argument( '--side', type=str, default = argparse.SUPPRESS, help = 'left or right amplifier' )
     geom.add_argument( '--section', type=str, default = argparse.SUPPRESS, help = 'data or bias' )
     geom.add_argument( '--trim', action='store_true', default = argparse.SUPPRESS, help = 'remove trim' )
@@ -1378,6 +1377,12 @@ def compute_each( data, args ):
     if 'trim' in args:
         if args.trim == 'trim8':
             data = data[8:,:]
+    
+    if 'Erange' in args:
+        if len(args.Erange) == 1:
+            args.Erange.append(None)
+        data = data.flatten()
+        data = data[ np.all( data > args.Erange[0], data < args.Erange[1]) ]
     
     if 'xrange' in args:
         if len(args.xrange) == 1:
