@@ -2,8 +2,14 @@
 
 from __future__ import print_function
 from numpy import *
+import scipy
 import scipy.stats
-from scipy.misc import factorial, logsumexp
+print( 'scipy version', scipy.__version__ )
+if scipy.__version__.startswith('0.'):
+    from scipy.misc import factorial, logsumexp
+else:
+    from scipy.special import factorial, logsumexp
+
 from scipy.special import erf, gammaln, loggamma, ndtr, xlogy, xlog1py
 from Timer import Timer
 
@@ -31,12 +37,12 @@ def IQR( data, scale=1.34897 ):
 
 def MAD( data, axis = None, scale=1.4826 ):
     if axis == 0:
-        median = median( data, axis = 0 )[None,:]
+        median_ = median( data, axis = 0 )[None,:]
     elif axis == 1:
-        median = median( data, axis = 1 )[:,None]
+        median_ = median( data, axis = 1 )[:,None]
     else:
-        median = median( data )
-    return scale * median( abs( data - median ), axis = axis )
+        median_ = median( data )
+    return scale * median( abs( data - median_ ), axis = axis )
 
 def nanMAD( data, axis = None, scale=1.4826 ):
     if axis == 0:
