@@ -1,11 +1,11 @@
-from cas.rule import Rule, RuleList
-from cas.utils import delim
-from cas.symbol import Symbol
-from cas.expr import Expr
-from cas.number import Number
-from cas.neg import Neg
-from cas.mul import Mul
-from cas.add import Add
+from .rule import Rule, RuleList
+from .expr import Expr
+# from cas.utils import delim
+# from cas.symbol import Symbol
+# from cas.number import Number
+# from cas.neg import Neg
+# from cas.mul import Mul
+# from cas.add import Add
 
 class Pow(Expr):
     @staticmethod
@@ -64,4 +64,4 @@ class Pow(Expr):
             return fr'\frac{{1}}{{{base}^{{{power.arg}}} }}'
         return fr'{base}^{{ {power} }}'
     
-from cas.indexed import Indexed
+# from cas.indexed import Indexed

@@ -144,29 +144,6 @@ def compute( **args ):
                         compute_each( HDU, args, print_header )
                         print_header = False
     return
-
-def make_argparse( subparser, func ):
-    
-    docstr = func.__doc__
-    old_docstr = None
-    while docstr != old_docstr:
-        old_docstr = docstr
-        docstr = docstr.replace('\n ', '\n')
-    
-    help_str = docstr.split('\n\n')[0].replace('\n', '')
-    parser = subparser.add_parser( func.__name__, help = help_str )
-    
-    args_str = docstr.split('Arguments:\n')[1].split('\n\n')[0].split('\n')
-    for arg in args_str:
-#         key, descr = 
-        print( arg.split( ' '*4 ) )
-#         if len(key.split(' ')) == 1:
-            
-    opts_str = docstr.split('Options:\n')[1].split('\n\n')[0].split('\n')
-    for opt in opts_str:
-        print( opt )
-    
-    parser.print_help()
     
 
 def add_compute_options( p ):

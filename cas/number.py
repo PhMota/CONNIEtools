@@ -1,4 +1,4 @@
-from cas.symbol import Symbol
+from .symbol import Symbol
 
 class Number(Symbol):
     @staticmethod
@@ -30,4 +30,4 @@ def getnumbervalues(obj):
     negative = [ -arg.arg.value for arg in obj.args if isinstance(arg, Neg) and isinstance(arg.arg, Number) ]
     return [*positive, *negative]
 
-from cas.neg import Neg
+from .neg import Neg

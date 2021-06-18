@@ -5,20 +5,22 @@ import os, sys, argparse, re, glob, shutil
 from argparse import Namespace
 
 from Timer import Timer
-import warnings
-warnings.filterwarnings("ignore")
+# import warnings
+# warnings.filterwarnings("ignore")
 
-try:
-    import root_numpy
-except ImportError:
-    print('missing module, please run')
-    print('module load softwares/root/5.34-gnu-5.3')
-    exit(0)
+# try:
+#     import root_numpy
+# except ImportError:
+#     print('missing module, please run')
+#     print('module load softwares/root/5.34-gnu-5.3')
+#     exit(0)
 
-import weave
-from numpy.lib import recfunctions as rfn
+# import weave
+# from numpy.lib import recfunctions as rfn
+
 import matplotlib
-matplotlib.use('gtk3agg')
+    
+# matplotlib.use('gtk3agg')
 matplotlib.rcParams.update({
     "text.usetex": True,
     "font.family": "serif",
@@ -26,12 +28,12 @@ matplotlib.rcParams.update({
 # matplotlib.rc('text', usetex=True)
 
 
-from numpy.lib.recfunctions import append_fields, stack_arrays
 from numpy import *
+# from numpy.lib.recfunctions import append_fields, stack_arrays
 import Statistics as stats
 
 # with Timer('import'):
-from ROOT import TFile, TTree, AddressOf
+# from ROOT import TFile, TTree, AddressOf
 
 import Image
 import Simulation
@@ -1243,206 +1245,6 @@ def test_std_correction():
     print( stats.norm.fit_curve( y, x, A=sum(y), mu=mu, sigma=std ), dx )
     return
 
-def scatter( **args ):
-    args = Namespace(**args)
-    import matplotlib.pylab as plt
-    with Timer('scatter'):
-        print( 'len', len(args.root_file) )
-
-        if len(args.root_file) == 1:
-            args.root_file = args.root_file[0]
-
-            file = glob.glob(args.root_file)
-
-            args.xbranches = []
-            args.ybranches = []
-            args.cbranches = []
-            args.selections = []
-            has_color = False
-
-            print( args.branch_selections )
-            for branch_selection in args.branch_selections:
-                args.xbranches.append( branch_selection[0] )
-                args.ybranches.append( branch_selection[1] )
-                if len(branch_selection) == 4:
-                    args.cbranches.append( branch_selection[2] )
-                    has_color = True
-                args.selections.append( branch_selection[-1] )
-            if not has_color:
-                args.cbranches = args.xbranches
-
-            data_selection = get_selections(
-                                file[0],
-                                args.branches,
-                                args.selections,
-                                args.global_selection, runID_range = args.runID_range
-            )
-
-            data_selection = get_selections( file[0],
-                                        args.xbranches + args.ybranches + args.cbranches,
-                                        args.selections,
-                                        args.global_selection,
-                                        runID_range=args.runID_range,
-            )
-
-        else:
-            nargs = len(args.root_file)
-            print( args.root_file )
-
-            args.xbranches = []
-            args.ybranches = []
-            args.cbranches = []
-            args.selections = []
-            args.sel_expr = []
-            args.files = []
-            has_color = False
-
-            data_selection = {}
-            for i in range(nargs/4):
-                xbranch = args.root_file[4*i+0]
-                args.xbranches.append(xbranch)
-                ybranch = args.root_file[4*i+1]
-                args.ybranches.append(ybranch)
-
-                file = args.root_file[4*i+2]
-                args.files.append(file)
-                selection = args.root_file[4*i+3]
-                args.sel_expr.append(selection)
-
-                key = 'xbranch: {}, ybranch: {}\nfiles: {}\nselections: {}'.format(xbranch, ybranch, file, selection)
-
-                args.selections.append(key)
-                print( 'file', file )
-                print( 'br', xbranch, ybranch )
-                print( 'sel', selection )
-
-                for f in glob.glob(file):
-                    print( 'file', f )
-                    data_entry = get_selections( f, [xbranch,ybranch], [selection], args.global_selection )
-
-                    try:
-                        data_selection[key].append( data_entry.values()[0] )
-                    except KeyError:
-                        data_selection[key] = [ data_entry.values()[0] ]
-            if not has_color:
-                args.cbranches = args.xbranches
-
-            print( 'selections', data_selection.keys() )
-            print( 'branches', args.xbranches, args.ybranches )
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        title = '{} vs {}'.format(args.xbranches[0], args.ybranches[0])
-        if 'global_selection' in args:
-            subtitle = args.global_selection
-            if len(subtitle) > 50:
-                new_subtitle = subtitle[:50]
-                for i in range(1, len(subtitle)/50+1):
-                    new_subtitle += '\n' + subtitle[i*50:(i+1)*50]
-            subtitle = new_subtitle
-            title += '\n' + subtitle
-        if not 'no_title' in args:
-            ax.set_title(title)
-
-        scatter_obj = []
-
-        if 'selections' in args:
-            markers = ['.', '+', 'x', '^']
-            for index, (xbranch, ybranch, cbranches, files, sel_expr, selection) in enumerate( zip(args.xbranches, args.ybranches, args.cbranches, args.files, args.sel_expr, args.selections) ):
-                print( 'plot', xbranch, ybranch, cbranches )
-                x_data = None
-                for datum in data_selection[selection]:
-                    if x_data is None:
-                        x_data = datum[xbranch]
-                        y_data = datum[ybranch]
-                    else:
-                        x_data = concatenate((x_data, datum[xbranch]))
-                        y_data = concatenate((y_data, datum[ybranch]))
-
-                if has_color:
-                    colors = datum[cbranches]
-                    cmap = matplotlib.cm.plasma
-                    alpha = 1
-                else:
-                    colors = None
-                    cmap = None
-                    alpha = (len(datum))**(-.1) if len(datum) > 0 else 1
-
-                label = ''
-                if not 'no_label_branch' in args:
-                    label += 'x: {}, y: {}\n'.format(xbranch, ybranch)
-                if not 'no_label_file' in args:
-                    label += 'files: {}\n'.format(files)
-                if not 'no_label_selection' in args:
-                    label += 'sel: {}'.format(sel_expr)
-                label += ' ({})'.format(x_data.size)
-
-                scatter_obj.append( ax.scatter( x_data, y_data, label = label, marker=markers[index%4], c=colors, alpha=alpha, cmap=cmap ) )
-
-                if 'errorbar' in args:
-                    bins = arange( args.x_range[0], args.x_range[1], 20 )
-                    bin_means, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='mean', bins=bins )
-                    xbins = .5*(bin_edges[1:] + bin_edges[:-1])
-                    dx = bin_edges[1] - bin_edges[0]
-                    yerr = [0]*len(bin_means)
-                    bin_std, bin_edges, binnumber = binned_statistic_fast( x, y, statistic='std', bins=bin_edges )
-                    yerr = bin_std
-                    ax.errorbar( xbins, bin_means, xerr=dx/2, yerr=yerr, fmt='.' )
-
-        ax.legend(frameon=False)
-        ax.grid()
-        ax.set_xlim( *args.x_range )
-        ax.set_ylim( *args.y_range )
-        ax.set_xlabel( args.xbranches[0] )
-        ax.set_ylabel( args.ybranches[0] )
-        if has_color:
-            fig.colorbar( scatter_obj[0] )
-    if 'ylog' in args:
-        ax.set_yscale('log')
-
-    if 'output' in args:
-        if args.output == '':
-            args.output = args.root_file
-        fig.savefig( args.output, bbox_inches='tight' )
-    else:
-        # args.output = args.root_file
-        plt.show()
-
-    # if 'pdf' in args:
-    #     # extra = ''
-    #     # fname = args.output+'.scatter.{}.vs.{}{}.pdf'.format(args.ybranches[0].replace('/','_'), args.xbranches[0].replace('/','_'), extra)
-    #     fname = args.output+'.png'
-    #     fig.savefig( fname )
-    #     print( 'saved', fname )
-    # elif 'png' in args:
-    #     fname = args.output+'.png'
-    #     fig.savefig( fname, bbox_inches='tight' )
-    #     print( 'saved', fname )
-    # else:
-    #     plt.show()
-    return
-
-def add_scatter_options(p):
-    p.add_argument('root_file', nargs='+', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('-s', '--branch-selections', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branches used for x- and y-axis' )
-    p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
-    #p.add_argument('--selections', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
-    p.add_argument('--define', nargs='+', type=str, default=argparse.SUPPRESS, help = 'definitions' )
-    p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
-    p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of x' )
-    p.add_argument('--y-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of y' )
-    p.add_argument('--c-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of color' )
-    p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'output to file' )
-    p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
-    p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-    p.add_argument('--fit', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
-    p.add_argument('--noise', nargs='+', type=str, default=argparse.SUPPRESS, help = 'include fit column' )
-    p.add_argument('--errorbar', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-    p.set_defaults(_func=scatter)
 
 def energy_threshold( datum, threshold ):
     above_2sigma = [ ePix>threshold for ePix in datum.ePix ]
@@ -1602,443 +1404,41 @@ def nu_spectrum(E, file='vSpectrum.csv'):
 #     Emin = E_recoil + sqrt(E_recoil**2 + 2*M*E_recoil)/2
 #     return numberNuclei * quad( v_flux*CEvNS_crossSection, a=Emin, b=inf )
 
-def histogram( **args ):
-    args = Namespace(**args)
-    print('args', args)
-    import matplotlib.pylab as plt
-
-    with Timer('histogram'):
-        print( 'number of input args', len(args.root_file) )
-        args.branches = []
-        args.files = []
-        args.selections = []
-        args.labels = []
-        args.sel_expr = []
-        data = OrderedDict()
-        if len(args.root_file) == 0:
-            for selection in progressbar(args.selection, msg='selections'):
-                branch = selection[0]
-                file = selection[1]
-                sel = selection[2]
-                label = selection[3]
-                args.branches.append(branch)
-                args.files.append(file)
-                args.sel_expr.append(sel)
-                args.labels.append(label)
-
-                key = label
-                args.selections.append(key)
-                for f in progressbar( glob.glob(file), msg='files' ):
-                    data_entry = get_selections( f, [branch], [sel], args.global_selection )
-                    if len(data_entry.values()[0]) == 0:
-                        continue
-                    # print( 'len(data_entry)', len(data_entry.values()[0]) )
-                    # print( 'type', data_entry.values()[0].__class__.__name__ )
-                    try:
-                        data[key] = concatenate( (data[key], data_entry.values()[0][branch]) )
-                    except KeyError:
-                        data[key] = data_entry.values()[0][branch]
-                        # print( 'data', data[key] )
-
-        elif len(args.root_file) == 1:
-            args.root_file = args.root_file[0]
-
-            file = glob.glob(args.root_file)
-            #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
-
-            args.branches = []
-            args.selections = []
-            print( args.branch_selections )
-            for branch_selection in args.branch_selections:
-                args.branches.append( branch_selection[0] )
-                args.selections.append( branch_selection[1] )
-
-            if not 'runID_range' in args:
-                args.runID_range = None
-            data_selection = get_selections( file[0], args.branches, args.selections, args.global_selection, runID_range=args.runID_range )
-                                                #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-
-        if 'labels' not in args:
-            args.labels = ['']*len(args.selections)
-
-        # if 'x_range' in args:
-        #     bins = arange( float(F(args.x_range[0]).str()), float(F(args.x_range[1]).str()), args.binsize )
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-
-        table = Table()
-        for key in data.keys():
-            for function in args.function:
-                function[0] = function[0].replace(key, F('data["{{key}}"]').str() )
-                function[1] = function[1].replace(key, F('data["{{key}}"]').str() )
-            if 'x_range' in args:
-                args.x_range[0] = args.x_range[0].replace(key, F('data["{{key}}"]').str() )
-                args.x_range[1] = args.x_range[1].replace(key, F('data["{{key}}"]').str() )
-                args.binsize = args.binsize.replace(key, F('data["{{key}}"]').str() )
-
-        if 'function' in args:
-            for i, function in enumerate(progressbar(args.function, msg='functions')):
-                print( 'args.function', function )
-                exec_string = function[0]
-
-                if 'x_range' in args:
-                    if type(args.x_range[0]) is str:
-                        args.x_range[0] = float(F(args.x_range[0]).str())
-                    if type(args.x_range[1]) is str:
-                        args.x_range[1] = float(F(args.x_range[1]).str())
-                    if type(args.binsize) is str:
-                        bins = arange( args.x_range[0], args.x_range[1], float(F(args.binsize).str()) )
-
-                print( 'exec_string', exec_string )
-                print( 'label', function[1] )
-                try:
-                    x, y, xerr, yerr = (eval( exec_string )).astuple()
-                except AttributeError:
-                    x, y, xerr, yerr = eval( exec_string )
-
-                label = F(function[1]).str()
-                kwargs = {
-                    'fmt': 'o'
-                    , 'ms': 3
-                }
-                if len(function) > 2:
-                    print( function[2] )
-                    print( eval(function[2]) )
-                    kwargs.update( eval(function[2]) )
-                table.append( 'x', x )
-                table.append( F('{{label.replace(" ", "_")}}').str(), y )
-                table.append( 'xerr', xerr if hasattr(xerr, '__iter__') else [xerr]*len(x) )
-                table.append( F('{{label.replace(" ", "_")}}_err').str(), yerr if hasattr(yerr, '__iter__') else [yerr]*len(x) )
-
-                markers, caps, bars = ax.errorbar(
-                    x+i*xerr/5./len( args.function )
-                    , y
-                    , xerr = xerr/2.
-                    , yerr = yerr
-                    , label = label
-                    , **kwargs
-                )
-                [bar.set_alpha(.2) for bar in bars]
-
-            # exit(0)
-        # elif 'selections' in args:
-        #     for i, (branch, selection, files, sel_expr, label) in enumerate(zip(args.branches, args.selections, args.files, args.sel_expr, args.labels)):
-        #         print( 'selection.names', selection, data_selection[selection][0].names )
-        #         print( 'selection.shape', data_selection[selection][0][branch].shape, 'len(bins)', len(bins) )
-        #
-        #         x_data = None
-        #         for datum in data_selection[selection]:
-        #             if x_data is None:
-        #                 x_data = datum[branch]
-        #             else:
-        #                 x_data = concatenate( (x_data, datum[branch]) )
-        #             print( 'len(x_data)', len(x_data) )
-        #         factor = 1
-        #         if 'factor' in args:
-        #             factor = args.factor
-        #         hist, x, dx = stats.make_histogram( x_data, bins )
-        #
-        #         if 'hide_zeros' in args:
-        #             x = x[hist>0]
-        #             hist = hist[hist>0]
-        #
-        #         if label == '':
-        #             label = ''
-        #             if not 'no_label_branch' in args:
-        #                 label += 'branch: {}\n'.format(branch)
-        #             if not 'no_label_file' in args:
-        #                 label += 'files: {}\n'.format(file)
-        #             if not 'no_label_selection' in args:
-        #                 max_length = 40
-        #                 label += 'sel: {}'.format(
-        #                     '\n'.join([sel_expr[:40]] + [sel_expr[i*40:(i+1)*40] for i in range(1, len(sel_expr)/40+1) ] )
-        #                     )
-        #         label += ' ({})'.format(x_data.size)
-        #
-        #         print( 'plot label', label )
-        #         if 'count_histogram' in args:
-        #             extrabins = arange(min(hist), max(hist), args.extra_binsize)
-        #             extrahist, _, _ = stats.make_histogram( hist, extrabins )
-        #             ax.step( extrahist, extrabins[:-1], where='pre', label=label, lw=2 )
-        #         else:
-        #             print('errorbar', label, len(x), len(hist))
-        #             ax.errorbar(
-        #                 x+i*dx/5./len(args.branches)
-        #                 , hist*factor
-        #                 , xerr = dx/2.
-        #                 , yerr = sqrt(hist)*factor
-        #                 , label = label
-        #                 , fmt = ' '
-        #             )
-        try:
-            # legend_artist = ax.legend(frameon=False)
-            if 'legend_title' in args:
-                legend_artist = ax.legend(title=F(args.legend_title).str())
-            else:
-                legend_artist = ax.legend()
-        except IndexError:
-            legend_artist = None
-            print( 'index error in legend')
-        # legend_artist = ax.legend(loc='upper center', bbox_to_anchor=(0.5,0))
-        ax.grid(alpha=.5)
-        if 'xlabel' in args:
-            ax.set_xlabel(args.xlabel)
-        else:
-            ax.set_xlabel(args.branches[0])
-        if 'ylabel' in args:
-            ax.set_ylabel(args.ylabel)
-        else:
-            ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
-        if 'log' in args:
-            ax.set_yscale('log')
-    if 'x_range' in args:
-        ax.set_xlim(*map(float, args.x_range))
-    if 'y_range' in args:
-        ax.set_ylim(*map(float, args.y_range))
-    if 'output' in args:
-        if args.output == '':
-            args.output = args.root_file
-        table.save( args.output + '.csv' )
-        if legend_artist != None:
-            fig.savefig( args.output, bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
-        else:
-            fig.savefig( args.output, bbox_inches='tight' )
-        print( 'saved', args.output )
-    else:
-        args.output = args.root_file
-        fig.subplots_adjust()
-        plt.show()
-
-    # if 'pdf' in args:
-    #     fig.savefig(args.output+'.pdf', bbox_extra_artists=(legend_artist,), bbox_inches='tight' )
-    #     print( 'saved', args.output+'.pdf' )
-    # elif 'png' in args:
-    #     fig.savefig(args.output+'.png', bbox_extra_artists=(legend_artist,), bbox_inches='tight')
-    #     print( 'saved', args.output+'.png' )
-    # else:
-    #     # fig.tight_layout()
-    #     fig.subplots_adjust()
-    #     plt.show()
-    return
-
-def add_histogram_options(p):
-    p.add_argument('root_file', nargs='*', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('--branch-selections', action='append', nargs=2, type=str, default=argparse.SUPPRESS, help = 'selections' )
-
-    p.add_argument('-s','--selection', action='append', nargs='+', type=str, default=argparse.SUPPRESS, help = 'selection' )
-
-    p.add_argument('-f','--function', nargs='+', action='append', type=str, default=argparse.SUPPRESS, help = 'function' )
-
-    p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
-    p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
-    #p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
-    #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
-    p.add_argument('--xlabel', type=str, default=argparse.SUPPRESS, help = 'xlabel' )
-
-    p.add_argument('--ylabel', type=str, default=argparse.SUPPRESS, help = 'ylabel' )
-
-    p.add_argument('--average', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'average from min to max' )
-
-    p.add_argument('--x-range', nargs=2, type=str, default=argparse.SUPPRESS, help = 'range of the x-axis' )
-    p.add_argument('--y-range', nargs=2, type=str, default=argparse.SUPPRESS, help = 'range of the y-axis' )
-
-    p.add_argument('--binsize', type=str, default=argparse.SUPPRESS, help = 'binsize' )
-    # p.add_argument('--extra-binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize2' )
-    p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
-    p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
-    p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
-    p.add_argument('--log', action='store_true', default=argparse.SUPPRESS, help = 'log' )
-    # p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
-    # p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-
-    p.add_argument('--no-title', action='store_true', default=argparse.SUPPRESS, help = 'add errorbar' )
-
-    p.add_argument('--legend-title', type=str, default=argparse.SUPPRESS, help = 'legend title' )
-
-    p.add_argument('--no-label-branch', action='store_true', default=argparse.SUPPRESS, help = 'hide branchat the label' )
-    p.add_argument('--no-label-file', action='store_true', default=argparse.SUPPRESS, help = 'hide the file at the label' )
-    p.add_argument('--no-label-selection', action='store_true', default=argparse.SUPPRESS, help = 'hide the selection at the label' )
-    p.add_argument('--hide-zeros', action='store_true', default=argparse.SUPPRESS, help = 'hide zero values' )
-    p.add_argument('--count-histogram', action='store_true', default=argparse.SUPPRESS, help = 'creat a count histogram' )
-
-
-    p.set_defaults(_func=histogram)
-
-def add_ratio_options(p):
-    p.add_argument('root_file', nargs='+', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('--branch-selections', action='append', nargs=3, type=str, default=argparse.SUPPRESS, help = 'selections as branch numerator and denominator' )
-    p.add_argument('--global-selection', type=str, default='1', help = 'global selection' )
-    p.add_argument('--runID-range', nargs=2, type=int, default=argparse.SUPPRESS, help = 'range of runIDs' )
-    #p.add_argument('--energy-threshold', nargs='+', type=float, default=argparse.SUPPRESS, help = 'range of runIDs' )
-    #p.add_argument('--define', type=str, default=argparse.SUPPRESS, help = 'definitions (ex.: a=E0; b=E1)' )
-    p.add_argument('--x-range', nargs=2, type=eval, default=argparse.SUPPRESS, help = 'range of the x-axis' )
-    p.add_argument('--binsize', type=eval, default=argparse.SUPPRESS, help = 'binsize' )
-    p.add_argument('--factor', type=eval, default=argparse.SUPPRESS, help = 'factor' )
-    p.add_argument('--nbins', type=int, default=argparse.SUPPRESS, help = 'number of bins' )
-    p.add_argument('-o', '--output', type=str, default=argparse.SUPPRESS, help = 'selection' )
-    p.add_argument('--pdf', action='store_true', default=argparse.SUPPRESS, help = 'output to pdf' )
-    p.add_argument('--png', action='store_true', default=argparse.SUPPRESS, help = 'output to png' )
-
-    p.set_defaults(_func=ratio)
-
-def ratio( **args ):
-    args = Namespace(**args)
-
-    import matplotlib.pylab as plt
-    with Timer('ratio'):
-        print( 'len', len(args.root_file) )
-        if len(args.root_file) == 1:
-            args.root_file = args.root_file[0]
-
-            file = glob.glob(args.root_file)
-            #data = open_HitSummary(file[0], args.branch, selection='flag==0' )
-
-            args.branches = []
-            args.numselections = []
-            args.denselections = []
-            print( args.branch_selections )
-            for branch_selection in args.branch_selections:
-                args.branches.append( branch_selection[0] )
-                args.numselections.append( branch_selection[1] )
-                args.denselections.append( branch_selection[2] )
-
-            if not 'runID_range' in args:
-                args.runID_range = None
-            data_numselection = get_selections( file[0], args.branches, args.numselections, args.global_selection, runID_range=args.runID_range )
-            data_denselection = get_selections( file[0], args.branches, args.denselections, args.global_selection, runID_range=args.runID_range )
-                                                #extra_branches=['ePix','xPix','yPix', 'E0', 'E1', 'n0', 'n1'] )
-
-        else:
-            nargs = len(args.root_file)
-            files = args.root_file
-            print( args.root_file )
-            args.branches = []
-            args.numselections = []
-            args.denselections = []
-            data_numselection = {}
-            data_denselection = {}
-            for i in range(nargs/4):
-                branch = args.root_file[5*i+0]
-                args.branches.append(branch)
-
-                file0 = args.root_file[5*i+1]
-                selection0 = args.root_file[5*i+2]
-                args.numselections.append('{}:{}'.format(file0, selection0))
-
-                file1 = args.root_file[5*i+3]
-                selection1 = args.root_file[5*i+4]
-                args.denselections.append('{}:{}'.format(file1, selection1))
-
-                #print( 'file', file )
-                #print( 'br', branch )
-                #print( 'sel', selection )
-                data_entry0 = get_selections( file0, [branch], [selection0], args.global_selection )
-                data_numselection.update( { '{}:{}'.format(file0, data_entry0.keys()[0]): data_entry0.values()[0] } )
-
-                data_entry1 = get_selections( file1, [branch], [selection1], args.global_selection )
-                data_denselection.update( { '{}:{}'.format(file1, data_entry1.keys()[0]): data_entry1.values()[0] } )
-
-            #print( data_selection.keys() )
-            #exit(0)
 
 
 
-        if 'x_range' in args:
-            bins = arange( args.x_range[0], args.x_range[1], args.binsize )
-        else:
-            first_data_selection = data_numselection.values()[0][args.branches[0]]
-            if 'binsize' in args:
-                bins = arange( min(first_data_selection), max(first_data_selection), args.binsize )
-            elif 'nbins' in args:
-                bins = linspace( min(first_data_selection), max(first_data_selection), args.nbins )
-            else:
-                bins = linspace( min(first_data_selection), max(first_data_selection), int(sqrt(len(first_data_selection))) )
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.set_title(', '.join(args.branches))
-        #ax.hist(data, bins=bins, histtype='step', label='all')
-        for branch, numselection, denselection in zip(args.branches, args.numselections, args.denselections):
-            #print( 'selection', data_selection[selection][branch].shape, len(bins) )
-            numerator = data_numselection[numselection]
-            denominator = data_denselection[denselection]
-
-            numhist, x, dx = stats.make_histogram( numerator[branch], bins )
-            denhist, x, dx = stats.make_histogram( denominator[branch], bins )
-            hist = numhist.astype(float)/denhist
-            dy = sqrt( (sqrt(numhist)/denhist)**2 + (numhist*sqrt(denhist)/denhist**2)**2 )
-            ax.errorbar( x, hist, xerr=dx/2, yerr=dy, label='{}:{}\n{}'.format(branch,numselection, denselection), fmt=' ' )
-        ax.legend()
-        ax.set_xlabel(args.branches[0])
-        #ax.set_ylabel( r'$\frac{{dN}}{{d {}}}$'.format(args.branches[0]) )
-
-    if 'output' in args:
-        if args.output == '':
-            args.output = args.root_file
-    else:
-        args.output = args.root_file
-
-    if 'pdf' in args:
-        fig.savefig(args.output+'.pdf')
-        print( 'saved', args.output+'.pdf' )
-    elif 'png' in args:
-        fig.savefig(args.output+'.png')
-        print( 'saved', args.output+'.png' )
-    else:
-        plt.show()
-    return
-
-
-def status( args ):
-    if not os.path.exists( args.root_file ):
-        print( 'file {} does not exist'.format( args.rootfile ) )
-    tfile = TFile( args.root_file )
-    for key in tfile.GetListOfKeys():
-        tree_name = key.GetName()
-        print( colored( tree_name, 'green' ) )
-        tree = getattr(tfile, tree_name)
-        branches = ', '.join( map( lambda _: _.GetName(), tree.GetListOfBranches() ) )
-        print( branches )
-        print( tree.GetEntries() )
-    tfile.Close()
-    if 'tree' in args:
-        if 'branches' in args:
-            #data = root_numpy.root2array( args.root_file, treename = args.tree, branches = args.branches ).view(recarray)
-            data = open_HitSummary( args.root_file, branches = args.branches )
-            for branch in args.branches:
-                print( 'branch', getattr( data, branch ), len(getattr( data, branch )) )
-    return
-
-def add_status_options(p):
-    p.add_argument('root_file', type=str, help = 'root file (example: /share/storage2/connie/DAna/Catalogs/hpixP_cut_scn_osi_raw_gain_catalog_data_3165_to_3200.root)' )
-    p.add_argument('-t', '--tree', type=str, default=argparse.SUPPRESS, help = 'tree to print' )
-    p.add_argument('--branches', nargs='+', type=str, default=argparse.SUPPRESS, help = 'branch used for x-axis' )
-    p.set_defaults( _func = status )
+from utils.doc2argparse import doc2argparse
+from Catalog.status import status
+from Catalog.histogram import histogram
+from Catalog.scatter import scatter
+from Catalog.ratio import ratio
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser( description = 'catalog tools', formatter_class = argparse.ArgumentDefaultsHelpFormatter )
     subparsers = parser.add_subparsers( help = 'major options' )
 
-    add_status_options( subparsers.add_parser('status', help='get status from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_histogram_options( subparsers.add_parser('histogram', help='make histogram from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_scatter_options( subparsers.add_parser('scatter', help='make scatter from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+    doc2argparse( subparsers, status )
+    doc2argparse( subparsers, histogram )
+    doc2argparse( subparsers, scatter )
+    doc2argparse( subparsers, ratio )
+#     add_histogram_options( subparsers.add_parser('histogram', help='make histogram from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+#     add_scatter_options( subparsers.add_parser('scatter', help='make scatter from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_extract_options( subparsers.add_parser('extract', help='extract events from image', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_match_options( subparsers.add_parser('match', help='match catalog with simulation', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_simulate_options( subparsers.add_parser('simulation', help='simulate, extract and match', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
     add_addbranches_options( subparsers.add_parser('addbranches', help='add branches to catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
-    add_ratio_options( subparsers.add_parser('ratio', help='make ratio histograms from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
+#     add_ratio_options( subparsers.add_parser('ratio', help='make ratio histograms from catalog', formatter_class = argparse.ArgumentDefaultsHelpFormatter) )
 
     args = parser.parse_args()
+    args.__call__( **vars(args) )
+#     del args._func
+#     print( colored('using parameters:', 'green', attrs=['bold'] ) )
+#     print_var( vars(args).keys(), vars(args), line_char='\t' )
 
-    _func = args._func
-    del args._func
-    print( colored('using parameters:', 'green', attrs=['bold'] ) )
-    print_var( vars(args).keys(), vars(args), line_char='\t' )
-
-    with Timer('finished'):
-        try:
-            _func(args)
-        except TypeError:
-            _func(**vars(args))
+#     with Timer('finished'):
+#         try:
+#             _func(**vars(args))
+#         except TypeError:
+#             _func(args)
+            

@@ -1,5 +1,5 @@
-from cas.rule import RuleList
-from cas.operable import Operable
+from .rule import RuleList
+from .operable import Operable
 
 class Expr(Operable):
     def __new__(cls, *args):

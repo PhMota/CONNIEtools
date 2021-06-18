@@ -88,8 +88,8 @@ class Mul(Expr):
                 s += str(arg)
         return s
 
-from cas.symbol import Symbol
-from cas.number import Number
-from cas.neg import Neg
-from cas.add import Add
-from cas.pow import Pow
+# from cas.symbol import Symbol
+# from cas.number import Number
+# from cas.neg import Neg
+# from cas.add import Add
+# from cas.pow import Pow
