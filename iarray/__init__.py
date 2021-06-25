@@ -37,22 +37,6 @@ GeV = ureg.GeV
 
 from .xArray_ext import *
 ###############################################################################
-# __cache = {}
-# def cached( func ):
-#     def wrapper(*args, **kwargs):
-#         key = ( func.__name__, str(args), str(kwargs))
-#         if key in __cache:
-#             print( f"read result of {func.__name__} from cache" )
-#             return __cache[key]
-#         ret = func(*args, **kwargs)
-#         __cache[key] = ret
-#         return ret
-#     return wrapper
-
-
-
-
-
 def DataArray_curve_fit(self, x, z, func, p0, **kwargs):
     popt_list = []
     if type(func) == str:
@@ -71,11 +55,20 @@ def DataArray_curve_fit(self, x, z, func, p0, **kwargs):
             **kwargs
         )
         popt_list.append(popt)
-    popt = xr.DataArray( popt_list, dims=[z, "params"]).set_coords(**{z:self[z]}).set(func=func) 
+    popt = xr.DataArray( 
+        popt_list, 
+        dims=[z, "params"],
+        coords = {
+            z: self[z]
+        },
+        attrs = {
+            "func": func,
+            "fit": popt
+        }
+    )
     self.attrs["fit"] = popt
     return self
 xr.DataArray.curve_fit = DataArray_curve_fit
-
 ###############################################################################
 class Selection:
     def __init__(cls, obj):

@@ -9,9 +9,10 @@ from . import iprint
 
 def genfromcsv( 
     fpath,
-    x=None,
-    y=None,
-    ureg=ureg
+    x={},
+    y={},
+    ureg=ureg,
+#     **kwargs
 ):
     import csv
     import re
@@ -21,21 +22,44 @@ def genfromcsv(
     fieldnames = [ fieldname.strip("# ") for fieldname in fieldnames ]
     fieldprops = [ re.match(r"(.*)\[(.*)\]", fieldname).groups() for fieldname in fieldnames ]
     
-    data = np.genfromtxt( fpath, delimiter=", ")
+    data = np.genfromtxt( fpath, delimiter=",")
     data = data.T
     
     xcol = x.pop("col",0)
-    coord = Coord( 
-        x.pop("name", fieldprops[xcol][0]), 
-        x.pop("dim", f"dim_{fieldprops[xcol][0]}"), 
-        data[xcol] * x.pop( "unit", ureg(fieldprops[xcol][1]) )
-    )
+#     coord = Coord( 
+#         x.pop("name", fieldprops[xcol][0]), 
+#         x.pop("dim", f"dim_{fieldprops[xcol][0]}"), 
+#         data[xcol] * x.pop( "unit", ureg(fieldprops[xcol][1]) )
+#     )
     ycol = y.pop("col", xcol+1)
-    array = Array( 
-        y.pop("name", fieldprops[ycol][0]), 
-        [coord], 
-        data[ycol] * y.pop( "unit", ureg(fieldprops[ycol][1]) )
-    )
+#     array = Array( 
+#         y.pop("name", fieldprops[ycol][0]), 
+#         [coord], 
+#         data[ycol] * y.pop( "unit", ureg(fieldprops[ycol][1]) )
+#     )
+#     print( data[xcol] )
+    if True:
+        coord = xr.DataArray(
+#             name = ,
+            dims = [ x.pop("dim", f"dim_{fieldprops[xcol][0]}") ],
+            data = data[xcol] * x.pop( "unit", ureg(fieldprops[xcol][1]) )
+        )
+        array = xr.DataArray(
+            name = y.pop("name", fieldprops[ycol][0]),
+            dims = coord.dims,
+            coords = {x.pop("name", fieldprops[xcol][0]): coord},
+            data = data[ycol] * y.pop( "unit", ureg(fieldprops[ycol][1]) )
+        )
+    if False:
+        array = xr.DataArray(
+            name = y.pop("name", fieldprops[ycol][0]),
+            dims = [ x.pop("dim", f"dim_{fieldprops[xcol][0]}") ],
+            coords = {
+                x.pop("name", fieldprops[xcol][0]): data[xcol] * x.pop( "unit", ureg(fieldprops[xcol][1]) )
+            },
+            data = data[ycol] * y.pop( "unit", ureg(fieldprops[ycol][1]) )
+        )
+    
     return array
 
 def _genfromroot_base( fpath, treename, branches, cut ):
@@ -170,7 +194,13 @@ def xplot(self, *args, **kwargs):
     if ylabel:
         dq.attrs["long_name"] = ylabel
         kwargs["label"] = dq.name
-    dq.plot(*args, **kwargs)
+    if not "x" in kwargs:
+        x = dq.coords.values()[0]
+    try:
+        dq.plot(*args, **kwargs)
+    except ValueError:
+        y = kwargs.pop("y", None)
+        dq.plot(*args, **kwargs)
     if "label" in kwargs:
         plt.legend()
     return
@@ -181,7 +211,11 @@ xr.DataArray.xplot = xplot
 def xdiff(self, coord=None):
     if coord is None:
         coord = self.xcoords[0].name
-    return (self.pint.dequantify().differentiate( coord )).pint.quantify()/self[coord].pint.units
+#     self[coord].name = ""
+#     print( self[coord] )
+    dequantified = self.pint.dequantify()
+    diff_dequantify = dequantified.differentiate( coord )
+    return diff_dequantify.pint.quantify()/self[coord].pint.units * self.pint.units
 xr.DataArray.xdiff = xdiff
 
 
@@ -212,32 +246,43 @@ def ds_errorbar(self, cols_wrap=2, **kwargs):
         fig = plt.figure( figsize = (width*ncols, height*nrows) )        
         for i, zi in enumerate(self[z]):
             ax = fig.add_subplot(nrows, ncols, i+1)
-            self.sel({z:zi}).errorbar(ax=ax, label=f"{z} {zi.data}", **kwargs)
+            ax.grid(True)
+            self.sel({z:zi}).xerrorbar(ax=ax, label=f"{z} {zi.data}", **kwargs)
         fig.tight_layout()
         return
     y = kwargs.pop("y", None)
     x = kwargs.pop("x", None)
+    ylabel = kwargs.pop("ylabel", None)
+    yunits = kwargs.pop("yunits", None)
     ax = kwargs.pop("ax", None)
     if not ax:
         ax = plt.figure().subplots()
     ax.set_xlabel( f"{x}" + (f"[{self[x].pint.units}]" if self[x].pint.units != '' else '') )
-    ax.set_ylabel( f"{y}" + (f"[{self[y].pint.units}]" if self[y].pint.units != '' else '') )
-    yunits = kwargs.pop("yunits", None)
+    
+    if ylabel:
+        ax.set_ylabel( f"{ylabel}" + (f"[{yunits}]" if yunits else '') )
+    else:
+        ax.set_ylabel( f"{y}" + (f"[{self[y].pint.units}]" if self[y].pint.units != '' else '') )
+
     ds = self.pint.dequantify()
     if yunits:
         ds = self.pint.to(yunits).pint.magnitude
         ds = ds.pint.dequantify()
         print( "yunits" )
-    args = dict(
-        x = un.nominal_values(ds[x].data),
-        xerr = un.std_devs(ds[x].data),
-        y = un.nominal_values(ds[y].data),
-        yerr = un.std_devs(ds[y].data),        
-    )
-    ax.errorbar(
-        **args,
-        **kwargs
-    )
+    for iy in ([y] if type(y) == str else y):
+        x = un.nominal_values(ds[x].data)
+        dx = (x[1]-x[0])/2
+        args = dict(
+            x = x,
+            xerr = dx,
+            y = un.nominal_values(ds[iy].data),
+            yerr = un.std_devs(ds[iy].data),        
+        )
+        ax.errorbar(
+#             label = ds[iy].name,
+            **args,
+            **kwargs
+        )
     label = kwargs.pop("label", None)
     if label:
         plt.legend()
@@ -286,6 +331,8 @@ def DataArray_errorbar(self, x, z, cols_wrap=1, fmt=" ", **kwargs):
     width, height = plt.rcParams["figure.figsize"]
     fig = plt.figure( figsize = (width*ncols, height*nrows) )
     yunits = kwargs.pop("yunits", self.pint.units)
+    xlim = kwargs.pop("xlim", None)
+
     for i, sel in enumerate(self[z]):
         ax = fig.add_subplot(nrows, ncols, i+1)
         try:
@@ -303,10 +350,10 @@ def DataArray_errorbar(self, x, z, cols_wrap=1, fmt=" ", **kwargs):
                 label=f"hdu {sel.data}",
                 **kwargs,
             )
+            ax.grid(True)
         except Exception as e:
             print( f"error in\n{ self[x].pint.magnitude }\n\n{y} ")
             raise e
-
         if "fit" in self.attrs:
             popt = self.attrs["fit"].sel({z:sel}).pint.magnitude.data
             func = self.attrs["fit"].attrs["func"]
@@ -319,6 +366,7 @@ def DataArray_errorbar(self, x, z, cols_wrap=1, fmt=" ", **kwargs):
                 _func( self[x].pint.magnitude, *popt ),
                 label = "\n".join([ f"$p_{i}$={p:.2e}" for i, p in enumerate(popt) ])
             )
+        ax.set_xlim(xlim)
         ax.set_xlabel( f"{self[x].name} [{self[x].pint.units}]" )
         if str(yunits) == "":
             ax.set_ylabel( f"{self.name}" )
@@ -328,3 +376,21 @@ def DataArray_errorbar(self, x, z, cols_wrap=1, fmt=" ", **kwargs):
     plt.tight_layout()
     return self
 xr.DataArray.errorbar = DataArray_errorbar
+
+def print_table(da, x, y=None, out=None):
+    X = da[x]
+    if y:
+        Y = da[y]
+    else:
+        Y = da
+        y = da.name
+    
+    s = [f"# {x}[{X.pint.units}], {y}[{Y.pint.units}]"] + [
+        f"{ix:.2f}, {iy:.2f}" for ix, iy in zip( X.data.magnitude, Y.data.magnitude )
+    ]
+    if out:
+        with open(out, "w") as f:
+            f.write("\n".join(s))
+    else:
+        print( "\n".join(s) )
+    return da
