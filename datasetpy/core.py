@@ -1,4 +1,4 @@
-from .defs import *
+from .defs import ureg, plt
 import numpy as np
 from uncertainties import unumpy as un
 from uncertainties.core import AffineScalarFunc
@@ -50,9 +50,11 @@ def has_units(arg):
 def print_dict(d):
     return ", ".join( f"{key}: {value}" for key, value in d.items() )
 
+def dict2str(d):
+    return ", ".join( f"{key}: {value}" for key, value in d.items() )
+
 def print_values(X):
     return f"{par}{X.name}\t({', '.join( X.dims.keys() )}) {pprint( X._data )}"
-
 
 
 
@@ -67,9 +69,13 @@ class Coord:
         if not hasattr(self._data, "units"):
             self._data *= ureg(units)
                 
-        self.dims = { dim: size for dim, size in zip(aslist(dims), self.shape) }
+        self._dims = aslist(dims)
         self.attrs = kwargs
-        
+    
+    @property
+    def dims(self):
+        return { dim: size for dim, size in zip(self._dims, self._data.shape) }
+    
     @property
     def nominal_values(self): return un.nominal_values( self._data )
 
@@ -92,7 +98,11 @@ class Coord:
     def shape(self): return self._data.shape
     
     @property
-    def label(self): return f"{self.name}" + ( "" if self.units == "dimensionless" else f" [{self.units:~P}]" )
+    def label(self): 
+        _label = self.name
+        if hasattr(self, "latex"):
+            _label = self.latex
+        return f"{_label}" + ( "" if self.units == "dimensionless" else f" [{self.units:~P}]" )
     
     def print_header(self):
         return [f"<{ self.__class__.__name__ }>\t({ print_dict(self.dims) })"]
@@ -127,20 +137,39 @@ class Coord:
         return self._data.__add__( other )
 
     
+def parse_array( data, err, units ):
+    ret = un.uarray( data, err ) if np.any( err != 0 ) else data
+    return ret * ( ureg("dimensionless") if units is None else ureg(units) )
 
 class Array:
     """
     describes 
     F(x, y) -> z
     """
-    def __init__(self, name, data, dims = None, coords = None, err = 0, units = None, **kwargs):
+    def __init__(self, name, data, dims = None, coords = None, err = 0, units = "dimensionless", **kwargs):
         self.name = name
-        self._data = un.uarray( data, err ) * ureg(units)
-        self.coords = { coord.name: coord for coord in aslist(coords) }
+        self._data = parse_array(data, err, units)
+        _dims = {}
+        if coords:
+            self._coords = aslist(coords)
+            self.__dict__.update( { coord.name: coord for coord in self._coords} )
+            for coord in self._coords:
+                for dim_name, dim_size in coord.dims.items():
+                    if dim_name in _dims:
+                        if dim_size != _dims[dim_name]:
+                            raise Exception(f"mismatching dimension sizes for {dim_name}: {_dims[dim_name]} and {dim_size}")
+                    else:
+                        _dims[dim_name] = dim_size
+        
+        
         self.attrs = kwargs
         if dims is None:
-            self.dims = { dim_name: dim_size for coord in aslist(coords) for dim_name, dim_size in coords.dims.items() }
-        
+            self._dims = list({ dim for coord in self.coords for dim in coords._dims })
+
+    @property
+    def dims(self):
+        return { dim: size for dim, size in zip(self._dims, self._data.shape) }
+
     @property
     def nominal_values(self): return un.nominal_values( self._data )
 
@@ -160,10 +189,14 @@ class Array:
     def u(self): return self.units
 
     @property
-    def label(self): return f"{self.name}" + ( "" if self.units in ["dimensionless", ""] else f" [{self.units:~P}]" )
+    def label(self): 
+        _label = self.name
+        if hasattr(self, "latex"):
+            _label = self.latex
+        return f"{_label}" + ( "" if self.units in ["dimensionless", ""] else f" [{self.units:~P}]" )
 
     def print_header(self):
-        return [f"<{self.__class__.__name__}>\t()"]
+        return [f"<{self.__class__.__name__}>\t({print_dict(self.dims)})"]
     
     def print_data(self):
         return [f"{par}{self.name}\t({', '.join(self.dims.keys())}) {pprint(self._data)}"]
@@ -181,7 +214,7 @@ class Array:
             return []
         return ["\n".join([ 
             "Coordinates:",
-            *[ coord.print_data()[0] for coord in self.coords.values() ]
+            *[ coord.print_data()[0] for coord in self.coords ]
         ])]
 
     def __repr__(self):
@@ -193,37 +226,41 @@ class Array:
         ) + "\n"
         
         
-    def plot(self):
-        ax = plt.figure().add_subplot(111)
-        for coord in self.coords.values():
-            ax.errorbar( 
-                x = coord.n,
-                xerr = coord.s,
-                y = self.n,
-                yerr = self.s,
-                fmt = "."
-            )
-            ax.set_xlabel( coord.label )
-            ax.set_ylabel( self.label )
         
-    
 class Data:
     """
     mimics xarray dataset interface
     """
-    def __init__(self, **kwargs):
+    def __init__(self, name, arrays, coords = None, **kwargs):
         self.name = name
-        
-        self.data = {}
+        arrays = aslist(arrays)
+        _dims = {}
+        for array in arrays:
+            for dim_name, dim_size in array.dims.items():
+                if dim_name in _dims:
+                    if dim_size != _dims[dim_name]:
+                        raise Exception(f"mismatching dimension sizes for {dim_name}: {_dims[dim_name]} and {dim_size}")
+                else:
+                    _dims[dim_name] = dim_size
+        print( _dims )
+
         self.coords = {}
         self.dims = {}
         self.attrs = {}
     
+    @property
+    def dims(self):
+        return
+    
+    @property
+    def header(self):
+        return f"<{self.__class__.__name__}>\t({dict2str(self.dims)})"
+    
     def __repr__(self):
-        s = [f"<datasetpy.Dataset>"]
-        s += [ "Dimensions:\t\t" + repr(self.dims) ]
-        c = [ "Coordinates:" ]
-        return 
+        return "\n".join([
+            self.header,
+            
+        ]) + "\n"
     
     def __setitem__(self, attr, value):
         pass
@@ -231,12 +268,4 @@ class Data:
     def __getitem__(self, attr):
         if isinstance(attr, str):
             return self._getitem_str(attr)
-        
-    def plot(self, x=None, y=None, **kwargs):
-        """
-        interface for lineplot
-        """
-        x = self._getx(x)
-        y = self._gety(y)
-        
         

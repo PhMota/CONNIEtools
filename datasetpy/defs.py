@@ -1,11 +1,14 @@
-from pint import UnitRegistry
+from pint import UnitRegistry, UnitStrippedWarning
 
 ureg = UnitRegistry()
 ureg.default_format = '~P'
 ureg.auto_reduce_dimensions = True
 
-import matplotlib
-matplotlib.rcParams.update({
+import warnings
+warnings.filterwarnings("error", UnitStrippedWarning)
+
+import matplotlib.pyplot as plt
+plt.rcParams.update({
     "image.origin": "lower",
     "font.family": "serif",
     "font.size": 15,
@@ -15,5 +18,4 @@ matplotlib.rcParams.update({
     "xaxis.labellocation": "right",
     "yaxis.labellocation": "top",
 })
-
-import matplotlib.pyplot as plt
+warnings.filterwarnings("ignore", DeprecationWarning)
