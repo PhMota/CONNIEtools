@@ -215,7 +215,7 @@ def xdiff(self, coord=None):
 #     print( self[coord] )
     dequantified = self.pint.dequantify()
     diff_dequantify = dequantified.differentiate( coord )
-    return diff_dequantify.pint.quantify()/self[coord].pint.units * self.pint.units
+    return diff_dequantify.pint.quantify()/self[coord].pint.units * ( self.pint.units or 1 )
 xr.DataArray.xdiff = xdiff
 
 
