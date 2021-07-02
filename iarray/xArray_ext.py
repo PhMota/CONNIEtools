@@ -265,25 +265,28 @@ def ds_errorbar(self, cols_wrap=2, **kwargs):
         ax.set_ylabel( f"{y}" + (f"[{self[y].pint.units}]" if self[y].pint.units != '' else '') )
 
     ds = self.pint.dequantify()
-    if yunits:
-        ds = self.pint.to(yunits).pint.magnitude
-        ds = ds.pint.dequantify()
-        print( "yunits" )
+    label = kwargs.pop("label", None)
+
+#     if yunits:
+#         ds = self.pint.to(yunits).pint.magnitude
+#         ds = ds.pint.dequantify()
+#         print( "yunits" )
     for iy in ([y] if type(y) == str else y):
-        x = un.nominal_values(ds[x].data)
-        dx = (x[1]-x[0])/2
+        _x = un.nominal_values(ds[x].data)
+        _dx = (_x[1]-_x[0])/2
         args = dict(
-            x = x,
-            xerr = dx,
+            x = _x,
+            xerr = _dx,
             y = un.nominal_values(ds[iy].data),
-            yerr = un.std_devs(ds[iy].data),        
+            yerr = un.std_devs(ds[iy].data),
+            label = iy
         )
         ax.errorbar(
 #             label = ds[iy].name,
             **args,
             **kwargs
         )
-    label = kwargs.pop("label", None)
+    plt.title(label)
     if label:
         plt.legend()
 xr.Dataset.xerrorbar = ds_errorbar
