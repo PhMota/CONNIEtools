@@ -237,7 +237,7 @@ xr.Dataset.stats = ds_stats
 
 
 def ds_errorbar(self, cols_wrap=2, **kwargs):
-    print( "ds_errorbar" )
+#     print( "ds_errorbar" )
     z = kwargs.pop("z", None)
     if z:
         size = self[z].size
@@ -254,6 +254,7 @@ def ds_errorbar(self, cols_wrap=2, **kwargs):
     x = kwargs.pop("x", None)
     ylabel = kwargs.pop("ylabel", None)
     yunits = kwargs.pop("yunits", None)
+    yscale = kwargs.pop("yscale", None)
     ax = kwargs.pop("ax", None)
     if not ax:
         ax = plt.figure().subplots()
@@ -286,6 +287,8 @@ def ds_errorbar(self, cols_wrap=2, **kwargs):
             **args,
             **kwargs
         )
+    if yscale:
+        ax.set_yscale( yscale )
     plt.title(label)
     if label:
         plt.legend()
