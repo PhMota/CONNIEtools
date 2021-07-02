@@ -16,3 +16,10 @@ on_excl = on * excluded_sel
 data_files = '/share/storage2/connie/DAna/nuCatalogs/shape_*_data_[6-7]*_to_*_v4.0.root'
 sim_files = '/share/storage2/connie/DAna/nuCatalogs/draw_all*.root'
 match_files = '/share/storage2/connie/DAna/nuCatalogs/match_*_sim_[6-7]*_to_*_v4.0.root'
+
+geom = '(xMin>140) & (xMax<3960) & (yMin>75) & (yMax<898) & (flag==0) & (hPixFlag==0)'
+size = '(sizell<.95) & (sizell>0)'
+energy = '(E0/gain3Peaks*1e3>45) & (E1/gain3Peaks*1e3>50)'
+
+on_eff = on_excl * geom * size * energy
+off_eff = off_excl * geom * size * energy
