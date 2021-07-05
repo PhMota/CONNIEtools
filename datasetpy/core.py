@@ -56,7 +56,71 @@ def dict2str(d):
 def print_values(X):
     return f"{par}{X.name}\t({', '.join( X.dims.keys() )}) {pprint( X._data )}"
 
+def index(el, li):
+    try:
+        return li.index(el)
+    except ValueError:
+        return None
 
+def broadcast_to_dims(a, dims):
+    newa = a._data.reshape( a._data.shape + (1,)*(len(dims) - len(a._dims)) )
+    aorder = [ dims.index(dim) for dim in a._dims ]
+    return np.moveaxis( newa, range(len(aorder)), aorder )
+
+def broadcast(a, b):
+    dims = list(set(a._dims) | set(b._dims))
+    return broadcast_to_dims(a, dims), broadcast_to_dims(b, dims), dims
+
+class Array:
+    def __init__(
+        self, name = None, 
+        nominal_values = None, 
+        std_devs = 0, 
+        units = "dimensionless", 
+        dims = None, 
+        latex = None, 
+        _data = None 
+    ):
+        self.name = name
+        self.latex = latex
+        
+        # fast construction for operations
+        if _data is not None:
+            self._data = _data
+        else:
+            self._data = un.uarray( nominal_values, std_devs ) if std_devs != 0 else np.array( nominal_values )
+            self._data *= ureg(units)
+        
+        if not dims:
+            dims = [ f"dim_{i}" for i in range(self._data.ndim) ]
+        dims = dims if isinstance( dims, (list, tuple) ) else [dims]
+        assert len(dims) == self._data.ndim
+        self._dims = dims
+    
+    @property
+    def units(self):
+        return self._data.units
+    
+    @property
+    def magnitude(self):
+        return self._data.magnitude
+    
+    def __repr__(self):
+        return f"{par}{self.name}\t({ ', '.join(self._dims) })[{ self.units:~P }]\n { self.magnitude }"
+            
+    
+    def __add__(self, other):
+        if isinstance(other, Array):
+            a, b, dims = broadcast(self, other)
+            return Array( _data = a+b, dims = dims )
+    
+    def __mul__(self, other):
+        if isinstance(other, Array):
+            a, b, dims = broadcast(self, other)
+            return Array( _data = a*b, dims = dims )
+
+def arange(name, start, stop, step, units = "dimensionless", dim = None, std_devs = 0 ):
+    return Array( name, np.arange(start, stop, step), units = units, dims = dim, std_devs = std_devs )
 
 class Coord:
     def __init__(self, name, data, dims, err = 0, units = "dimensionless", **kwargs):
@@ -141,7 +205,7 @@ def parse_array( data, err, units ):
     ret = un.uarray( data, err ) if np.any( err != 0 ) else data
     return ret * ( ureg("dimensionless") if units is None else ureg(units) )
 
-class Array:
+class ArrayData:
     """
     describes 
     F(x, y) -> z

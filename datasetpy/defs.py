@@ -5,7 +5,7 @@ ureg.default_format = '~P'
 ureg.auto_reduce_dimensions = True
 
 import warnings
-warnings.filterwarnings("error", UnitStrippedWarning)
+warnings.filterwarnings("error", category = UnitStrippedWarning)
 
 import matplotlib.pyplot as plt
 plt.rcParams.update({
@@ -18,4 +18,4 @@ plt.rcParams.update({
     "xaxis.labellocation": "right",
     "yaxis.labellocation": "top",
 })
-warnings.filterwarnings("ignore", DeprecationWarning)
+warnings.filterwarnings("ignore", category = DeprecationWarning)
