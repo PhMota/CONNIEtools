@@ -7,3 +7,5 @@ from .core import Coord, Array, arange, broadcast
 from .io import *
 from .plot import plot
 
+eV = ureg.eV
+keV = ureg.keV

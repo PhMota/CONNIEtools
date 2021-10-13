@@ -113,12 +113,24 @@ class Array:
         if isinstance(other, Array):
             a, b, dims = broadcast(self, other)
             return Array( _data = a+b, dims = dims )
+        return Array( _data = self._data + other, dims = self._dims )
     
     def __mul__(self, other):
         if isinstance(other, Array):
             a, b, dims = broadcast(self, other)
             return Array( _data = a*b, dims = dims )
+        print( "self", self._data, type(self._data) )
+        print( "other", other, type(other) )
+        return Array( _data = self._data * other, dims = self._dims )
 
+    def __rmul__(self, other):
+        if isinstance(other, Array):
+            a, b, dims = broadcast(self, other)
+            return Array( _data = b*a, dims = dims )
+        print( "other", other, type(other) )
+        print( "self", self._data, type(self._data) )
+        return Array( _data = self._data * other, dims = self._dims )
+    
 def arange(name, start, stop, step, units = "dimensionless", dim = None, std_devs = 0 ):
     return Array( name, np.arange(start, stop, step), units = units, dims = dim, std_devs = std_devs )
 

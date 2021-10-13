@@ -91,14 +91,16 @@ def _genfromroot_base( fpath, treename, branches, cut ):
     return data
 
 
-def genfromroot( fpath, treename, branches, groupby=None, cut=None ):
+def genfromroot( fpath, treename, branches, groupby=None, cut=None, verbose=True, tabs=0 ):
     """
     reads root files and constructs a dataset
     """
+    if verbose: print( "  "*tabs + f"call genfromroot({branches})")
     _branches = branches
     if groupby:
         _branches.update( { name: name for name in groupby } )
     data = _genfromroot_base( fpath, treename, _branches, cut )
+    if verbose: print( "  "*tabs + f"return genfromroot({branches})")
     return data
 
 def groupbyArray( arr, by, func=min ):
